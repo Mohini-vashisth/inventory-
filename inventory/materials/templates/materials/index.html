@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Material Entry</title>
+
+<style>
+
+body{
+    font-family: Arial, Helvetica, sans-serif;
+    background:#f4f6f9;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+}
+
+.container{
+    background:white;
+    padding:30px;
+    border-radius:10px;
+    width:400px;
+    box-shadow:0 5px 20px rgba(0,0,0,0.1);
+}
+
+h2{
+    text-align:center;
+    margin-bottom:20px;
+}
+
+.form-group{
+    margin-bottom:15px;
+}
+
+label{
+    display:block;
+    margin-bottom:5px;
+    font-weight:bold;
+}
+
+input, select{
+    width:100%;
+    padding:8px;
+    border:1px solid #ccc;
+    border-radius:5px;
+}
+
+input:focus, select:focus{
+    border-color:#007BFF;
+    outline:none;
+}
+
+button{
+    width:100%;
+    padding:10px;
+    background:#007BFF;
+    border:none;
+    color:white;
+    font-size:16px;
+    border-radius:5px;
+    cursor:pointer;
+}
+
+button:hover{
+    background:#0056b3;
+}
+
+</style>
+</head>
+
+
+<body>
+
+<div class="container">
+
+<h2>Material Entry</h2>
+{% if messages %}
+    {% for message in messages %}
+        <p style="color:green;text-align:center">{{ message }}</p>
+    {% endfor %}
+{% endif %}
+
+<form method="POST">
+{% csrf_token %}
+
+<div class="form-group">
+<label>Coil No</label>
+<input type="text" name="coil_no" value="AUTO GENERATED" readonly required>
+</div>
+
+<div class="form-group">
+<label>Date</label>
+<input type="date" name="date" required>
+</div>
+
+<div class="form-group">
+<label>Grade</label>
+<select name="grade" required>
+<option value="">Select Grade</option>
+<option>304</option>
+<option>316</option>
+<option>202</option>
+<option>430</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>Size</label>
+<select name="size" required>
+<option value="">Select Size</option>
+<option>0.5</option>
+<option>0.8</option>
+<option>1.0</option>
+<option>1.2</option>
+<option>1.5</option>
+</select>
+</div>
+
+<div class="form-group">
+<label>Company</label>
+<input type="text" name="company" placeholder="Enter company name" required>
+</div>
+
+<div class="form-group">
+<label>Vendor</label>
+<input type="text" name="vendor" placeholder="Enter vendor name" required>
+</div>
+
+<div class="form-group">
+<label>Quantity</label>
+<input type="number" name="quantity" placeholder="Enter quantity" required  >
+</div>
+
+<div class="form-group">
+<label>Heat No</label>
+<input type="text" name="heat_no" placeholder="Enter heat number" required>
+</div>
+
+<button type="submit">Save Material</button>
+
+</form>
+
+</div>
+
+</body>
+</html>
