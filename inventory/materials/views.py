@@ -1,6 +1,19 @@
 from django.shortcuts import render
-from django.http import HttpResponse
+from django.contrib import messages
+from .forms import MaterialForm
 
-# Create your views here.
+
 def index(request):
-    return HttpResponse("welcome to material ")
+
+    if request.method == "POST":
+        form = MaterialForm(request.POST)
+
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Form submitted successfully!")
+            form = MaterialForm()
+
+    else:
+        form = MaterialForm()
+
+    return render(request, "materials/index.html", {"form": form})
