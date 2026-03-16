@@ -1,6 +1,10 @@
 from django.urls import path
-from .views import index
+from . import views
 
 urlpatterns = [
-    path('', index, name='material_form'),
+    path("admin-dashboard/", views.admin_dashboard, name="admin_dashboard"),
+    path('materials-table/', views.material_table, name='materials_table'),
+    path('', views.home, name="home"),
+    path('employee/', views.material_form, name="employee"),
+    path('admin-login/', views.admin_login, name="admin_login"),
 ]
