@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>Admin Dashboard</title>
+
+<style>
+
+body{
+font-family: Arial, Helvetica, sans-serif;
+background:#111827;
+color:white;
+padding:40px;
+}
+
+h1{
+margin-bottom:40px;
+}
+
+.cards{
+display:flex;
+gap:30px;
+flex-wrap:wrap;
+}
+
+.card{
+background:#1f2937;
+padding:30px;
+border-radius:12px;
+width:220px;
+box-shadow:0 8px 20px rgba(0,0,0,0.4);
+transition:0.3s;
+}
+
+.card:hover{
+transform:translateY(-5px);
+background:#374151;
+}
+
+.card p{
+font-size:15px;
+opacity:0.7;
+margin-bottom:10px;
+}
+
+.card h2{
+font-size:32px;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h1>📊 Inventory Admin Dashboard</h1>
+
+<div class="cards">
+
+<div class="card">
+<p>Total Materials</p>
+<h2>{{ total_materials }}</h2>
+</div>
+
+<div class="card">
+<p>Total Quantity</p>
+<h2>{{ total_quantity }}</h2>
+</div>
+
+<div class="card">
+<p>Materials This Month</p>
+<h2>{{ materials_this_month }}</h2>
+</div>
+
+</div>
+
+</body>
+</html>

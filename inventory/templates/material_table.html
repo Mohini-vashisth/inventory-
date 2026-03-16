@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<title>Material Table</title>
+
+<style>
+
+body{
+font-family: Arial;
+background:#f4f6f9;
+padding:40px;
+}
+
+table{
+width:100%;
+border-collapse:collapse;
+background:white;
+}
+
+th,td{
+padding:12px;
+border:1px solid #ddd;
+text-align:center;
+}
+
+th{
+background:#2c3e50;
+color:white;
+}
+
+tr:hover{
+background:#f1f1f1;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h2>Material Inventory</h2>
+
+<table>
+
+<tr>
+<th>Coil Number</th>
+<th>Grade</th>
+<th>Company</th>
+<th>Vendor</th>
+<th>Weight</th>
+<th>Date</th>
+</tr>
+
+{% for m in materials %}
+
+<tr>
+<td>{{m.coil_number}}</td>
+<td>{{m.grade}}</td>
+<td>{{m.company}}</td>
+<td>{{m.vendor}}</td>
+<td>{{m.weight}}</td>
+<td>{{m.date}}</td>
+</tr>
+
+{% endfor %}
+
+</table>
+
+</body>
+</html>
