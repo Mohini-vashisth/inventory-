@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Inventory Management System</title>
+
+<style>
+
+body{
+    font-family: Arial, Helvetica, sans-serif;
+    background: linear-gradient(135deg,#4e73df,#1cc88a);
+    margin:0;
+    height:100vh;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+}
+
+.container{
+    text-align:center;
+}
+
+h1{
+    color:white;
+    margin-bottom:40px;
+    font-size:36px;
+}
+
+.cards{
+    display:flex;
+    gap:40px;
+    justify-content:center;
+}
+
+.card-link{
+    text-decoration:none;
+}
+
+.card{
+    background:white;
+    width:220px;
+    padding:40px 20px;
+    border-radius:12px;
+    text-align:center;
+    box-shadow:0 10px 25px rgba(0,0,0,0.2);
+    transition:0.3s;
+    cursor:pointer;
+}
+
+.card:hover{
+    transform:translateY(-10px);
+    box-shadow:0 15px 35px rgba(0,0,0,0.3);
+}
+
+.icon{
+    font-size:50px;
+    margin-bottom:20px;
+}
+
+.card h2{
+    margin:10px 0;
+    color:#333;
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+<div class="container">
+
+<h1>Inventory Management System</h1>
+
+<div class="cards">
+
+<a href="/employee/" class="card-link">
+<div class="card">
+<div class="icon">👷</div>
+<h2>Employee</h2>
+</div>
+</a>
+
+<a href="/admin-login/" class="card-link">
+<div class="card">
+<div class="icon">⚙️</div>
+<h2>Admin</h2>
+</div>
+</a>
+
+</div>
+
+</div>
+
+</body>
+</html>
