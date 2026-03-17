@@ -11,3 +11,6 @@ class Material(models.Model):
     quantity= models.IntegerField()
     heat_no = models.CharField(max_length=8)
 
+    def formatted_coil(self):
+        return f"COIL{self.coil_no:04d}"
+
