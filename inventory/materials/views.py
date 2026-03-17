@@ -42,8 +42,32 @@ def home(request):
     return render(request, "home.html")
 
 def material_form(request):
-    return render(request, "index.html")
 
+    if request.method == "POST":
+        Material.objects.create(
+            date=request.POST['date'],
+            grade=request.POST['grade'],
+            size=request.POST['size'],
+            company=request.POST['company'],
+            vendor=request.POST['vendor'],
+            quantity=request.POST['quantity'],
+            heat_no=request.POST['heat_no']
+        )
+
+        return redirect("/material-form/")   # reload page after save
+
+    last_material = Material.objects.order_by('-coil_no').first()
+
+    if last_material:
+        next_coil = last_material.coil_no + 1
+    else:
+        next_coil = 1
+
+    formatted_coil = f"COIL{next_coil:04d}"
+
+    return render(request, "index.html", {
+        "coil_no": formatted_coil
+    })
 
 def admin_login(request):
 
