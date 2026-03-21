@@ -9,27 +9,30 @@ class Command(BaseCommand):
 
         file_path = "STOCK INVENTORY SHEET.xlsx"
 
-        # ✅ FIRST create df
+        # Read Excel
         df = pd.read_excel(file_path)
 
-        # ✅ THEN clean columns
-        df.columns = df.columns.str.strip()
+        # 🔧 Clean column names (VERY IMPORTANT)
+        df.columns = df.columns.str.strip().str.lower()
 
-        # ✅ Debug (optional)
-        print(df.columns)
-
-        # ✅ Replace NaN with None
+        # 🔧 Replace NaN with None
         df = df.where(pd.notnull(df), None)
 
-        for _, row in df.iterrows():
-            Material.objects.create(
-                date=row.get('Date'),
-                grade=row.get('Grade'),
-                size=row.get('Size'),
-                company=row.get('Company'),
-                vendor=row.get('Vendor'),
-                quantity=row.get('Quantity') or 0,
-                heat_no=row.get('Heat No')
-            )
+        print("Columns detected:", df.columns)
+        print("Total rows:", len(df))
 
-        self.stdout.write(self.style.SUCCESS("Data imported successfully!"))
+        for i, row in df.iterrows():
+            try:
+                Material.objects.create(
+                    date=row.get('date'),
+                    grade=row.get('grade'),
+                    size=row.get('size'),
+                    company=row.get('company'),
+                    vendor=row.get('vendor'),
+                    quantity=row.get('quantity') or 0,
+                    heat_no=row.get('heat no')
+                )
+            except Exception as e:
+                print(f"❌ Error at row {i}: {e}")
+
+        self.stdout.write(self.style.SUCCESS("✅ Data imported successfully!"))
