@@ -6,6 +6,8 @@ class Command(BaseCommand):
     help = "Import materials from Excel"
 
     def handle(self, *args, **kwargs):
+        # ✅ Clear old data before import
+        Material.objects.all().delete()
 
         file_path = "STOCK INVENTORY SHEET.xlsx"
 
