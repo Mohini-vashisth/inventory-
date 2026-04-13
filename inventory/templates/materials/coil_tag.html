@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Coil Tag – {{ coil.formatted_coil }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 2rem;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+    }
+
+    .card-title {
+      font-size: 1rem;
+      color: #555;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* ── Printable tag ── */
+    #printable-tag {
+      border: 2.5px solid #1a1a1a;
+      border-radius: 10px;
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .tag-label {
+      font-size: 0.65rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      color: #999;
+      text-transform: uppercase;
+      margin-bottom: 0.2rem;
+    }
+
+    .coil-number {
+      font-size: 2.4rem;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: #111;
+      margin-bottom: 1rem;
+    }
+
+    .tag-divider {
+      border: none;
+      border-top: 1.5px solid #e5e7eb;
+      margin: 0.75rem 0;
+    }
+
+    .tag-details {
+      text-align: left;
+      font-size: 0.875rem;
+      line-height: 2;
+      color: #444;
+    }
+
+    .tag-details .row {
+      display: flex;
+      gap: 0.5rem;
+    }
+
+    .tag-details .field-name {
+      font-weight: 600;
+      color: #111;
+      width: 85px;
+      flex-shrink: 0;
+    }
+
+    .tag-qr {
+      margin-top: 1.25rem;
+      width: 110px;
+      height: 110px;
+    }
+
+    /* ── Buttons ── */
+    .btn-row {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1.5rem;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 0.75rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.82; }
+
+    .btn-print  { background: #1a56db; color: #fff; }
+    .btn-new    { background: #f3f4f6; color: #333; text-decoration: none;
+                  display: flex; align-items: center; justify-content: center; }
+
+    /* ── Print: only the tag, sized for a physical label ── */
+    @media print {
+      body { background: #fff; padding: 0; display: block; }
+
+      .card {
+        box-shadow: none;
+        border-radius: 0;
+        padding: 0.5rem;
+        max-width: 100%;
+      }
+
+      .card-title,
+      .btn-row { display: none !important; }
+
+      #printable-tag {
+        border: 2px solid #000;
+        border-radius: 4px;
+        width: 9cm;
+        margin: 0 auto;
+        padding: 0.8cm;
+        page-break-inside: avoid;
+      }
+
+      .coil-number { font-size: 1.8rem; }
+      .tag-qr { width: 90px; height: 90px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <p class="card-title">
+    🏷️ Tag ready — print and attach to the coil
+  </p>
+
+  <div id="printable-tag">
+
+    <div class="tag-label">Coil Number</div>
+    <div class="coil-number">{{ coil.formatted_coil }}</div>
+
+    <hr class="tag-divider">
+
+    <div class="tag-details">
+      <div class="row">
+        <span class="field-name">Grade</span>
+        <span>{{ coil.grade|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="field-name">Size</span>
+        <span>{{ coil.size|default:"—" }} mm</span>
+      </div>
+      <div class="row">
+        <span class="field-name">Company</span>
+        <span>{{ coil.company|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="field-name">Vendor</span>
+        <span>{{ coil.vendor|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="field-name">Heat No.</span>
+        <span>{{ coil.heat_no|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="field-name">Quantity</span>
+        <span>{{ coil.quantity|default:"—" }}</span>
+      </div>
+      <div class="row">
+        <span class="field-name">Date</span>
+        <span>{{ coil.date|date:"d M Y"|default:"—" }}</span>
+      </div>
+    </div>
+
+    <img class="tag-qr"
+         src="data:image/png;base64,{{ qr_b64 }}"
+         alt="QR – {{ coil.formatted_coil }}">
+
+  </div>
+
+  <div class="btn-row">
+    <button class="btn btn-print" onclick="window.print()">
+      🖨 Print / Save as PDF
+    </button>
+    <a href="/material-form/" class="btn btn-new">
+      + Add Another Coil
+    </a>
+  </div>
+</div>
+
+<script>
+  window.onload = function () {
+    window.print();
+  };
+</script>
+
+</body>
+</html>

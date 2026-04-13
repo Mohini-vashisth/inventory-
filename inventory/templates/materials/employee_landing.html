@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Employee Portal</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(135deg, #4e73df, #1cc88a);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .container {
+      text-align: center;
+      padding: 2rem;
+    }
+
+    h1 {
+      color: white;
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .subtitle {
+      color: rgba(255,255,255,0.8);
+      font-size: 1rem;
+      margin-bottom: 3rem;
+    }
+
+    .cards {
+      display: flex;
+      gap: 2rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .card-link {
+      text-decoration: none;
+    }
+
+    .card {
+      background: white;
+      width: 220px;
+      padding: 2.5rem 1.5rem;
+      border-radius: 16px;
+      text-align: center;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+      transition: transform 0.2s, box-shadow 0.2s;
+      cursor: pointer;
+    }
+
+    .card:hover {
+      transform: translateY(-10px);
+      box-shadow: 0 18px 40px rgba(0,0,0,0.3);
+    }
+
+    .icon {
+      font-size: 3rem;
+      margin-bottom: 1rem;
+    }
+
+    .card h2 {
+      color: #333;
+      font-size: 1.1rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .card p {
+      color: #888;
+      font-size: 0.82rem;
+      line-height: 1.4;
+    }
+
+    .back-link {
+      display: inline-block;
+      margin-top: 2.5rem;
+      color: rgba(255,255,255,0.75);
+      font-size: 0.9rem;
+      text-decoration: none;
+    }
+
+    .back-link:hover {
+      color: white;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+
+  <h1>Employee Portal</h1>
+  <p class="subtitle">What would you like to do?</p>
+
+  <div class="cards">
+
+    <a href="/material-form/" class="card-link">
+      <div class="card">
+        <div class="icon">📦</div>
+        <h2>New Coil Entry</h2>
+        <p>Register a newly received coil into the inventory</p>
+      </div>
+    </a>
+
+    <a href="#" class="card-link" id="new-part-btn">
+      <div class="card">
+        <div class="icon">✂️</div>
+        <h2>Create New Part</h2>
+        <p>Log a part cut from an existing coil</p>
+      </div>
+    </a>
+
+    <a href="#" class="card-link" id="update-progress-btn">
+      <div class="card">
+        <div class="icon">🔄</div>
+        <h2>Update Progress</h2>
+        <p>Update the manufacturing step status for a job</p>
+      </div>
+    </a>
+
+  </div>
+
+  <a href="/" class="back-link">← Back to home</a>
+
+</div>
+
+<!-- Coil picker modal for "Create New Part" -->
+<div id="coil-modal" style="display:none; position:fixed; inset:0;
+     background:rgba(0,0,0,0.5); justify-content:center; align-items:center;">
+  <div style="background:white; border-radius:16px; padding:2rem;
+              width:90%; max-width:400px;">
+    <h2 style="margin-bottom:1rem; font-size:1.1rem; color:#333;">
+      Select a coil to cut a part from
+    </h2>
+    <select id="coil-select" style="width:100%; padding:0.6rem;
+            border:1px solid #ddd; border-radius:8px; font-size:1rem;
+            margin-bottom:1.25rem;">
+      <option value="">— choose a coil —</option>
+      {% for coil in coils %}
+      <option value="{{ coil.coil_no }}">
+        {{ coil.formatted_coil }} — {{ coil.grade|default:"?" }} |
+        {{ coil.vendor|default:"?" }}
+      </option>
+      {% endfor %}
+    </select>
+    <div style="display:flex; gap:0.75rem;">
+      <button onclick="goToParts()"
+        style="flex:1; padding:0.7rem; background:#4e73df; color:white;
+               border:none; border-radius:8px; font-size:0.95rem; cursor:pointer;">
+        Continue
+      </button>
+      <button onclick="closeModal('coil-modal')"
+        style="flex:1; padding:0.7rem; background:#f3f4f6; color:#333;
+               border:none; border-radius:8px; font-size:0.95rem; cursor:pointer;">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Job picker modal for "Update Progress" -->
+<div id="job-modal" style="display:none; position:fixed; inset:0;
+     background:rgba(0,0,0,0.5); justify-content:center; align-items:center;">
+  <div style="background:white; border-radius:16px; padding:2rem;
+              width:90%; max-width:400px;">
+    <h2 style="margin-bottom:1rem; font-size:1.1rem; color:#333;">
+      Select a job to update
+    </h2>
+    <select id="job-select" style="width:100%; padding:0.6rem;
+            border:1px solid #ddd; border-radius:8px; font-size:1rem;
+            margin-bottom:1.25rem;">
+      <option value="">— choose a job —</option>
+      {% for job in active_jobs %}
+      <option value="{{ job.pk }}">
+        {{ job.job_no }} — {{ job.part.part_no }} |
+        {{ job.product_type.name }} | {{ job.get_status_display }}
+      </option>
+      {% endfor %}
+    </select>
+    <div style="display:flex; gap:0.75rem;">
+      <button onclick="goToJob()"
+        style="flex:1; padding:0.7rem; background:#1cc88a; color:white;
+               border:none; border-radius:8px; font-size:0.95rem; cursor:pointer;">
+        Continue
+      </button>
+      <button onclick="closeModal('job-modal')"
+        style="flex:1; padding:0.7rem; background:#f3f4f6; color:#333;
+               border:none; border-radius:8px; font-size:0.95rem; cursor:pointer;">
+        Cancel
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.getElementById('new-part-btn').addEventListener('click', function(e) {
+    e.preventDefault();
+    showModal('coil-modal');
+  });
+
+  document.getElementById('update-progress-btn').addEventListener('click', function(e) {
+    e.preventDefault();
+    showModal('job-modal');
+  });
+
+  function showModal(id) {
+    const el = document.getElementById(id);
+    el.style.display = 'flex';
+  }
+
+  function closeModal(id) {
+    document.getElementById(id).style.display = 'none';
+  }
+
+  function goToParts() {
+    const val = document.getElementById('coil-select').value;
+    if (!val) { alert('Please select a coil first.'); return; }
+    window.location.href = '/coil/' + val + '/parts/';
+  }
+
+  function goToJob() {
+    const val = document.getElementById('job-select').value;
+    if (!val) { alert('Please select a job first.'); return; }
+    window.location.href = '/job/' + val + '/';
+  }
+
+  // Close modal when clicking the dark backdrop
+  document.querySelectorAll('[id$="-modal"]').forEach(function(modal) {
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal) closeModal(modal.id);
+    });
+  });
+</script>
+
+</body>
+</html>

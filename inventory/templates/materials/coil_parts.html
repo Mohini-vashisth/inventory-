@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Parts – {{ coil.formatted_coil }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(135deg, #4e73df, #1cc88a);
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .page {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .back-link {
+      color: rgba(255,255,255,0.8);
+      text-decoration: none;
+      font-size: 0.9rem;
+      display: inline-block;
+      margin-bottom: 1.25rem;
+    }
+    .back-link:hover { color: white; }
+
+    h1 {
+      color: white;
+      font-size: 1.6rem;
+      margin-bottom: 0.4rem;
+    }
+
+    .coil-meta {
+      color: rgba(255,255,255,0.75);
+      font-size: 0.9rem;
+      margin-bottom: 2rem;
+    }
+
+    /* ── Add part form card ── */
+    .card {
+      background: white;
+      border-radius: 16px;
+      padding: 1.75rem;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      margin-bottom: 2rem;
+    }
+
+    .card h2 {
+      font-size: 1rem;
+      color: #333;
+      margin-bottom: 1.25rem;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .form-group label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .form-group input,
+    .form-group textarea {
+      padding: 0.55rem 0.75rem;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      color: #333;
+      transition: border-color 0.15s;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #4e73df;
+    }
+
+    .form-group.full {
+      grid-column: 1 / -1;
+    }
+
+    .btn-submit {
+      background: #4e73df;
+      color: white;
+      border: none;
+      padding: 0.7rem 2rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn-submit:hover { opacity: 0.88; }
+
+    /* ── Parts table card ── */
+    .table-card {
+      background: white;
+      border-radius: 16px;
+      padding: 1.75rem;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+    }
+
+    .table-card h2 {
+      font-size: 1rem;
+      color: #333;
+      margin-bottom: 1.25rem;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9rem;
+    }
+
+    thead th {
+      text-align: left;
+      padding: 0.6rem 0.75rem;
+      border-bottom: 2px solid #e5e7eb;
+      color: #555;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    tbody td {
+      padding: 0.75rem;
+      border-bottom: 1px solid #f3f4f6;
+      color: #333;
+    }
+
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: #f9fafb; }
+
+    .empty-row td {
+      text-align: center;
+      color: #aaa;
+      padding: 2rem;
+    }
+
+    .btn-job {
+      background: #1cc88a;
+      color: white;
+      border: none;
+      padding: 0.35rem 0.9rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+      transition: opacity 0.15s;
+    }
+    .btn-job:hover { opacity: 0.85; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      background: #dbeafe;
+      color: #1e40af;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <a href="/employee/" class="back-link">← Back to employee portal</a>
+
+  <h1>Parts for {{ coil.formatted_coil }}</h1>
+  <p class="coil-meta">
+    Grade: {{ coil.grade|default:"—" }} &nbsp;|&nbsp;
+    Size: {{ coil.size|default:"—" }} mm &nbsp;|&nbsp;
+    Vendor: {{ coil.vendor|default:"—" }} &nbsp;|&nbsp;
+    Heat No: {{ coil.heat_no|default:"—" }}
+  </p>
+
+  <!-- Add part form -->
+  <div class="card">
+    <h2>Add a new part</h2>
+    <form method="post">
+      {% csrf_token %}
+      <div class="form-grid">
+
+        <div class="form-group">
+          <label>Part suffix</label>
+          <input name="suffix" placeholder="e.g. A, B, C" required>
+        </div>
+
+        <div class="form-group">
+          <label>Weight (kg)</label>
+          <input name="weight" type="number" step="0.001" placeholder="e.g. 45.500">
+        </div>
+
+        <div class="form-group">
+          <label>Length (mm)</label>
+          <input name="length" type="number" step="0.001" placeholder="e.g. 1200.000">
+        </div>
+
+        <div class="form-group">
+          <label>Cut date</label>
+          <input name="cut_date" type="date">
+        </div>
+
+        <div class="form-group full">
+          <label>Notes</label>
+          <input name="notes" placeholder="Optional notes">
+        </div>
+
+      </div>
+      <button type="submit" class="btn-submit">Save Part</button>
+    </form>
+  </div>
+
+  <!-- Parts list -->
+  <div class="table-card">
+    <h2>Existing parts ({{ parts.count }})</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Part No.</th>
+          <th>Weight</th>
+          <th>Length</th>
+          <th>Cut Date</th>
+          <th>Jobs</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for part in parts %}
+        <tr>
+          <td><span class="badge">{{ part.part_no }}</span></td>
+          <td>{{ part.weight|default:"—" }} {% if part.weight %}kg{% endif %}</td>
+          <td>{{ part.length|default:"—" }} {% if part.length %}mm{% endif %}</td>
+          <td>{{ part.cut_date|date:"d M Y"|default:"—" }}</td>
+          <td>{{ part.jobs.count }}</td>
+          <td>
+            <a href="{% url 'create_job' part.pk %}" class="btn-job">
+              + New Job
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr class="empty-row">
+          <td colspan="6">No parts yet — add one above.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+</body>
+</html>
