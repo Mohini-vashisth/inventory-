@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+{% load dict_extras %}
+<h2>{{ job.job_no }}</h2>
+<p>Part: <strong>{{ job.part.part_no }}</strong> &nbsp;|&nbsp;
+   Product: <strong>{{ job.product_type.name }}</strong> &nbsp;|&nbsp;
+   Status: <strong>{{ job.get_status_display }}</strong></p>
+
+<table>
+  <thead>
+    <tr><th>Step</th><th>Current Status</th><th>Last Updated</th><th>Update</th></tr>
+  </thead>
+  <tbody>
+    {% for step in steps %}
+    {% with log=step_status|get_item:step.id %}
+    <tr>
+      <td>{{ step.order }}. {{ step.name }}</td>
+      <td>
+        {% if log %}
+          <span class="badge badge-{{ log.status }}">{{ log.get_status_display }}</span>
+        {% else %}—{% endif %}
+      </td>
+      <td>
+        {% if log %}{{ log.timestamp|date:"d M Y H:i" }} by {{ log.updated_by|default:"—" }}
+        {% else %}—{% endif %}
+      </td>
+      <td>
+        <form method="post" style="display:flex; gap:0.5rem; align-items:center;">
+          {% csrf_token %}
+          <input type="hidden" name="step_id" value="{{ step.id }}">
+          <select name="status">
+            <option value="pending">Pending</option>
+            <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
+            <option value="failed">Failed</option>
+          </select>
+          <input name="notes" placeholder="Notes (optional)" style="flex:1">
+          <button type="submit">Update</button>
+        </form>
+      </td>
+    </tr>
+    {% endwith %}
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
