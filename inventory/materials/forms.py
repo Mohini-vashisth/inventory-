@@ -4,4 +4,4 @@ from .models import Material
 class MaterialForm(forms.ModelForm):
     class Meta:
         model = Material
-        fields = '__all__'
+        exclude = ['coil_no']
