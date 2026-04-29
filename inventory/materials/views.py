@@ -1,5 +1,6 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login
+from django.db.models import Sum
 import qrcode
 import io
 import base64
@@ -24,7 +25,7 @@ def material_form(request):
     next_coil = (last_material.coil_no + 1) if last_material else 1
     formatted_coil = f"COIL{next_coil:04d}"
 
-    return render(request, "index.html", {"coil_no": formatted_coil, "form": form})
+    return render(request, "materials/material_form.html", {"coil_no": formatted_coil, "form": form})
 
 
 def coil_tag(request, pk):
@@ -56,9 +57,9 @@ def admin_login(request):
             login(request, user)
             return redirect("/admin/")
         else:
-            return render(request, "admin_login.html", {"error": "Invalid credentials"})
+            return render(request, "materials/admin_login.html", {"error": "Invalid credentials"})
 
-    return render(request, "admin_login.html")
+    return render(request, "materials/admin_login.html")
 
 
 # ── Coil parts ──────────────────────────────────────────────
@@ -66,23 +67,46 @@ def admin_login(request):
 def coil_parts(request, coil_pk):
     """List all parts cut from a coil + form to add a new part."""
     coil = get_object_or_404(Material, pk=coil_pk)
+    parts = coil.parts.all().order_by('created_at')
+
+    total_used = float(parts.aggregate(total=Sum('weight'))['total'] or 0)
+    coil_weight = float(coil.quantity or 0)
+    remaining = coil_weight - total_used
+    exhausted = coil_weight > 0 and remaining <= 0
 
     if request.method == 'POST':
-        suffix = request.POST.get('suffix', '').strip().upper()
-        CoilPart.objects.create(
-            coil=coil,
-            part_no=f"{coil.formatted_coil()}-{suffix}",
-            weight=request.POST.get('weight') or None,
-            length=request.POST.get('length') or None,
-            cut_date=request.POST.get('cut_date') or None,
-            notes=request.POST.get('notes', ''),
-        )
-        return redirect('coil_parts', coil_pk=coil.pk)
+        if exhausted:
+            return redirect('coil_parts', coil_pk=coil.pk)
 
-    parts = coil.parts.all().order_by('created_at')
+        suffix = request.POST.get('suffix', '').strip().upper()
+        new_weight = request.POST.get('weight') or None
+        error = None
+
+        if new_weight and float(new_weight) > remaining:
+            error = (
+                f"Part weight ({float(new_weight):.3f} kg) exceeds the remaining coil weight "
+                f"({remaining:.3f} kg). Reduce the weight or split into smaller parts."
+            )
+        else:
+            CoilPart.objects.create(
+                coil=coil,
+                part_no=f"{coil.formatted_coil()}-{suffix}",
+                weight=new_weight,
+                length=request.POST.get('length') or None,
+                cut_date=request.POST.get('cut_date') or None,
+                notes=request.POST.get('notes', ''),
+            )
+            return redirect('coil_parts', coil_pk=coil.pk)
+
+        return render(request, 'materials/coil_parts.html', {
+            'coil': coil, 'parts': parts,
+            'total_used': total_used, 'remaining': remaining,
+            'exhausted': exhausted, 'error': error,
+        })
+
     return render(request, 'materials/coil_parts.html', {
-        'coil': coil,
-        'parts': parts,
+        'coil': coil, 'parts': parts,
+        'total_used': total_used, 'remaining': remaining, 'exhausted': exhausted,
     })
 
 
