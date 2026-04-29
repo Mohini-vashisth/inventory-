@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.utils.html import format_html
-from django.db.models import Count, Q
+from django.urls import reverse
 from .models import Material, CoilPart, ProductType, ProcessStep, ProductionJob, StepLog
 
 
@@ -70,6 +70,11 @@ class ProductionJobAdmin(admin.ModelAdmin):
     inlines = [StepLogInline]
 
     # ── Custom columns ───────────────────────────────────────
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related(
+            'step_logs', 'product_type__steps'
+        )
+
     actions = ['mark_completed', 'mark_on_hold']
 
     def mark_completed(self, request, queryset):
@@ -81,31 +86,30 @@ class ProductionJobAdmin(admin.ModelAdmin):
     mark_on_hold.short_description = 'Mark selected jobs as on hold'
     def coil_link(self, obj):
         coil = obj.part.coil
-        return format_html(
-            '<a href="/admin/materials/material/{}/change/">{}</a>',
-            coil.pk,
-            coil.formatted_coil()
-        )
+        url = reverse('admin:materials_material_change', args=[coil.pk])
+        return format_html('<a href="{}">{}</a>', url, coil.formatted_coil())
     coil_link.short_description = 'Coil'
 
     def part_link(self, obj):
-        return format_html(
-            '<a href="/admin/materials/coilpart/{}/change/">{}</a>',
-            obj.part.pk,
-            obj.part.part_no
-        )
+        url = reverse('admin:materials_coilpart_change', args=[obj.part.pk])
+        return format_html('<a href="{}">{}</a>', url, obj.part.part_no)
     part_link.short_description = 'Part'
 
     def progress_bar(self, obj):
-        total_steps = obj.product_type.steps.count()
+        steps = list(obj.product_type.steps.all())  # uses prefetch
+        total_steps = len(steps)
         if total_steps == 0:
             return '—'
 
+        # Group prefetched logs by step, newest first
+        logs_by_step = {}
+        for log in sorted(obj.step_logs.all(), key=lambda l: l.timestamp, reverse=True):
+            logs_by_step.setdefault(log.step_id, log)
+
         completed = 0
         in_progress = 0
-
-        for step in obj.product_type.steps.all():
-            latest = obj.step_logs.filter(step=step).order_by('-timestamp').first()
+        for step in steps:
+            latest = logs_by_step.get(step.id)
             if latest:
                 if latest.status == 'completed':
                     completed += 1

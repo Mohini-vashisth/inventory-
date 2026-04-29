@@ -98,7 +98,7 @@
 
   <div class="cards">
 
-    <a href="/material-form/" class="card-link">
+    <a href="{% url 'material_form' %}" class="card-link">
       <div class="card">
         <div class="icon">📦</div>
         <h2>New Coil Entry</h2>
@@ -124,7 +124,7 @@
 
   </div>
 
-  <a href="/" class="back-link">← Back to home</a>
+  <a href="{% url 'home' %}" class="back-link">← Back to home</a>
 
 </div>
 
@@ -216,16 +216,19 @@
     document.getElementById(id).style.display = 'none';
   }
 
+  const coilPartsBase = "{% url 'coil_parts' coil_pk=0 %}";
+  const jobDetailBase = "{% url 'job_detail' pk=0 %}";
+
   function goToParts() {
     const val = document.getElementById('coil-select').value;
     if (!val) { alert('Please select a coil first.'); return; }
-    window.location.href = '/coil/' + val + '/parts/';
+    window.location.href = coilPartsBase.replace('/0/', '/' + val + '/');
   }
 
   function goToJob() {
     const val = document.getElementById('job-select').value;
     if (!val) { alert('Please select a job first.'); return; }
-    window.location.href = '/job/' + val + '/';
+    window.location.href = jobDetailBase.replace('/0/', '/' + val + '/');
   }
 
   // Close modal when clicking the dark backdrop
