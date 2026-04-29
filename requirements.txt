@@ -1,0 +1,8 @@
+asgiref==3.11.1
+pandas
+Django==4.2.30
+pillow==11.3.0
+qrcode==8.2
+sqlparse==0.5.5
+typing_extensions==4.15.0
+jazzmin

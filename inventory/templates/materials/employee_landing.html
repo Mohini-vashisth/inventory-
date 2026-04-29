@@ -136,25 +136,70 @@
     <h2 style="margin-bottom:1rem; font-size:1.1rem; color:#333;">
       Select a coil to cut a part from
     </h2>
-    <select id="coil-select" style="width:100%; padding:0.6rem;
-            border:1px solid #ddd; border-radius:8px; font-size:1rem;
-            margin-bottom:1.25rem;">
-      <option value="">— choose a coil —</option>
-      {% for coil in coils %}
-      <option value="{{ coil.coil_no }}">
-        {{ coil.formatted_coil }} — {{ coil.grade|default:"?" }} |
-        {{ coil.vendor|default:"?" }}
-      </option>
-      {% endfor %}
-    </select>
-    <div style="display:flex; gap:0.75rem;">
-      <button onclick="goToParts()"
-        style="flex:1; padding:0.7rem; background:#4e73df; color:white;
-               border:none; border-radius:8px; font-size:0.95rem; cursor:pointer;">
-        Continue
+
+    <!-- QR scanner section -->
+    <div id="scanner-section" style="display:none; margin-bottom:1rem;">
+      <video id="qr-video" playsinline
+        style="width:100%; border-radius:8px; background:#000;"></video>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.5rem;">
+        <p id="scan-status" style="color:#888; font-size:0.82rem; margin:0;">
+          Point camera at the QR code on the coil tag...
+        </p>
+        <span id="scan-countdown"
+          style="font-size:0.82rem; font-weight:700; color:#4e73df; min-width:24px; text-align:right;">
+          10
+        </span>
+      </div>
+      <button onclick="stopScanner(false)"
+        style="width:100%; margin-top:0.5rem; padding:0.6rem; background:#fee2e2;
+               color:#991b1b; border:none; border-radius:8px; font-size:0.9rem; cursor:pointer;">
+        Cancel Scan
       </button>
-      <button onclick="closeModal('coil-modal')"
-        style="flex:1; padding:0.7rem; background:#f3f4f6; color:#333;
+    </div>
+
+    <!-- Scan button -->
+    <button id="scan-btn" onclick="startScanner()"
+      style="width:100%; padding:0.65rem; background:#f3f4f6; color:#333;
+             border:1px solid #ddd; border-radius:8px; font-size:0.95rem;
+             cursor:pointer; margin-bottom:0.75rem;">
+      📷 Scan QR Code
+    </button>
+
+    <!-- Manual fallback — hidden until timeout -->
+    <div id="manual-section" style="display:none;">
+      <p style="text-align:center; color:#bbb; font-size:0.8rem; margin-bottom:0.75rem;">
+        — or search / select manually —
+      </p>
+      <input id="coil-search" type="text" placeholder="Search coil number, grade or vendor..."
+        style="width:100%; padding:0.6rem 0.75rem; border:1px solid #ddd;
+               border-radius:8px; font-size:0.9rem; margin-bottom:0.5rem; box-sizing:border-box;">
+      <select id="coil-select" size="4"
+        style="width:100%; border:1px solid #ddd; border-radius:8px;
+               font-size:0.9rem; margin-bottom:1.25rem; padding:0.25rem;">
+        {% for coil in coils %}
+        <option value="{{ coil.coil_no }}">
+          {{ coil.formatted_coil }} — {{ coil.grade|default:"?" }} | {{ coil.vendor|default:"?" }}
+        </option>
+        {% endfor %}
+      </select>
+      <div style="display:flex; gap:0.75rem;">
+        <button onclick="goToParts()"
+          style="flex:1; padding:0.7rem; background:#4e73df; color:white;
+                 border:none; border-radius:8px; font-size:0.95rem; cursor:pointer;">
+          Continue
+        </button>
+        <button onclick="closeCoilModal()"
+          style="flex:1; padding:0.7rem; background:#f3f4f6; color:#333;
+                 border:none; border-radius:8px; font-size:0.95rem; cursor:pointer;">
+          Cancel
+        </button>
+      </div>
+    </div>
+
+    <!-- Cancel button shown before timeout -->
+    <div id="scan-cancel-row" style="display:none; margin-top:0.75rem;">
+      <button onclick="closeCoilModal()"
+        style="width:100%; padding:0.7rem; background:#f3f4f6; color:#333;
                border:none; border-radius:8px; font-size:0.95rem; cursor:pointer;">
         Cancel
       </button>
@@ -196,6 +241,7 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <script>
   document.getElementById('new-part-btn').addEventListener('click', function(e) {
     e.preventDefault();
@@ -216,6 +262,12 @@
     document.getElementById(id).style.display = 'none';
   }
 
+  // Close coil modal and stop scanner if running
+  function closeCoilModal() {
+    stopScanner();
+    closeModal('coil-modal');
+  }
+
   const coilPartsBase = "{% url 'coil_parts' coil_pk=0 %}";
   const jobDetailBase = "{% url 'job_detail' pk=0 %}";
 
@@ -234,8 +286,98 @@
   // Close modal when clicking the dark backdrop
   document.querySelectorAll('[id$="-modal"]').forEach(function(modal) {
     modal.addEventListener('click', function(e) {
-      if (e.target === modal) closeModal(modal.id);
+      if (e.target === modal) {
+        if (modal.id === 'coil-modal') closeCoilModal();
+        else closeModal(modal.id);
+      }
     });
+  });
+
+  // ── QR Scanner ──────────────────────────────────────────────
+  let scannerStream = null;
+  let scannerTimer = null;
+  let countdownTimer = null;
+  const scanCanvas = document.createElement('canvas');
+  const scanCtx = scanCanvas.getContext('2d');
+
+  function startScanner() {
+    document.getElementById('scanner-section').style.display = 'block';
+    document.getElementById('scan-btn').style.display = 'none';
+    document.getElementById('scan-cancel-row').style.display = 'block';
+    document.getElementById('manual-section').style.display = 'none';
+    document.getElementById('scan-status').textContent = 'Point camera at the QR code on the coil tag...';
+
+    // Countdown
+    let secondsLeft = 10;
+    document.getElementById('scan-countdown').textContent = secondsLeft;
+    countdownTimer = setInterval(function() {
+      secondsLeft--;
+      document.getElementById('scan-countdown').textContent = secondsLeft;
+      if (secondsLeft <= 0) {
+        stopScanner(true); // true = timed out, show manual fallback
+      }
+    }, 1000);
+
+    const video = document.getElementById('qr-video');
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      .then(function(stream) {
+        scannerStream = stream;
+        video.srcObject = stream;
+        video.play();
+        scannerTimer = setInterval(function() {
+          if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+          scanCanvas.width = video.videoWidth;
+          scanCanvas.height = video.videoHeight;
+          scanCtx.drawImage(video, 0, 0, scanCanvas.width, scanCanvas.height);
+          const imageData = scanCtx.getImageData(0, 0, scanCanvas.width, scanCanvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height);
+          if (code) {
+            const match = code.data.match(/^COIL(\d+)$/);
+            if (match) {
+              stopScanner(false);
+              const coilNo = parseInt(match[1], 10);
+              window.location.href = coilPartsBase.replace('/0/', '/' + coilNo + '/');
+            } else {
+              document.getElementById('scan-status').textContent = 'QR not recognised — keep trying...';
+            }
+          }
+        }, 250);
+      })
+      .catch(function() {
+        stopScanner(true);
+        document.getElementById('scan-status').textContent = 'Camera access denied.';
+      });
+  }
+
+  // timedOut=true → reveal manual section; false → just stop cleanly
+  function stopScanner(timedOut) {
+    clearInterval(scannerTimer);
+    clearInterval(countdownTimer);
+    scannerTimer = null;
+    countdownTimer = null;
+    if (scannerStream) {
+      scannerStream.getTracks().forEach(function(t) { t.stop(); });
+      scannerStream = null;
+    }
+    document.getElementById('scanner-section').style.display = 'none';
+    document.getElementById('scan-cancel-row').style.display = 'none';
+
+    if (timedOut) {
+      document.getElementById('manual-section').style.display = 'block';
+      document.getElementById('coil-search').focus();
+    } else {
+      document.getElementById('scan-btn').style.display = 'block';
+    }
+  }
+
+  // Search filter for the coil dropdown
+  document.getElementById('coil-search').addEventListener('input', function() {
+    const query = this.value.toLowerCase();
+    const options = document.getElementById('coil-select').options;
+    for (let i = 0; i < options.length; i++) {
+      const text = options[i].text.toLowerCase();
+      options[i].style.display = text.includes(query) ? '' : 'none';
+    }
   });
 </script>
 
