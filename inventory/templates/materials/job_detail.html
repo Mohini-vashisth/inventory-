@@ -1,9 +1,9 @@
+{% load dict_extras %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>{{ job.job_no }}</title>
-  {% load dict_extras %}
+  <title>{{ job.job_no }} — Steps</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -14,7 +14,7 @@
       padding: 2rem;
     }
 
-    .page { max-width: 900px; margin: 0 auto; }
+    .page { max-width: 680px; margin: 0 auto; }
 
     .back-link {
       color: rgba(255,255,255,0.8);
@@ -25,92 +25,98 @@
     }
     .back-link:hover { color: white; }
 
-    h1 { color: white; font-size: 1.6rem; margin-bottom: 0.4rem; }
+    h1 { color: white; font-size: 1.5rem; margin-bottom: 0.3rem; }
 
     .job-meta {
       color: rgba(255,255,255,0.75);
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       margin-bottom: 2rem;
     }
 
-    .card {
+    /* ── All-done banner ── */
+    .done-banner {
+      background: #dcfce7;
+      border: 1px solid #86efac;
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      text-align: center;
+      color: #166534;
+      font-weight: 700;
+      font-size: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    /* ── Step cards ── */
+    .step-card {
       background: white;
-      border-radius: 16px;
-      padding: 1.75rem;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-    }
-
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.9rem;
-    }
-
-    thead th {
-      text-align: left;
-      padding: 0.6rem 0.75rem;
-      border-bottom: 2px solid #e5e7eb;
-      color: #555;
-      font-size: 0.78rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
-
-    tbody td {
-      padding: 0.75rem;
-      border-bottom: 1px solid #f3f4f6;
-      color: #333;
-      vertical-align: middle;
-    }
-
-    tbody tr:last-child td { border-bottom: none; }
-    tbody tr:hover { background: #f9fafb; }
-
-    .badge {
-      display: inline-block;
-      padding: 3px 10px;
-      border-radius: 999px;
-      font-size: 0.78rem;
-      font-weight: 600;
-    }
-    .badge-pending     { background: #fef3c7; color: #92400e; }
-    .badge-in_progress { background: #dbeafe; color: #1e40af; }
-    .badge-completed   { background: #dcfce7; color: #166534; }
-    .badge-failed      { background: #fee2e2; color: #991b1b; }
-
-    .update-form {
+      border-radius: 14px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
       display: flex;
-      gap: 0.5rem;
       align-items: center;
+      gap: 1rem;
     }
 
-    .update-form select,
-    .update-form input[type="text"] {
-      padding: 0.4rem 0.6rem;
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      font-size: 0.85rem;
-      color: #333;
+    .step-number {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.95rem;
+      flex-shrink: 0;
+    }
+    .step-number.pending     { background: #f3f4f6; color: #6b7280; }
+    .step-number.in_progress { background: #dbeafe; color: #1e40af; }
+    .step-number.completed   { background: #dcfce7; color: #166534; }
+
+    .step-info { flex: 1; }
+
+    .step-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #111;
+      margin-bottom: 0.2rem;
     }
 
-    .update-form select:focus,
-    .update-form input[type="text"]:focus {
-      outline: none;
-      border-color: #4e73df;
+    .step-time {
+      font-size: 0.78rem;
+      color: #888;
     }
 
-    .btn-update {
+    .step-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+
+    .btn-start {
+      padding: 0.45rem 1rem;
+      background: #dbeafe;
+      color: #1e40af;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-start:hover { background: #bfdbfe; }
+
+    .btn-complete {
+      padding: 0.45rem 1rem;
       background: #4e73df;
       color: white;
       border: none;
-      padding: 0.4rem 0.9rem;
-      border-radius: 6px;
-      font-size: 0.85rem;
+      border-radius: 8px;
+      font-size: 0.82rem;
       font-weight: 600;
       cursor: pointer;
-      transition: opacity 0.15s;
     }
-    .btn-update:hover { opacity: 0.85; }
+    .btn-complete:hover { background: #3b5fc0; }
+
+    .checkmark {
+      font-size: 1.3rem;
+      color: #16a34a;
+    }
   </style>
 </head>
 <body>
@@ -118,58 +124,73 @@
 
   <a href="{% url 'employee' %}" class="back-link">← Back to employee portal</a>
 
-  <h1>{{ job.job_no }}</h1>
+  <h1>{{ job.part.part_no }}</h1>
   <p class="job-meta">
-    Part: <strong>{{ job.part.part_no }}</strong> &nbsp;|&nbsp;
     Product: <strong>{{ job.product_type.name }}</strong> &nbsp;|&nbsp;
-    Status: <strong>{{ job.get_status_display }}</strong>
+    Coil: <strong>{{ job.part.coil.formatted_coil }}</strong>
   </p>
 
-  <div class="card">
-    <table>
-      <thead>
-        <tr>
-          <th>Step</th>
-          <th>Current Status</th>
-          <th>Last Updated</th>
-          <th>Update</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for step in steps %}
-        {% with log=step_status|get_item:step.id %}
-        <tr>
-          <td>{{ step.order }}. {{ step.name }}</td>
-          <td>
-            {% if log %}
-              <span class="badge badge-{{ log.status }}">{{ log.get_status_display }}</span>
-            {% else %}—{% endif %}
-          </td>
-          <td>
-            {% if log %}
-              {{ log.timestamp|date:"d M Y H:i" }} by {{ log.updated_by|default:"—" }}
-            {% else %}—{% endif %}
-          </td>
-          <td>
-            <form method="post" class="update-form">
-              {% csrf_token %}
-              <input type="hidden" name="step_id" value="{{ step.id }}">
-              <select name="status">
-                <option value="pending">Pending</option>
-                <option value="in_progress">In Progress</option>
-                <option value="completed">Completed</option>
-                <option value="failed">Failed</option>
-              </select>
-              <input type="text" name="notes" placeholder="Notes (optional)" style="flex:1">
-              <button type="submit" class="btn-update">Update</button>
-            </form>
-          </td>
-        </tr>
-        {% endwith %}
-        {% endfor %}
-      </tbody>
-    </table>
+  {% if job.status == 'completed' %}
+  <div class="done-banner">✅ All steps completed — this job is done!</div>
+  {% endif %}
+
+  {% for step in steps %}
+  {% with log=logs_by_step|get_item:step.id %}
+  <div class="step-card">
+
+    <div class="step-number {% if log %}{{ log.status }}{% else %}pending{% endif %}">
+      {{ step.order }}
+    </div>
+
+    <div class="step-info">
+      <div class="step-name">{{ step.name }}</div>
+      <div class="step-time">
+        {% if log %}
+          {% if log.status == 'completed' %}
+            Completed {{ log.timestamp|date:"d M Y" }} at {{ log.timestamp|date:"H:i" }}
+            {% if log.updated_by %} by {{ log.updated_by }}{% endif %}
+          {% elif log.status == 'in_progress' %}
+            Started {{ log.timestamp|date:"d M Y" }} at {{ log.timestamp|date:"H:i" }}
+          {% endif %}
+        {% else %}
+          Not started
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="step-actions">
+      {% if log and log.status == 'completed' %}
+        <span class="checkmark">✓</span>
+      {% elif step.id in unlocked_step_ids %}
+        {% if log and log.status == 'in_progress' %}
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="step_id" value="{{ step.id }}">
+            <input type="hidden" name="action" value="complete">
+            <button type="submit" class="btn-complete">Mark Complete</button>
+          </form>
+        {% else %}
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="step_id" value="{{ step.id }}">
+            <input type="hidden" name="action" value="start">
+            <button type="submit" class="btn-start">Start</button>
+          </form>
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="step_id" value="{{ step.id }}">
+            <input type="hidden" name="action" value="complete">
+            <button type="submit" class="btn-complete">Mark Complete</button>
+          </form>
+        {% endif %}
+      {% else %}
+        <span style="font-size:0.78rem; color:#bbb;">⏳ Complete previous step first</span>
+      {% endif %}
+    </div>
+
   </div>
+  {% endwith %}
+  {% endfor %}
 
 </div>
 </body>
