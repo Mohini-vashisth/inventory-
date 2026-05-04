@@ -67,7 +67,8 @@ def admin_login(request):
 def coil_parts(request, coil_pk):
     """List all parts cut from a coil + form to add a new part."""
     coil = get_object_or_404(Material, pk=coil_pk)
-    parts = coil.parts.all().order_by('created_at')
+    parts = coil.parts.prefetch_related('jobs__product_type').order_by('created_at')
+    product_types = ProductType.objects.all()
 
     total_used = float(parts.aggregate(total=Sum('weight'))['total'] or 0)
     coil_weight = float(coil.quantity or 0)
@@ -80,15 +81,20 @@ def coil_parts(request, coil_pk):
 
         suffix = request.POST.get('suffix', '').strip().upper()
         new_weight = request.POST.get('weight') or None
+        product_type_id = request.POST.get('product_type')
         error = None
 
-        if new_weight and float(new_weight) > remaining:
+        if not suffix:
+            error = "Part suffix cannot be empty."
+        elif CoilPart.objects.filter(part_no=f"{coil.formatted_coil()}-{suffix}").exists():
+            error = f"A part with suffix '{suffix}' already exists for this coil."
+        elif new_weight and float(new_weight) > remaining:
             error = (
                 f"Part weight ({float(new_weight):.3f} kg) exceeds the remaining coil weight "
                 f"({remaining:.3f} kg). Reduce the weight or split into smaller parts."
             )
         else:
-            CoilPart.objects.create(
+            part = CoilPart.objects.create(
                 coil=coil,
                 part_no=f"{coil.formatted_coil()}-{suffix}",
                 weight=new_weight,
@@ -96,96 +102,77 @@ def coil_parts(request, coil_pk):
                 cut_date=request.POST.get('cut_date') or None,
                 notes=request.POST.get('notes', ''),
             )
+            pt = get_object_or_404(ProductType, pk=product_type_id)
+            job = ProductionJob.objects.create(
+                part=part, product_type=pt, job_no='PENDING',
+            )
+            job.job_no = f"JOB-{job.pk:04d}"
+            job.save(update_fields=['job_no'])
+            for step in pt.steps.all():
+                StepLog.objects.create(
+                    job=job, step=step, status='pending',
+                    updated_by=request.user if request.user.is_authenticated else None,
+                )
             return redirect('coil_parts', coil_pk=coil.pk)
 
         return render(request, 'materials/coil_parts.html', {
-            'coil': coil, 'parts': parts,
+            'coil': coil, 'parts': parts, 'product_types': product_types,
             'total_used': total_used, 'remaining': remaining,
             'exhausted': exhausted, 'error': error,
         })
 
     return render(request, 'materials/coil_parts.html', {
-        'coil': coil, 'parts': parts,
+        'coil': coil, 'parts': parts, 'product_types': product_types,
         'total_used': total_used, 'remaining': remaining, 'exhausted': exhausted,
     })
 
 
 # ── Production jobs ──────────────────────────────────────────
 
-def create_job(request, part_pk):
-    """Create a production job for a coil part."""
-    part = get_object_or_404(CoilPart, pk=part_pk)
-    product_types = ProductType.objects.all()
-
-    if request.method == 'POST':
-        pt = get_object_or_404(ProductType, pk=request.POST['product_type'])
-
-        job = ProductionJob.objects.create(
-            part=part,
-            product_type=pt,
-            job_no='PENDING',
-            notes=request.POST.get('notes', ''),
-        )
-        job.job_no = f"JOB-{job.pk:04d}"
-        job.save(update_fields=['job_no'])
-
-        # Auto-create a StepLog row (pending) for every step in this product type
-        for step in pt.steps.all():
-            StepLog.objects.create(
-                job=job,
-                step=step,
-                status='pending',
-                updated_by=request.user if request.user.is_authenticated else None,
-            )
-
-        return redirect('job_detail', pk=job.pk)
-
-    return render(request, 'materials/create_job.html', {
-        'part': part,
-        'product_types': product_types,
-    })
-
-
 def job_detail(request, pk):
-    """Show all steps for a job and allow status updates."""
-    job = get_object_or_404(ProductionJob, pk=pk)
+    """Step-ticking view for a production job."""
+    job = get_object_or_404(
+        ProductionJob.objects.select_related('part__coil', 'product_type')
+                             .prefetch_related('step_logs', 'product_type__steps'),
+        pk=pk,
+    )
+    steps = list(job.product_type.steps.all())
 
-    # Get latest log per step (one row per step)
-    steps = job.product_type.steps.all()
-    step_status = {}
+    # Build latest log per step from prefetched data
+    logs_by_step = {}
+    for log in sorted(job.step_logs.all(), key=lambda l: l.timestamp, reverse=True):
+        logs_by_step.setdefault(log.step_id, log)
+
+    # A step is unlocked only if all steps before it are completed
+    unlocked_step_ids = set()
     for step in steps:
-        latest = job.step_logs.filter(step=step).order_by('-timestamp').first()
-        step_status[step.id] = latest
+        prev_steps = [s for s in steps if s.order < step.order]
+        if all(logs_by_step.get(s.id) and logs_by_step[s.id].status == 'completed'
+               for s in prev_steps):
+            unlocked_step_ids.add(step.id)
 
     if request.method == 'POST':
         step_id = request.POST.get('step_id')
-        new_status = request.POST.get('status')
-        notes = request.POST.get('notes', '')
-
-        valid_statuses = [s for s, _ in StepLog.STATUS_CHOICES]
-        if new_status not in valid_statuses:
-            return redirect('job_detail', pk=job.pk)
-
+        action = request.POST.get('action')
+        new_status = 'completed' if action == 'complete' else 'in_progress'
         step = get_object_or_404(ProcessStep, pk=step_id)
 
+        if step.id not in unlocked_step_ids:
+            return redirect('job_detail', pk=job.pk)
+
         StepLog.objects.create(
-            job=job,
-            step=step,
-            status=new_status,
+            job=job, step=step, status=new_status,
             updated_by=request.user if request.user.is_authenticated else None,
-            notes=notes,
         )
 
-        # Update overall job status automatically
-        all_logs = {s.id: job.step_logs.filter(step=s).order_by('-timestamp').first()
-                    for s in steps}
-        statuses = [l.status for l in all_logs.values() if l]
+        # Refresh logs to recalculate job status
+        all_latest = {s.id: job.step_logs.filter(step=s).order_by('-timestamp').first()
+                      for s in steps}
+        statuses = [l.status for l in all_latest.values() if l]
         if all(s == 'completed' for s in statuses):
             job.status = 'completed'
         elif any(s == 'in_progress' for s in statuses):
             job.status = 'in_progress'
-        elif any(s == 'failed' for s in statuses):
-            job.status = 'on_hold'
         job.save()
 
         return redirect('job_detail', pk=job.pk)
@@ -193,17 +180,18 @@ def job_detail(request, pk):
     return render(request, 'materials/job_detail.html', {
         'job': job,
         'steps': steps,
-        'step_status': step_status,
+        'logs_by_step': logs_by_step,
+        'unlocked_step_ids': unlocked_step_ids,
     })
 
 
 def employee_landing(request):
     coils = Material.objects.order_by('-coil_no')
-    active_jobs = ProductionJob.objects.exclude(
-        status='completed'
-    ).select_related('part__coil', 'product_type').order_by('-created_at')
+    all_jobs = ProductionJob.objects.select_related(
+        'part__coil', 'product_type'
+    ).order_by('-created_at')
 
     return render(request, 'materials/employee_landing.html', {
         'coils': coils,
-        'active_jobs': active_jobs,
+        'active_jobs': all_jobs,
     })

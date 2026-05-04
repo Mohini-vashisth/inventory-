@@ -207,22 +207,21 @@
   </div>
 </div>
 
-<!-- Job picker modal for "Update Progress" -->
+<!-- Part picker modal for "Update Progress" -->
 <div id="job-modal" style="display:none; position:fixed; inset:0;
      background:rgba(0,0,0,0.5); justify-content:center; align-items:center;">
   <div style="background:white; border-radius:16px; padding:2rem;
               width:90%; max-width:400px;">
     <h2 style="margin-bottom:1rem; font-size:1.1rem; color:#333;">
-      Select a job to update
+      Select a part to update progress
     </h2>
     <select id="job-select" style="width:100%; padding:0.6rem;
             border:1px solid #ddd; border-radius:8px; font-size:1rem;
             margin-bottom:1.25rem;">
-      <option value="">— choose a job —</option>
+      <option value="">— choose a part —</option>
       {% for job in active_jobs %}
       <option value="{{ job.pk }}">
-        {{ job.job_no }} — {{ job.part.part_no }} |
-        {{ job.product_type.name }} | {{ job.get_status_display }}
+        {% if job.status == 'completed' %}✓ {% endif %}{{ job.part.part_no }} — {{ job.product_type.name }} | {{ job.get_status_display }}
       </option>
       {% endfor %}
     </select>

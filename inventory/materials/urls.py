@@ -8,6 +8,5 @@ urlpatterns = [
     path("employee/", views.employee_landing, name="employee"),  # ← changed this
     path('coil/<int:pk>/tag/', views.coil_tag, name='coil_tag'),
     path('coil/<int:coil_pk>/parts/', views.coil_parts, name='coil_parts'),
-    path('part/<int:part_pk>/new-job/', views.create_job, name='create_job'),
     path('job/<int:pk>/', views.job_detail, name='job_detail'),
 ]

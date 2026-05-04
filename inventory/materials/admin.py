@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
+from django.db.models import Sum
 from .models import Material, CoilPart, ProductType, ProcessStep, ProductionJob, StepLog
 
 
@@ -200,4 +201,35 @@ class StepLogAdmin(admin.ModelAdmin):
     status_badge.short_description = 'Status'
 
 
-admin.site.register(Material)
+@admin.register(Material)
+class MaterialAdmin(admin.ModelAdmin):
+    list_display = [
+        'formatted_coil', 'date', 'grade', 'size',
+        'company', 'vendor', 'quantity', 'heat_no',
+        'parts_count', 'weight_remaining',
+    ]
+    list_filter   = ['grade', 'size', 'company']
+    search_fields = ['coil_no', 'heat_no', 'vendor', 'company']
+    ordering = ['-coil_no']
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).annotate(
+            weight_used=Sum('parts__weight'),
+            parts_total=Sum('parts__weight', distinct=False),
+        ).prefetch_related('parts')
+
+    def parts_count(self, obj):
+        return obj.parts.count()
+    parts_count.short_description = 'Parts'
+
+    def weight_remaining(self, obj):
+        if not obj.quantity:
+            return '—'
+        used = float(obj.weight_used or 0)
+        remaining = float(obj.quantity) - used
+        color = '#dc2626' if remaining <= 0 else '#166534'
+        return format_html(
+            '<span style="color:{}; font-weight:600;">{} kg</span>',
+            color, f'{remaining:.1f}',
+        )
+    weight_remaining.short_description = 'Remaining'
