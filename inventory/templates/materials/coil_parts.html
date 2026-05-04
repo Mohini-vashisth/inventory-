@@ -267,6 +267,17 @@
         </div>
 
         <div class="form-group full">
+          <label>Product Type</label>
+          <select name="product_type" required style="padding:0.55rem 0.75rem;
+            border:1px solid #ddd; border-radius:8px; font-size:0.95rem; color:#333;">
+            <option value="">— select final product —</option>
+            {% for pt in product_types %}
+            <option value="{{ pt.pk }}">{{ pt.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-group full">
           <label>Notes</label>
           <input name="notes" placeholder="Optional notes">
         </div>
@@ -286,24 +297,28 @@
           <th>Weight</th>
           <th>Length</th>
           <th>Cut Date</th>
-          <th>Jobs</th>
-          <th>Action</th>
+          <th>Product</th>
+          <th>Progress</th>
         </tr>
       </thead>
       <tbody>
         {% for part in parts %}
+        {% with job=part.jobs.first %}
         <tr>
           <td><span class="badge">{{ part.part_no }}</span></td>
           <td>{{ part.weight|default:"—" }} {% if part.weight %}kg{% endif %}</td>
           <td>{{ part.length|default:"—" }} {% if part.length %}mm{% endif %}</td>
           <td>{{ part.cut_date|date:"d M Y"|default:"—" }}</td>
-          <td>{{ part.jobs.count }}</td>
+          <td>{% if job %}{{ job.product_type.name }}{% else %}—{% endif %}</td>
           <td>
-            <a href="{% url 'create_job' part.pk %}" class="btn-job">
-              + New Job
+            {% if job %}
+            <a href="{% url 'job_detail' job.pk %}" class="btn-job">
+              View Steps
             </a>
+            {% else %}—{% endif %}
           </td>
         </tr>
+        {% endwith %}
         {% empty %}
         <tr class="empty-row">
           <td colspan="6">No parts yet — add one above.</td>
