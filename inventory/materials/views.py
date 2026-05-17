@@ -1,10 +1,15 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login
+from django.contrib import messages
+from django.core.mail import send_mail
+from django.conf import settings
+from django.urls import reverse
 from django.db.models import Sum
+from django.http import JsonResponse
 import qrcode
 import io
 import base64
-from .models import Material, CoilPart, ProductType, ProcessStep, ProductionJob, StepLog
+from .models import Material, CoilPart, ProductType, ProcessStep, ProductionJob, StepLog, Customer, Order
 from .forms import MaterialForm
 
 
@@ -195,3 +200,193 @@ def employee_landing(request):
         'coils': coils,
         'active_jobs': all_jobs,
     })
+
+
+# ── Orders ───────────────────────────────────────────────────
+
+def order_dashboard(request):
+    if not request.user.is_authenticated or not request.user.is_staff:
+        return redirect('home')
+
+    orders = Order.objects.select_related('customer').order_by('-created_at')
+    customers = Customer.objects.order_by('name')
+    error = None
+
+    if request.method == 'POST':
+        customer_name = request.POST.get('name', '').strip()
+        quantity      = request.POST.get('quantity', '').strip()
+
+        if not customer_name:
+            error = "Company name is required."
+        elif not quantity:
+            error = "Quantity is required."
+        else:
+            customer, _ = Customer.objects.get_or_create(name=customer_name)
+            # Update email/phone if provided
+            email = request.POST.get('email', '').strip()
+            phone = request.POST.get('phone', '').strip()
+            if email or phone:
+                if email: customer.email = email
+                if phone: customer.phone = phone
+                customer.save(update_fields=['email', 'phone'])
+
+            Order.objects.create(
+                customer=customer,
+                grade=request.POST.get('grade', ''),
+                mill_make=request.POST.get('mill_make', ''),
+                drawing_dimensions=request.POST.get('drawing_dimensions', ''),
+                mechanical_properties=request.POST.get('mechanical_properties', ''),
+                processes=request.POST.get('processes', ''),
+                end_usage=request.POST.get('end_usage', ''),
+                delivery_form=request.POST.get('delivery_form', ''),
+                quantity=quantity,
+                frequency=request.POST.get('frequency', ''),
+                delivery_date=request.POST.get('delivery_date') or None,
+                notes=request.POST.get('notes', ''),
+                status='confirmed',
+            )
+            return redirect('order_dashboard')
+
+    return render(request, 'materials/order_dashboard.html', {
+        'orders': orders,
+        'customers': customers,
+        'error': error,
+        'post': request.POST if error else {},
+    })
+
+
+def customer_autocomplete(request):
+    if not request.user.is_authenticated or not request.user.is_staff:
+        return JsonResponse([], safe=False)
+    q = request.GET.get('q', '').strip()
+    if not q:
+        return JsonResponse([], safe=False)
+    results = list(
+        Customer.objects.filter(name__icontains=q)
+        .values('name', 'email', 'phone', 'quote_token')[:8]
+    )
+    for r in results:
+        r['quote_token'] = str(r['quote_token'])
+    return JsonResponse(results, safe=False)
+
+
+def order_confirm(request, pk):
+    if not request.user.is_staff:
+        return redirect('home')
+    order = get_object_or_404(Order, pk=pk)
+    order.status = 'confirmed'
+    order.save(update_fields=['status'])
+    return redirect('order_dashboard')
+
+
+def order_reject(request, pk):
+    if not request.user.is_staff:
+        return redirect('home')
+    order = get_object_or_404(Order, pk=pk)
+    order.status = 'cancelled'
+    order.save(update_fields=['status'])
+    return redirect('order_dashboard')
+
+
+def quote_form(request, token):
+    customer = get_object_or_404(Customer, quote_token=token)
+    error = None
+
+    if request.method == 'POST':
+        quantity = request.POST.get('quantity', '').strip()
+        if not quantity:
+            error = "Quantity is required."
+        else:
+            Order.objects.create(
+                customer=customer,
+                grade=request.POST.get('grade', ''),
+                mill_make=request.POST.get('mill_make', ''),
+                drawing_dimensions=request.POST.get('drawing_dimensions', ''),
+                mechanical_properties=request.POST.get('mechanical_properties', ''),
+                processes=request.POST.get('processes', ''),
+                end_usage=request.POST.get('end_usage', ''),
+                delivery_form=request.POST.get('delivery_form', ''),
+                quantity=quantity,
+                frequency=request.POST.get('frequency', ''),
+                delivery_date=request.POST.get('delivery_date') or None,
+                notes=request.POST.get('notes', ''),
+                status='pending',
+            )
+            return render(request, 'materials/quote_submitted.html', {'customer': customer})
+
+    return render(request, 'materials/quote_form.html', {
+        'customer': customer,
+        'error': error,
+        'post': request.POST if error else {},
+    })
+
+
+def send_quote_email(request, pk):
+    if not request.user.is_staff:
+        return redirect('home')
+    if request.method != 'POST':
+        return redirect('order_dashboard')
+
+    customer = get_object_or_404(Customer, pk=pk)
+
+    if not customer.email:
+        messages.error(request, f"No email address on file for {customer.name}.")
+        return redirect('order_dashboard')
+
+    _dispatch_quote_email(request, customer)
+    return redirect('order_dashboard')
+
+
+def quick_send_quote(request):
+    """Create/update a customer from name+email+phone and immediately send the quote form link."""
+    if not request.user.is_staff:
+        return redirect('home')
+    if request.method != 'POST':
+        return redirect('order_dashboard')
+
+    name  = request.POST.get('name', '').strip()
+    email = request.POST.get('email', '').strip()
+    phone = request.POST.get('phone', '').strip()
+
+    if not name:
+        messages.error(request, "Company name is required.")
+        return redirect('order_dashboard')
+    if not email:
+        messages.error(request, "Email address is required to send the form.")
+        return redirect('order_dashboard')
+
+    customer, _ = Customer.objects.get_or_create(name=name)
+    customer.email = email
+    if phone:
+        customer.phone = phone
+    customer.save(update_fields=['email', 'phone'])
+
+    _dispatch_quote_email(request, customer)
+    return redirect('order_dashboard')
+
+
+def _dispatch_quote_email(request, customer):
+    """Send the quote form link to customer.email. Adds a Django message for success/failure."""
+    if not settings.EMAIL_HOST_USER:
+        messages.error(request, "Email is not configured — set EMAIL_HOST, EMAIL_HOST_USER, and EMAIL_HOST_PASSWORD in your .env file.")
+        return
+
+    quote_url = request.build_absolute_uri(
+        reverse('quote_form', kwargs={'token': customer.quote_token})
+    )
+    try:
+        send_mail(
+            subject="Quotation Request Form",
+            message=(
+                f"Dear {customer.name},\n\n"
+                f"Please fill in your quotation requirements using the link below:\n\n"
+                f"{quote_url}\n\n"
+                f"This link is unique to your company and can be used for future requests as well.\n\n"
+                f"Regards"
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[customer.email],
+        )
+        messages.success(request, f"Quote form sent to {customer.email}.")
+    except Exception as e:
+        messages.error(request, f"Failed to send email: {e}")
