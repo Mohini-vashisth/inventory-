@@ -1,3 +1,4 @@
+import uuid
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -102,3 +103,62 @@ class StepLog(models.Model):
 
     def __str__(self):
         return f"{self.job.job_no} | {self.step.name} | {self.status}"
+
+
+class Customer(models.Model):
+    name        = models.CharField(max_length=100, unique=True)
+    email       = models.EmailField(blank=True)
+    phone       = models.CharField(max_length=20, blank=True)
+    quote_token = models.UUIDField(default=uuid.uuid4, unique=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Order(models.Model):
+    STATUS_CHOICES = [
+        ('pending',       'Pending'),
+        ('confirmed',     'Confirmed'),
+        ('in_production', 'In Production'),
+        ('completed',     'Completed'),
+        ('cancelled',     'Cancelled'),
+    ]
+    DELIVERY_FORM_CHOICES = [
+        ('coil', 'Coil'),
+        ('bar',  'Bar'),
+    ]
+    FREQUENCY_CHOICES = [
+        ('one_time',   'One Time'),
+        ('monthly',    'Monthly'),
+        ('quarterly',  'Quarterly'),
+        ('as_required','As Required'),
+    ]
+
+    customer              = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='orders')
+    # 1. Drawing / dimensions
+    drawing_dimensions    = models.TextField(blank=True, verbose_name="Drawing / Dimensions")
+    # 2. Grade
+    grade                 = models.CharField(max_length=100, blank=True, verbose_name="Grade of Material")
+    # 3. Mill make
+    mill_make             = models.CharField(max_length=100, blank=True, verbose_name="Specific Mill Make")
+    # 4. Mechanical properties
+    mechanical_properties = models.TextField(blank=True, verbose_name="Mechanical Properties")
+    # 5. Processes
+    processes             = models.TextField(blank=True, verbose_name="Processes (drilling, tapping, etc.)")
+    # 6. End usage
+    end_usage             = models.TextField(blank=True, verbose_name="End Usage / Application")
+    # 7. Delivery form
+    delivery_form         = models.CharField(max_length=10, choices=DELIVERY_FORM_CHOICES, blank=True, verbose_name="Delivery Form")
+    # 8. Quantity
+    quantity              = models.DecimalField(max_digits=10, decimal_places=3, verbose_name="Required Quantity (kg)")
+    # 9. Frequency
+    frequency             = models.CharField(max_length=20, choices=FREQUENCY_CHOICES, blank=True, verbose_name="Frequency")
+
+    delivery_date = models.DateField(null=True, blank=True)
+    notes         = models.TextField(blank=True)
+    status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"ORD-{self.pk:04d} | {self.customer.name}"

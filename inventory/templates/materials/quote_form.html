@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Quote Request — {{ customer.name }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(135deg, #4e73df, #1cc88a);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 2rem 1rem;
+    }
+
+    .card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      width: 100%;
+      max-width: 680px;
+      overflow: hidden;
+    }
+
+    .card-head {
+      background: #4e73df;
+      color: white;
+      padding: 1.5rem 2rem;
+    }
+    .card-head h1 { font-size: 1.2rem; margin-bottom: 0.25rem; }
+    .card-head p  { font-size: 0.88rem; opacity: 0.8; }
+
+    .card-body { padding: 1.75rem 2rem; }
+
+    .section-label {
+      font-size: 0.7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      color: #4e73df; margin: 1.25rem 0 0.6rem;
+      padding-bottom: 0.3rem; border-bottom: 1px solid #e8ecff;
+    }
+    .section-label:first-child { margin-top: 0; }
+
+    .form-row { display: grid; gap: 0.75rem; margin-bottom: 0.75rem; }
+    .cols-2 { grid-template-columns: 1fr 1fr; }
+    .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+
+    .form-group { display: flex; flex-direction: column; }
+    label {
+      font-size: 0.72rem; color: #888; margin-bottom: 0.3rem;
+      font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    input, select, textarea {
+      padding: 0.55rem 0.75rem; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 0.9rem; width: 100%;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #4e73df; }
+    textarea { resize: vertical; min-height: 70px; }
+
+    .error-msg {
+      background: #fee2e2; color: #991b1b;
+      padding: 0.6rem 0.9rem; border-radius: 8px;
+      font-size: 0.87rem; margin-bottom: 1rem;
+    }
+
+    .submit-row { display: flex; justify-content: flex-end; margin-top: 1.25rem; }
+    .btn-primary {
+      padding: 0.7rem 2rem; background: #4e73df; color: white;
+      border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;
+    }
+    .btn-primary:hover { background: #3a5ec0; }
+
+    @media (max-width: 520px) {
+      .cols-2, .cols-3 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <div class="card-head">
+    <h1>Quotation Request</h1>
+    <p>{{ customer.name }} — please fill in your requirements below</p>
+  </div>
+  <div class="card-body">
+    {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+    <form method="post">
+      {% csrf_token %}
+
+      <div class="section-label">Material Requirements</div>
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label>Grade of Material</label>
+          <input type="text" name="grade" placeholder="e.g. EN8, SS304, 42CrMo4"
+                 value="{{ post.grade|default:'' }}">
+        </div>
+        <div class="form-group">
+          <label>Specific Mill Make</label>
+          <input type="text" name="mill_make" placeholder="e.g. SAIL, Tata, Any"
+                 value="{{ post.mill_make|default:'' }}">
+        </div>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label>Drawing / Dimensions</label>
+          <textarea name="drawing_dimensions"
+                    placeholder="Describe dimensions or reference a drawing...">{{ post.drawing_dimensions|default:'' }}</textarea>
+        </div>
+        <div class="form-group">
+          <label>Mechanical Properties</label>
+          <textarea name="mechanical_properties"
+                    placeholder="e.g. Tensile: 700 MPa, Hardness: 200 HB">{{ post.mechanical_properties|default:'' }}</textarea>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Processes Required</label>
+          <input type="text" name="processes"
+                 placeholder="e.g. Drilling, Tapping, Machining, Heat treatment"
+                 value="{{ post.processes|default:'' }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>End Usage / Application</label>
+          <input type="text" name="end_usage"
+                 placeholder="e.g. Automotive axle, Gear shaft, Structural component"
+                 value="{{ post.end_usage|default:'' }}">
+        </div>
+      </div>
+
+      <div class="section-label">Quotation Details</div>
+      <div class="form-row cols-3">
+        <div class="form-group">
+          <label>Required Quantity (kg) *</label>
+          <input type="number" name="quantity" step="0.001" min="0" placeholder="0.000"
+                 value="{{ post.quantity|default:'' }}">
+        </div>
+        <div class="form-group">
+          <label>Delivery Form</label>
+          <select name="delivery_form">
+            <option value="">— select —</option>
+            <option value="coil" {% if post.delivery_form == 'coil' %}selected{% endif %}>Coil</option>
+            <option value="bar"  {% if post.delivery_form == 'bar'  %}selected{% endif %}>Bar</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Frequency</label>
+          <select name="frequency">
+            <option value="">— select —</option>
+            <option value="one_time"    {% if post.frequency == 'one_time'    %}selected{% endif %}>One Time</option>
+            <option value="monthly"     {% if post.frequency == 'monthly'     %}selected{% endif %}>Monthly</option>
+            <option value="quarterly"   {% if post.frequency == 'quarterly'   %}selected{% endif %}>Quarterly</option>
+            <option value="as_required" {% if post.frequency == 'as_required' %}selected{% endif %}>As Required</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label>Expected Delivery Date</label>
+          <input type="date" name="delivery_date" value="{{ post.delivery_date|default:'' }}">
+        </div>
+        <div class="form-group">
+          <label>Additional Notes</label>
+          <input type="text" name="notes" placeholder="Any other requirements"
+                 value="{{ post.notes|default:'' }}">
+        </div>
+      </div>
+
+      <div class="submit-row">
+        <button type="submit" class="btn-primary">Submit Request →</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+</body>
+</html>

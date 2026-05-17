@@ -9,4 +9,11 @@ urlpatterns = [
     path('coil/<int:pk>/tag/', views.coil_tag, name='coil_tag'),
     path('coil/<int:coil_pk>/parts/', views.coil_parts, name='coil_parts'),
     path('job/<int:pk>/', views.job_detail, name='job_detail'),
+    path('orders/', views.order_dashboard, name='order_dashboard'),
+    path('orders/customer-autocomplete/', views.customer_autocomplete, name='customer_autocomplete'),
+    path('orders/<int:pk>/confirm/', views.order_confirm, name='order_confirm'),
+    path('orders/<int:pk>/reject/', views.order_reject, name='order_reject'),
+    path('orders/customer/<int:pk>/send-quote/', views.send_quote_email, name='send_quote_email'),
+    path('orders/quick-send-quote/', views.quick_send_quote, name='quick_send_quote'),
+    path('quote/<uuid:token>/', views.quote_form, name='quote_form'),
 ]
