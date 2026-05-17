@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Order Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; background: #f4f6f9; color: #333; }
+
+    header {
+      background: #4e73df; color: white;
+      padding: 1rem 2rem;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    header h1 { font-size: 1.3rem; }
+    .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; }
+    .back-link:hover { color: white; }
+
+    .content { max-width: 1150px; margin: 2rem auto; padding: 0 1.5rem; }
+
+    .card {
+      background: white; border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      margin-bottom: 2rem; overflow: hidden;
+    }
+    .card-header {
+      padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0;
+      font-size: 1rem; font-weight: 600;
+      display: flex; justify-content: space-between; align-items: center;
+      cursor: pointer; user-select: none;
+    }
+    .card-header.static { cursor: default; }
+    .card-header span { color: #aaa; font-size: 0.85rem; font-weight: 400; }
+    .card-header .toggle-icon { color: #aaa; font-size: 0.85rem; transition: transform 0.2s; }
+    .card-header.open .toggle-icon { transform: rotate(180deg); }
+    .card-body { padding: 1.75rem; }
+    .collapsible { display: none; }
+    .collapsible.open { display: block; }
+
+    .section-label {
+      font-size: 0.7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      color: #4e73df; margin: 1.25rem 0 0.6rem;
+      padding-bottom: 0.3rem; border-bottom: 1px solid #e8ecff;
+    }
+    .section-label:first-child { margin-top: 0; }
+
+    .form-row { display: grid; gap: 0.75rem; margin-bottom: 0.75rem; }
+    .cols-4 { grid-template-columns: 2fr 1fr 1fr 1fr; }
+    .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .cols-2 { grid-template-columns: 1fr 1fr; }
+
+    .form-group { display: flex; flex-direction: column; }
+    label {
+      font-size: 0.72rem; color: #888; margin-bottom: 0.3rem;
+      font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    input, select, textarea {
+      padding: 0.55rem 0.75rem; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 0.9rem; width: 100%;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #4e73df; }
+    textarea { resize: vertical; min-height: 60px; }
+
+    /* Quick send */
+    .quick-send-card .card-body { background: #f8f9ff; }
+    .send-row { display: flex; gap: 0.75rem; align-items: flex-end; margin-top: 0.75rem; }
+    .btn-send {
+      padding: 0.6rem 1.5rem; background: #1cc88a; color: white;
+      border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer; white-space: nowrap;
+    }
+    .btn-send:hover { background: #17a673; }
+    .btn-send:disabled { background: #a3e4cc; cursor: default; }
+
+    /* Autocomplete */
+    .autocomplete-wrapper { position: relative; }
+    .autocomplete-list {
+      position: absolute; top: 100%; left: 0; right: 0;
+      background: white; border: 1px solid #ddd; border-top: none;
+      border-radius: 0 0 8px 8px; z-index: 100;
+      max-height: 200px; overflow-y: auto; display: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .autocomplete-list.open { display: block; }
+    .autocomplete-item { padding: 0.55rem 0.75rem; cursor: pointer; font-size: 0.9rem; }
+    .autocomplete-item:hover, .autocomplete-item.active { background: #eff2ff; color: #4e73df; }
+
+    .submit-row { display: flex; justify-content: flex-end; margin-top: 1rem; }
+    .btn-primary {
+      padding: 0.65rem 2rem; background: #4e73df; color: white;
+      border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
+    }
+    .btn-primary:hover { background: #3a5ec0; }
+
+    .error-msg {
+      background: #fee2e2; color: #991b1b;
+      padding: 0.6rem 0.9rem; border-radius: 8px;
+      font-size: 0.87rem; margin-bottom: 1rem;
+    }
+
+    /* Alert banners */
+    .alert {
+      padding: 0.75rem 1rem; border-radius: 8px;
+      font-size: 0.88rem; margin-bottom: 1.25rem;
+    }
+    .alert-success { background: #dcfce7; color: #166534; }
+    .alert-error   { background: #fee2e2; color: #991b1b; }
+
+    /* Table */
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      background: #f8f9fb; padding: 0.65rem 1rem; text-align: left;
+      font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
+      color: #888; font-weight: 600; white-space: nowrap;
+    }
+    td { padding: 0.75rem 1rem; border-top: 1px solid #f0f0f0; font-size: 0.88rem; vertical-align: middle; }
+    tr:hover td { background: #fafbff; }
+
+    .badge {
+      display: inline-block; padding: 0.25rem 0.65rem;
+      border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap;
+    }
+    .badge-pending       { background: #fef3c7; color: #92400e; }
+    .badge-confirmed     { background: #dbeafe; color: #1e40af; }
+    .badge-in_production { background: #d1fae5; color: #065f46; }
+    .badge-completed     { background: #dcfce7; color: #166534; }
+    .badge-cancelled     { background: #fee2e2; color: #991b1b; }
+
+    .muted { color: #aaa; font-size: 0.82rem; }
+
+    .action-btn {
+      border: none; border-radius: 6px; padding: 0.25rem 0.65rem;
+      font-size: 0.75rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+    }
+    .btn-confirm { background: #dcfce7; color: #166534; }
+    .btn-confirm:hover { background: #bbf7d0; }
+    .btn-reject  { background: #fee2e2; color: #991b1b; margin-left: 4px; }
+    .btn-reject:hover  { background: #fecaca; }
+
+    .expand-btn {
+      background: none; border: none; cursor: pointer;
+      color: #4e73df; font-size: 0.82rem; padding: 0;
+    }
+    .expand-btn:hover { text-decoration: underline; }
+
+    .detail-row { display: none; }
+    .detail-row.open { display: table-row; }
+    .detail-box {
+      background: #f8f9fb; padding: 1rem 1.25rem; border-radius: 8px;
+      display: grid; grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem 1.5rem; font-size: 0.85rem;
+    }
+    .detail-item strong {
+      display: block; font-size: 0.7rem; color: #888;
+      text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.2rem;
+    }
+
+    .empty-row td { text-align: center; color: #bbb; padding: 3rem; }
+
+    .icon-btn {
+      background: #f3f4f6; border: 1px solid #ddd;
+      border-radius: 6px; padding: 0.25rem 0.65rem;
+      font-size: 0.75rem; cursor: pointer; color: #4e73df;
+    }
+    .icon-btn:hover { background: #eff2ff; }
+    .icon-btn.green { background: #dcfce7; border-color: #bbf7d0; color: #166534; margin-left: 4px; }
+    .icon-btn.green:hover { background: #bbf7d0; }
+    .icon-btn:disabled { background: #f3f4f6; color: #bbb; border-color: #eee; cursor: default; }
+
+    /* Unified new order card */
+    .choice-row {
+      display: flex; gap: 0.75rem; align-items: center;
+      margin-top: 1rem; padding-top: 1rem;
+      border-top: 1px solid #f0f0f0;
+    }
+    .btn-send {
+      padding: 0.6rem 1.4rem; background: #1cc88a; color: white;
+      border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
+    }
+    .btn-send:hover { background: #17a673; }
+    .btn-manual {
+      padding: 0.6rem 1.4rem; background: #f3f4f6; color: #333;
+      border: 1px solid #ddd; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
+    }
+    .btn-manual:hover { background: #e5e7eb; }
+    .btn-manual.active { background: #eff2ff; border-color: #c7d2fe; color: #4e73df; }
+
+    .manual-fields { display: none; margin-top: 1.25rem; }
+    .manual-fields.open { display: block; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Order Dashboard</h1>
+  <a href="{% url 'home' %}" class="back-link">← Back to home</a>
+</header>
+
+<div class="content">
+
+  {% for msg in messages %}
+  <div class="alert {% if msg.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">
+    {{ msg }}
+  </div>
+  {% endfor %}
+
+  <!-- ── New Order (unified) ───────────────────────────────── -->
+  <div class="card">
+    <div class="card-header static">
+      New Order
+      <span>Enter company details, then choose how to proceed</span>
+    </div>
+    <div class="card-body">
+      {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+
+      <form method="post" action="{% url 'order_dashboard' %}" id="order-form">
+        {% csrf_token %}
+
+        <!-- Company info — filled once, shared by both paths -->
+        <div class="form-row cols-3">
+          <div class="form-group">
+            <label for="co-name">Company Name *</label>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="co-name" name="name"
+                     placeholder="Start typing..." autocomplete="off"
+                     value="{{ post.name|default:'' }}">
+              <div id="co-autocomplete" class="autocomplete-list"></div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="co-email">Email</label>
+            <input type="email" id="co-email" name="email"
+                   placeholder="company@example.com"
+                   value="{{ post.email|default:'' }}">
+          </div>
+          <div class="form-group">
+            <label for="co-phone">Phone</label>
+            <input type="text" id="co-phone" name="phone"
+                   placeholder="+91 98765 43210"
+                   value="{{ post.phone|default:'' }}">
+          </div>
+        </div>
+
+        <!-- Choice buttons -->
+        <div class="choice-row">
+          <button type="submit" formaction="{% url 'quick_send_quote' %}" class="btn-send">
+            📧 Send Form to Them
+          </button>
+          <button type="button" class="btn-manual" id="manual-btn" onclick="toggleManualFields()">
+            ✏️ Fill Manually
+          </button>
+          <span style="color:#aaa; font-size:0.82rem; margin-left:0.25rem;">
+            — or expand to enter order details yourself
+          </span>
+        </div>
+
+        <!-- Manual fields — hidden until Fill Manually is clicked -->
+        <div class="manual-fields" id="manual-fields">
+
+          <div class="section-label" style="margin-top:1.25rem;">Material Requirements</div>
+          <div class="form-row cols-3">
+            <div class="form-group">
+              <label>Grade of Material</label>
+              <input type="text" name="grade" placeholder="e.g. EN8, SS304, 42CrMo4"
+                     value="{{ post.grade|default:'' }}">
+            </div>
+            <div class="form-group">
+              <label>Specific Mill Make</label>
+              <input type="text" name="mill_make" placeholder="e.g. SAIL, Tata, Any"
+                     value="{{ post.mill_make|default:'' }}">
+            </div>
+            <div class="form-group">
+              <label>Processes Required</label>
+              <input type="text" name="processes" placeholder="e.g. Drilling, Tapping"
+                     value="{{ post.processes|default:'' }}">
+            </div>
+          </div>
+          <div class="form-row cols-2">
+            <div class="form-group">
+              <label>Drawing / Dimensions</label>
+              <textarea name="drawing_dimensions"
+                        placeholder="Describe dimensions or paste drawing reference...">{{ post.drawing_dimensions|default:'' }}</textarea>
+            </div>
+            <div class="form-group">
+              <label>Mechanical Properties</label>
+              <textarea name="mechanical_properties"
+                        placeholder="e.g. Tensile: 700 MPa, Hardness: 200 HB">{{ post.mechanical_properties|default:'' }}</textarea>
+            </div>
+          </div>
+
+          <div class="section-label">Quotation</div>
+          <div class="form-row cols-3">
+            <div class="form-group">
+              <label>Required Quantity (kg) *</label>
+              <input type="number" name="quantity" step="0.001" min="0" placeholder="0.000"
+                     value="{{ post.quantity|default:'' }}">
+            </div>
+            <div class="form-group">
+              <label>Delivery Form</label>
+              <select name="delivery_form">
+                <option value="">— select —</option>
+                <option value="coil" {% if post.delivery_form == 'coil' %}selected{% endif %}>Coil</option>
+                <option value="bar"  {% if post.delivery_form == 'bar'  %}selected{% endif %}>Bar</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Frequency</label>
+              <select name="frequency">
+                <option value="">— select —</option>
+                <option value="one_time"    {% if post.frequency == 'one_time'    %}selected{% endif %}>One Time</option>
+                <option value="monthly"     {% if post.frequency == 'monthly'     %}selected{% endif %}>Monthly</option>
+                <option value="quarterly"   {% if post.frequency == 'quarterly'   %}selected{% endif %}>Quarterly</option>
+                <option value="as_required" {% if post.frequency == 'as_required' %}selected{% endif %}>As Required</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="section-label">Delivery & Notes</div>
+          <div class="form-row cols-3">
+            <div class="form-group">
+              <label>End Usage / Application</label>
+              <input type="text" name="end_usage" placeholder="e.g. Automotive axle"
+                     value="{{ post.end_usage|default:'' }}">
+            </div>
+            <div class="form-group">
+              <label>Delivery Date</label>
+              <input type="date" name="delivery_date" value="{{ post.delivery_date|default:'' }}">
+            </div>
+            <div class="form-group">
+              <label>Notes</label>
+              <input type="text" name="notes" placeholder="Any additional remarks"
+                     value="{{ post.notes|default:'' }}">
+            </div>
+          </div>
+
+          <div class="submit-row">
+            <button type="submit" class="btn-primary">+ Add Order</button>
+          </div>
+
+        </div><!-- /manual-fields -->
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Orders Table ─────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header static">
+      All Orders
+      <span>{{ orders|length }} total</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Order #</th>
+          <th>Company</th>
+          <th>Grade</th>
+          <th>Qty (kg)</th>
+          <th>Form</th>
+          <th>Frequency</th>
+          <th>Delivery</th>
+          <th>Status</th>
+          <th>Received</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for order in orders %}
+        <tr>
+          <td class="muted" style="font-family:monospace;">ORD-{{ order.pk|stringformat:"04d" }}</td>
+          <td style="font-weight:600;">{{ order.customer.name }}</td>
+          <td>{{ order.grade|default:"—" }}</td>
+          <td>{{ order.quantity }}</td>
+          <td>{{ order.get_delivery_form_display|default:"—" }}</td>
+          <td>{{ order.get_frequency_display|default:"—" }}</td>
+          <td>{{ order.delivery_date|default:"—" }}</td>
+          <td>
+            {% if order.status == 'pending' %}
+              <form method="post" action="{% url 'order_confirm' order.pk %}" style="display:inline;">
+                {% csrf_token %}
+                <button class="action-btn btn-confirm">✓ Confirm</button>
+              </form>
+              <form method="post" action="{% url 'order_reject' order.pk %}" style="display:inline;">
+                {% csrf_token %}
+                <button class="action-btn btn-reject">✗ Reject</button>
+              </form>
+            {% else %}
+              <span class="badge badge-{{ order.status }}">{{ order.get_status_display }}</span>
+            {% endif %}
+          </td>
+          <td class="muted">{{ order.created_at|date:"d M Y" }}</td>
+          <td>
+            <button class="expand-btn" onclick="toggleDetail({{ order.pk }})">Details ▾</button>
+          </td>
+        </tr>
+        <tr id="detail-{{ order.pk }}" class="detail-row">
+          <td colspan="10" style="padding: 0 1rem 0.75rem;">
+            <div class="detail-box">
+              <div class="detail-item"><strong>Drawing / Dimensions</strong>{{ order.drawing_dimensions|default:"—" }}</div>
+              <div class="detail-item"><strong>Mechanical Properties</strong>{{ order.mechanical_properties|default:"—" }}</div>
+              <div class="detail-item"><strong>Mill Make</strong>{{ order.mill_make|default:"—" }}</div>
+              <div class="detail-item"><strong>Processes</strong>{{ order.processes|default:"—" }}</div>
+              <div class="detail-item"><strong>End Usage</strong>{{ order.end_usage|default:"—" }}</div>
+              <div class="detail-item"><strong>Notes</strong>{{ order.notes|default:"—" }}</div>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr class="empty-row"><td colspan="10">No orders yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ── Companies & Quote Links ──────────────────────────── -->
+  <div class="card">
+    <div class="card-header static">
+      Companies
+      <span>Resend the quote form to any company</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Company</th>
+          <th>Email</th>
+          <th>Phone</th>
+          <th>Orders</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in customers %}
+        <tr>
+          <td style="font-weight:600;">{{ c.name }}</td>
+          <td>{{ c.email|default:"—" }}</td>
+          <td>{{ c.phone|default:"—" }}</td>
+          <td class="muted">{{ c.orders.count }}</td>
+          <td>
+            <button class="icon-btn"
+                    onclick="copyLink('{{ request.scheme }}://{{ request.get_host }}{% url 'quote_form' c.quote_token %}', this)">
+              📋 Copy Link
+            </button>
+            <form method="post" action="{% url 'send_quote_email' c.pk %}" style="display:inline;">
+              {% csrf_token %}
+              <button type="submit" class="icon-btn green"
+                      {% if not c.email %}disabled title="No email on file"{% endif %}>
+                📧 Resend{% if c.email %} to {{ c.email }}{% endif %}
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr class="empty-row"><td colspan="5">No companies yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+  const autocompleteUrl = "{% url 'customer_autocomplete' %}";
+
+  // ── Autocomplete on the single company name input ────────
+  (function() {
+    const input = document.getElementById('co-name');
+    const list  = document.getElementById('co-autocomplete');
+    let activeIndex = -1, currentItems = [];
+
+    input.addEventListener('input', function() {
+      const q = this.value.trim();
+      if (q.length < 1) { close_(); return; }
+      fetch(autocompleteUrl + '?q=' + encodeURIComponent(q))
+        .then(function(r) { return r.json(); })
+        .then(function(items) {
+          currentItems = items; activeIndex = -1;
+          if (!items.length) { close_(); return; }
+          list.innerHTML = items.map(function(it, i) {
+            return '<div class="autocomplete-item" data-i="' + i + '">' + esc(it.name) + '</div>';
+          }).join('');
+          list.classList.add('open');
+          list.querySelectorAll('.autocomplete-item').forEach(function(el) {
+            el.addEventListener('mousedown', function(e) { e.preventDefault(); pick(parseInt(this.dataset.i)); });
+          });
+        });
+    });
+
+    input.addEventListener('keydown', function(e) {
+      const els = list.querySelectorAll('.autocomplete-item');
+      if (!els.length) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex = Math.min(activeIndex + 1, els.length - 1); hi(els); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); activeIndex = Math.max(activeIndex - 1, 0); hi(els); }
+      else if (e.key === 'Enter' && activeIndex >= 0) { e.preventDefault(); pick(activeIndex); }
+      else if (e.key === 'Escape') close_();
+    });
+
+    document.addEventListener('click', function(e) {
+      if (!input.contains(e.target) && !list.contains(e.target)) close_();
+    });
+
+    function pick(i) {
+      const it = currentItems[i];
+      input.value = it.name;
+      document.getElementById('co-email').value = it.email || '';
+      document.getElementById('co-phone').value = it.phone || '';
+      close_();
+    }
+    function hi(els) { els.forEach(function(el, i) { el.classList.toggle('active', i === activeIndex); }); }
+    function close_() { list.classList.remove('open'); list.innerHTML = ''; activeIndex = -1; currentItems = []; }
+  })();
+
+  // ── Fill Manually toggle ─────────────────────────────────
+  function toggleManualFields() {
+    const fields = document.getElementById('manual-fields');
+    const btn    = document.getElementById('manual-btn');
+    const open   = fields.classList.toggle('open');
+    btn.classList.toggle('active', open);
+    btn.textContent = open ? '✏️ Hide Manual Fields' : '✏️ Fill Manually';
+  }
+
+  // Re-open manual fields automatically if there was a validation error
+  {% if error %}toggleManualFields();{% endif %}
+
+  // ── Table helpers ────────────────────────────────────────
+  function toggleDetail(pk) {
+    document.getElementById('detail-' + pk).classList.toggle('open');
+  }
+
+  function copyLink(url, btn) {
+    navigator.clipboard.writeText(url).then(function() {
+      const orig = btn.textContent;
+      btn.textContent = '✓ Copied!';
+      setTimeout(function() { btn.textContent = orig; }, 1500);
+    });
+  }
+
+  function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+
+</body>
+</html>

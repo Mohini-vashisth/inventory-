@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.db.models import Sum
-from .models import Material, CoilPart, ProductType, ProcessStep, ProductionJob, StepLog
+from .models import Material, CoilPart, ProductType, ProcessStep, ProductionJob, StepLog, Customer, Order
 
 
 # ── Inline steps inside ProductType ─────────────────────────
@@ -233,3 +233,62 @@ class MaterialAdmin(admin.ModelAdmin):
             color, f'{remaining:.1f}',
         )
     weight_remaining.short_description = 'Remaining'
+
+
+# ── Customer & Order ─────────────────────────────────────────
+
+class OrderInline(admin.TabularInline):
+    model = Order
+    extra = 0
+    readonly_fields = ['created_at']
+    fields = ['grade', 'quantity', 'delivery_form', 'frequency', 'delivery_date', 'status', 'created_at']
+
+
+@admin.register(Customer)
+class CustomerAdmin(admin.ModelAdmin):
+    list_display  = ['name', 'email', 'phone', 'order_count', 'created_at']
+    search_fields = ['name', 'email', 'phone']
+    inlines       = [OrderInline]
+
+    def order_count(self, obj):
+        return obj.orders.count()
+    order_count.short_description = 'Orders'
+
+
+@admin.register(Order)
+class OrderAdmin(admin.ModelAdmin):
+    list_display  = ['order_no', 'customer', 'grade', 'quantity', 'delivery_form', 'frequency', 'delivery_date', 'status_badge', 'created_at']
+    list_filter   = ['status', 'delivery_form', 'frequency', 'customer']
+    search_fields = ['customer__name', 'grade', 'mill_make']
+    ordering      = ['-created_at']
+    fieldsets = (
+        ('Order Info', {
+            'fields': ('customer', 'status', 'delivery_date', 'frequency', 'notes')
+        }),
+        ('Material Requirements', {
+            'fields': ('grade', 'mill_make', 'drawing_dimensions', 'mechanical_properties', 'processes', 'end_usage')
+        }),
+        ('Quantity & Delivery', {
+            'fields': ('quantity', 'delivery_form')
+        }),
+    )
+
+    def order_no(self, obj):
+        return f'ORD-{obj.pk:04d}'
+    order_no.short_description = 'Order #'
+
+    def status_badge(self, obj):
+        colors = {
+            'pending':       ('#fef3c7', '#92400e'),
+            'confirmed':     ('#dbeafe', '#1e40af'),
+            'in_production': ('#d1fae5', '#065f46'),
+            'completed':     ('#dcfce7', '#166534'),
+            'cancelled':     ('#fee2e2', '#991b1b'),
+        }
+        bg, text = colors.get(obj.status, ('#f3f4f6', '#374151'))
+        return format_html(
+            '<span style="background:{};color:{};padding:3px 10px;'
+            'border-radius:999px;font-size:12px;font-weight:600;">{}</span>',
+            bg, text, obj.get_status_display()
+        )
+    status_badge.short_description = 'Status'
