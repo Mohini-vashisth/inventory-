@@ -35,12 +35,28 @@ class CoilPart(models.Model):
 
 
 class ProductType(models.Model):
-    """e.g. 'Bracket A', 'Shaft B' — defines which steps apply."""
-    name = models.CharField(max_length=100)
+    """e.g. 'EN8D Bar 2.5mm' — defines the final product, its preset grade/size, and which steps apply."""
+    name        = models.CharField(max_length=100)
+    grade       = models.CharField(max_length=20, blank=True, verbose_name="Grade")
+    size        = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Size (mm)")
     description = models.TextField(blank=True)
 
     def __str__(self):
         return self.name
+
+
+class AllowedCoilSpec(models.Model):
+    """Coil grades/sizes the admin approves for a given product type."""
+    product_type = models.ForeignKey(ProductType, on_delete=models.CASCADE, related_name='allowed_specs')
+    grade = models.CharField(max_length=10, blank=True, verbose_name="Grade")
+    size  = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Size (mm)")
+    notes = models.CharField(max_length=100, blank=True)
+
+    def __str__(self):
+        parts = []
+        if self.grade: parts.append(self.grade)
+        if self.size:  parts.append(f"{self.size} mm")
+        return f"{self.product_type.name} — {' / '.join(parts) or 'Any'}"
 
 
 class ProcessStep(models.Model):
@@ -66,9 +82,10 @@ class ProductionJob(models.Model):
         ('completed',   'Completed'),
     ]
 
-    part = models.ForeignKey(CoilPart, on_delete=models.CASCADE, related_name='jobs')
+    part         = models.ForeignKey(CoilPart, on_delete=models.CASCADE, related_name='jobs')
     product_type = models.ForeignKey(ProductType, on_delete=models.PROTECT)
-    job_no = models.CharField(max_length=30, unique=True)   # e.g. JOB-0001
+    order        = models.ForeignKey('Order', on_delete=models.SET_NULL, null=True, blank=True, related_name='jobs')
+    job_no       = models.CharField(max_length=30, unique=True)   # e.g. JOB-0001
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -136,10 +153,12 @@ class Order(models.Model):
     ]
 
     customer              = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='orders')
+    product_type          = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Type")
     # 1. Drawing / dimensions
     drawing_dimensions    = models.TextField(blank=True, verbose_name="Drawing / Dimensions")
-    # 2. Grade
+    # 2. Grade & size (autofilled from product type, editable)
     grade                 = models.CharField(max_length=100, blank=True, verbose_name="Grade of Material")
+    size                  = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Size (mm)")
     # 3. Mill make
     mill_make             = models.CharField(max_length=100, blank=True, verbose_name="Specific Mill Make")
     # 4. Mechanical properties

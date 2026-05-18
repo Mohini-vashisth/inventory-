@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Production Board</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(135deg, #4e73df, #1cc88a);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .page { max-width: 860px; margin: 0 auto; }
+
+    .back-link {
+      color: rgba(255,255,255,0.8); text-decoration: none;
+      font-size: 0.9rem; display: inline-block; margin-bottom: 1.25rem;
+    }
+    .back-link:hover { color: white; }
+
+    h1 { color: white; font-size: 1.6rem; margin-bottom: 0.35rem; }
+    .subtitle { color: rgba(255,255,255,0.75); font-size: 0.9rem; margin-bottom: 2rem; }
+
+    /* Order card */
+    .order-card {
+      background: white; border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      margin-bottom: 1.75rem; overflow: hidden;
+    }
+
+    .order-header {
+      padding: 1rem 1.5rem;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem; flex-wrap: wrap;
+      border-bottom: 1px solid #f0f0f0;
+    }
+
+    .order-meta { flex: 1; }
+    .order-no { font-size: 0.72rem; color: #aaa; font-family: monospace; margin-bottom: 0.2rem; }
+    .order-company { font-size: 1rem; font-weight: 700; color: #333; margin-bottom: 0.2rem; }
+    .order-tags { display: flex; gap: 0.75rem; flex-wrap: wrap; font-size: 0.82rem; color: #666; }
+
+    .order-delivery { text-align: right; flex-shrink: 0; }
+    .delivery-label { font-size: 0.68rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.04em; }
+    .delivery-date  { font-size: 0.9rem; font-weight: 600; color: #333; }
+
+    /* Parts table */
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      background: #f8f9fb; padding: 0.55rem 1rem;
+      text-align: left; font-size: 0.7rem;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: #999; font-weight: 700; white-space: nowrap;
+    }
+    tbody td {
+      padding: 0.85rem 1rem; border-top: 1px solid #f3f4f6;
+      font-size: 0.88rem; color: #333; vertical-align: middle;
+    }
+    tbody tr:hover td { background: #fafbff; }
+
+    .part-no {
+      font-family: monospace; font-weight: 700; font-size: 0.9rem;
+      background: #eff2ff; color: #4338ca;
+      padding: 2px 8px; border-radius: 6px; display: inline-block;
+    }
+
+    /* Progress bar */
+    .prog-wrap { display: flex; align-items: center; gap: 0.6rem; }
+    .prog-bg {
+      flex: 1; max-width: 140px; height: 7px;
+      background: #e5e7eb; border-radius: 999px; overflow: hidden;
+    }
+    .prog-fill { height: 100%; border-radius: 999px; background: #4e73df; }
+    .prog-fill.done { background: #16a34a; }
+    .prog-label { font-size: 0.78rem; color: #888; white-space: nowrap; }
+
+    /* Step badge */
+    .step-badge {
+      display: inline-block; padding: 3px 10px; border-radius: 999px;
+      font-size: 0.75rem; font-weight: 600; white-space: nowrap;
+    }
+    .step-pending     { background: #f3f4f6; color: #6b7280; }
+    .step-in_progress { background: #dbeafe; color: #1e40af; }
+    .step-completed   { background: #dcfce7; color: #166534; }
+
+    .btn-update {
+      background: #1cc88a; color: white;
+      border: none; padding: 0.4rem 1rem;
+      border-radius: 7px; font-size: 0.82rem; font-weight: 600;
+      cursor: pointer; text-decoration: none; display: inline-block;
+      transition: opacity 0.15s;
+    }
+    .btn-update:hover { opacity: 0.85; }
+    .btn-update.done {
+      background: #f3f4f6; color: #6b7280; cursor: default;
+    }
+
+    .empty-state {
+      background: rgba(255,255,255,0.15); border-radius: 16px;
+      padding: 3rem; text-align: center;
+      color: rgba(255,255,255,0.85); font-size: 1rem;
+    }
+    .empty-state a {
+      color: white; font-weight: 700; text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <a href="{% url 'employee' %}" class="back-link">← Back to employee portal</a>
+  <h1>Production Board</h1>
+  <p class="subtitle">All orders currently in production</p>
+
+  {% for item in board %}
+  {% with order=item.order %}
+  <div class="order-card">
+    <div class="order-header">
+      <div class="order-meta">
+        <div class="order-no">ORD-{{ order.pk|stringformat:"04d" }}</div>
+        <div class="order-company">{{ order.customer.name }}</div>
+        <div class="order-tags">
+          {% if order.product_type %}<span>🔧 {{ order.product_type.name }}</span>{% endif %}
+          {% if order.grade %}<span>📐 {{ order.grade }}</span>{% endif %}
+          {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
+        </div>
+      </div>
+      {% if order.delivery_date %}
+      <div class="order-delivery">
+        <div class="delivery-label">Deliver by</div>
+        <div class="delivery-date">{{ order.delivery_date|date:"d M Y" }}</div>
+      </div>
+      {% endif %}
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Part</th>
+          <th>Weight</th>
+          <th>Progress</th>
+          <th>Current Step</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for jd in item.jobs %}
+        <tr>
+          <td><span class="part-no">{{ jd.job.part.part_no }}</span></td>
+          <td>{{ jd.job.part.weight|default:"—" }}{% if jd.job.part.weight %} kg{% endif %}</td>
+          <td>
+            <div class="prog-wrap">
+              <div class="prog-bg">
+                <div class="prog-fill {% if jd.completed == jd.total and jd.total > 0 %}done{% endif %}"
+                     style="width:{{ jd.pct }}%;"></div>
+              </div>
+              <span class="prog-label">{{ jd.completed }}/{{ jd.total }}</span>
+            </div>
+          </td>
+          <td>
+            {% if jd.current_step %}
+              <span class="step-badge step-{{ jd.current_status }}">
+                {{ jd.current_step.name }}
+              </span>
+            {% else %}
+              <span class="step-badge step-completed">All done</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if jd.current_step %}
+              <a href="{% url 'job_detail' jd.job.pk %}" class="btn-update">Update →</a>
+            {% else %}
+              <span class="btn-update done">Completed</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endwith %}
+  {% empty %}
+  <div class="empty-state">
+    No orders are currently in production.<br>
+    <a href="{% url 'select_order' %}">Cut a part</a> to start one.
+  </div>
+  {% endfor %}
+
+</div>
+</body>
+</html>
