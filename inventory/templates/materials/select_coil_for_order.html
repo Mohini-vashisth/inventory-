@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Select Coil</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(135deg, #4e73df, #1cc88a);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .page { max-width: 760px; margin: 0 auto; }
+
+    /* Order summary banner */
+    .order-banner {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.75rem;
+      color: white;
+    }
+    .order-banner .label {
+      font-size: 0.7rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      opacity: 0.7; margin-bottom: 0.35rem;
+    }
+    .order-banner .company { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; }
+    .order-banner .meta { display: flex; gap: 1.25rem; flex-wrap: wrap; font-size: 0.85rem; opacity: 0.9; }
+
+    h2 { color: white; font-size: 1.1rem; margin-bottom: 0.6rem; }
+
+    .coil-card {
+      background: white; border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 0.75rem;
+      display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+      text-decoration: none; color: inherit;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .coil-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.18); }
+
+    .coil-left { flex: 1; }
+    .coil-no { font-family: monospace; font-weight: 700; font-size: 1rem; color: #333; margin-bottom: 0.3rem; }
+    .coil-meta { font-size: 0.83rem; color: #666; display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.6rem; }
+
+    .weight-bar-wrap { margin-top: 0.4rem; }
+    .weight-bar-bg {
+      background: #e5e7eb; border-radius: 999px; height: 6px;
+      overflow: hidden; width: 100%; max-width: 280px;
+    }
+    .weight-bar-fill { height: 100%; background: #4e73df; border-radius: 999px; }
+    .weight-labels { display: flex; justify-content: space-between; max-width: 280px; margin-top: 0.25rem; }
+    .weight-labels span { font-size: 0.75rem; color: #888; }
+    .remaining-highlight { font-weight: 700; color: #166534; }
+
+    .coil-right { text-align: right; flex-shrink: 0; }
+    .arrow { font-size: 1.2rem; color: #4e73df; }
+
+    .empty {
+      background: rgba(255,255,255,0.15); border-radius: 12px;
+      padding: 2rem; text-align: center; color: rgba(255,255,255,0.8);
+      font-size: 0.95rem;
+    }
+
+    .back-link {
+      display: inline-block; margin-top: 2rem;
+      color: rgba(255,255,255,0.7); font-size: 0.9rem; text-decoration: none;
+    }
+    .back-link:hover { color: white; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Order summary -->
+  <div class="order-banner">
+    <div class="label">Order ORD-{{ order.pk|stringformat:"04d" }}</div>
+    <div class="company">{{ order.customer.name }}</div>
+    <div class="meta">
+      {% if order.grade %}<span>📐 Grade: {{ order.grade }}</span>{% endif %}
+      {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
+      {% if order.product_type %}<span>🔧 {{ order.product_type.name }}</span>{% endif %}
+      {% if order.delivery_date %}<span>📅 {{ order.delivery_date|date:"d M Y" }}</span>{% endif %}
+    </div>
+  </div>
+
+  {% if not order.product_type %}
+  <div style="background:rgba(255,200,0,0.2); border:1px solid rgba(255,200,0,0.5);
+              border-radius:10px; padding:0.85rem 1.1rem; margin-bottom:1.25rem;
+              color:white; font-size:0.88rem;">
+    ⚠️ <strong>No product type set on this order.</strong>
+    Showing all coils with remaining weight — coil filtering is disabled.<br>
+    Go to <a href="/admin/materials/order/{{ order.pk }}/change/"
+             style="color:white; text-decoration:underline;">Admin → Order ORD-{{ order.pk|stringformat:"04d" }}</a>
+    and assign a Product Type to enable smart coil matching.
+  </div>
+  {% endif %}
+
+  <h2>
+    {% if order.product_type and order.product_type.allowed_specs.all %}
+      Matching coils for {{ order.product_type.name }}
+    {% elif order.product_type %}
+      All coils with remaining weight (no coil specs configured for {{ order.product_type.name }})
+    {% else %}
+      All coils with remaining weight
+    {% endif %}
+  </h2>
+
+  {% for item in coils %}
+  <a href="{% url 'coil_parts' item.coil.coil_no %}?from_order={{ order.pk }}" class="coil-card">
+    <div class="coil-left">
+      <div class="coil-no">{{ item.coil.formatted_coil }}</div>
+      <div class="coil-meta">
+        {% if item.coil.grade %}<span>Grade: <strong>{{ item.coil.grade }}</strong></span>{% endif %}
+        {% if item.coil.size %}<span>Size: <strong>{{ item.coil.size }} mm</strong></span>{% endif %}
+        {% if item.coil.vendor %}<span>Vendor: {{ item.coil.vendor }}</span>{% endif %}
+      </div>
+      <div class="weight-bar-wrap">
+        <div class="weight-bar-bg">
+          <div class="weight-bar-fill" style="width:{{ item.pct_used }}%;"></div>
+        </div>
+        <div class="weight-labels">
+          <span>{{ item.total }} kg total</span>
+          <span class="remaining-highlight">{{ item.remaining|floatformat:1 }} kg left</span>
+        </div>
+      </div>
+    </div>
+    <div class="arrow">›</div>
+  </a>
+  {% empty %}
+  <div class="empty">
+    {% if order.product_type and order.product_type.allowed_specs.all %}
+      No coils in inventory match the allowed specs for <strong>{{ order.product_type.name }}</strong>.<br>
+      Ask admin to update the allowed coil specs or add matching coils to inventory.
+    {% else %}
+      No coils with remaining weight in inventory.
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <a href="{% url 'select_order' %}" class="back-link">← Back to orders</a>
+</div>
+</body>
+</html>

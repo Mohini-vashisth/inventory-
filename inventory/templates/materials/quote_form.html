@@ -88,12 +88,32 @@
     <form method="post">
       {% csrf_token %}
 
+      <div class="section-label">Product</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Product Type</label>
+          <select name="product_type" id="q-product-type">
+            <option value="">— select if known —</option>
+            {% for pt in product_types %}
+            <option value="{{ pt.pk }}" {% if post.product_type == pt.pk|stringformat:"s" %}selected{% endif %}>
+              {{ pt.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
       <div class="section-label">Material Requirements</div>
-      <div class="form-row cols-2">
+      <div class="form-row cols-3">
         <div class="form-group">
           <label>Grade of Material</label>
-          <input type="text" name="grade" placeholder="e.g. EN8, SS304, 42CrMo4"
+          <input type="text" name="grade" id="q-grade" placeholder="e.g. EN8D, SS304"
                  value="{{ post.grade|default:'' }}">
+        </div>
+        <div class="form-group">
+          <label>Size (mm)</label>
+          <input type="number" name="size" id="q-size" step="0.001" min="0" placeholder="e.g. 2.500"
+                 value="{{ post.size|default:'' }}">
         </div>
         <div class="form-group">
           <label>Specific Mill Make</label>
@@ -175,5 +195,15 @@
   </div>
 </div>
 
+<script>
+  const productTypeData = {{ product_type_data|safe }};
+  document.getElementById('q-product-type').addEventListener('change', function() {
+    const data = productTypeData[this.value];
+    if (data) {
+      document.getElementById('q-grade').value = data.grade || '';
+      document.getElementById('q-size').value  = data.size  || '';
+    }
+  });
+</script>
 </body>
 </html>

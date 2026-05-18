@@ -182,7 +182,21 @@
 <body>
 <div class="page">
 
+  {% if from_order %}
+  <a href="{% url 'select_coil_for_order' from_order.pk %}" class="back-link">← Back to coil selection</a>
+  {% else %}
   <a href="{% url 'employee' %}" class="back-link">← Back to employee portal</a>
+  {% endif %}
+
+  {% if from_order %}
+  <div style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.3);
+              border-radius:10px; padding:0.75rem 1.1rem; margin-bottom:1.25rem; color:white;
+              font-size:0.88rem; display:flex; gap:1.5rem; flex-wrap:wrap;">
+    <span style="font-weight:700;">ORD-{{ from_order.pk|stringformat:"04d" }} — {{ from_order.customer.name }}</span>
+    {% if from_order.grade %}<span>Grade: {{ from_order.grade }}</span>{% endif %}
+    {% if from_order.product_type %}<span>Product: {{ from_order.product_type.name }}</span>{% endif %}
+  </div>
+  {% endif %}
 
   <h1>Parts for {{ coil.formatted_coil }}</h1>
   <p class="coil-meta">
@@ -239,10 +253,19 @@
   {% endif %}
 
   <!-- Add part form -->
+  {% if from_order and not from_order.product_type %}
+  <div style="background:#fff7ed; border:1px solid #fdba74; border-radius:12px;
+              padding:1.25rem 1.5rem; margin-bottom:1.5rem; color:#92400e;">
+    <strong>⚠️ Product type not set on this order.</strong><br>
+    Go to <a href="/admin/materials/order/{{ from_order.pk }}/change/" style="color:#92400e;">
+    Admin → Orders → ORD-{{ from_order.pk|stringformat:"04d" }}</a> and assign a Product Type before cutting parts.
+  </div>
+  {% else %}
   <div class="card" {% if exhausted %}style="opacity:0.5; pointer-events:none;"{% endif %}>
     <h2>Add a new part</h2>
     <form method="post">
       {% csrf_token %}
+      {% if from_order %}<input type="hidden" name="from_order" value="{{ from_order.pk }}">{% endif %}
       <div class="form-grid">
 
         <div class="form-group">
@@ -257,15 +280,16 @@
         </div>
 
         <div class="form-group">
-          <label>Length (mm)</label>
-          <input name="length" type="number" step="0.001" placeholder="e.g. 1200.000">
-        </div>
-
-        <div class="form-group">
           <label>Cut date</label>
           <input name="cut_date" type="date">
         </div>
 
+        {% if from_order %}
+        <div class="form-group full" style="background:#f0fdf4; border:1px solid #bbf7d0;
+             border-radius:8px; padding:0.6rem 0.75rem; color:#166534; font-size:0.9rem;">
+          🔧 Product type: <strong>{{ from_order.product_type.name }}</strong>
+        </div>
+        {% else %}
         <div class="form-group full">
           <label>Product Type</label>
           <select name="product_type" required style="padding:0.55rem 0.75rem;
@@ -276,6 +300,7 @@
             {% endfor %}
           </select>
         </div>
+        {% endif %}
 
         <div class="form-group full">
           <label>Notes</label>
@@ -286,6 +311,7 @@
       <button type="submit" class="btn-submit">Save Part</button>
     </form>
   </div>
+  {% endif %}
 
   <!-- Parts list -->
   <div class="table-card">
@@ -295,7 +321,6 @@
         <tr>
           <th>Part No.</th>
           <th>Weight</th>
-          <th>Length</th>
           <th>Cut Date</th>
           <th>Product</th>
           <th>Progress</th>
@@ -307,7 +332,6 @@
         <tr>
           <td><span class="badge">{{ part.part_no }}</span></td>
           <td>{{ part.weight|default:"—" }} {% if part.weight %}kg{% endif %}</td>
-          <td>{{ part.length|default:"—" }} {% if part.length %}mm{% endif %}</td>
           <td>{{ part.cut_date|date:"d M Y"|default:"—" }}</td>
           <td>{% if job %}{{ job.product_type.name }}{% else %}—{% endif %}</td>
           <td>

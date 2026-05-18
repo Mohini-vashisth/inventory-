@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.db.models import Sum
-from .models import Material, CoilPart, ProductType, ProcessStep, ProductionJob, StepLog, Customer, Order
+from .models import Material, CoilPart, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
 
 
 # ── Inline steps inside ProductType ─────────────────────────
@@ -13,16 +13,32 @@ class ProcessStepInline(admin.TabularInline):
     ordering = ['order']
 
 
+class AllowedCoilSpecInline(admin.TabularInline):
+    model = AllowedCoilSpec
+    extra = 2
+    fields = ['grade', 'size', 'notes']
+    verbose_name = "Allowed Coil Spec"
+    verbose_name_plural = "Allowed Coil Specs (leave empty to allow all coils)"
+
+
 # ── ProductType ──────────────────────────────────────────────
 
 @admin.register(ProductType)
 class ProductTypeAdmin(admin.ModelAdmin):
-    inlines = [ProcessStepInline]
-    list_display = ['name', 'step_count']
+    inlines = [ProcessStepInline, AllowedCoilSpecInline]
+    list_display = ['name', 'grade', 'size', 'step_count', 'allowed_spec_summary']
+    fields = ['name', 'grade', 'size', 'description']
 
     def step_count(self, obj):
         return obj.steps.count()
     step_count.short_description = 'Steps'
+
+    def allowed_spec_summary(self, obj):
+        specs = obj.allowed_specs.all()
+        if not specs:
+            return '— any coil —'
+        return ', '.join(str(s) for s in specs)
+    allowed_spec_summary.short_description = 'Allowed Coils'
 
 
 # ── CoilPart ─────────────────────────────────────────────────
@@ -263,10 +279,10 @@ class OrderAdmin(admin.ModelAdmin):
     ordering      = ['-created_at']
     fieldsets = (
         ('Order Info', {
-            'fields': ('customer', 'status', 'delivery_date', 'frequency', 'notes')
+            'fields': ('customer', 'product_type', 'status', 'delivery_date', 'frequency', 'notes')
         }),
         ('Material Requirements', {
-            'fields': ('grade', 'mill_make', 'drawing_dimensions', 'mechanical_properties', 'processes', 'end_usage')
+            'fields': ('grade', 'size', 'mill_make', 'drawing_dimensions', 'mechanical_properties', 'processes', 'end_usage')
         }),
         ('Quantity & Delivery', {
             'fields': ('quantity', 'delivery_form')

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Select Order</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(135deg, #4e73df, #1cc88a);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .page { max-width: 760px; margin: 0 auto; }
+
+    h1 { color: white; font-size: 1.5rem; margin-bottom: 0.35rem; }
+    .subtitle { color: rgba(255,255,255,0.8); font-size: 0.9rem; margin-bottom: 2rem; }
+
+    .section-title {
+      font-size: 0.72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      color: rgba(255,255,255,0.7);
+      margin: 1.5rem 0 0.6rem;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .dot {
+      width: 10px; height: 10px; border-radius: 50%; display: inline-block;
+    }
+    .dot-yellow { background: #fbbf24; }
+    .dot-green  { background: #34d399; }
+
+    .order-card {
+      background: white; border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 0.75rem;
+      display: flex; align-items: center; justify-content: space-between;
+      text-decoration: none; color: inherit;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .order-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+    }
+
+    .order-left { flex: 1; }
+    .order-no { font-size: 0.75rem; color: #aaa; font-family: monospace; margin-bottom: 0.2rem; }
+    .order-company { font-weight: 700; font-size: 1rem; color: #333; margin-bottom: 0.25rem; }
+    .order-meta { font-size: 0.82rem; color: #666; display: flex; gap: 1rem; flex-wrap: wrap; }
+    .order-meta span { display: flex; align-items: center; gap: 0.25rem; }
+
+    .order-right { text-align: right; margin-left: 1rem; flex-shrink: 0; }
+    .delivery-label { font-size: 0.7rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.04em; }
+    .delivery-date  { font-size: 0.92rem; font-weight: 600; color: #333; }
+    .no-product-type { font-size: 0.72rem; color: #f59e0b; margin-top: 0.2rem; }
+
+    .badge {
+      display: inline-block; padding: 0.2rem 0.6rem;
+      border-radius: 999px; font-size: 0.72rem; font-weight: 600;
+    }
+    .badge-yellow { background: #fef3c7; color: #92400e; }
+    .badge-green  { background: #d1fae5; color: #065f46; }
+
+    .empty { color: rgba(255,255,255,0.6); font-size: 0.9rem; padding: 0.5rem 0 1rem; }
+
+    .back-link {
+      display: inline-block; margin-top: 2rem;
+      color: rgba(255,255,255,0.7); font-size: 0.9rem; text-decoration: none;
+    }
+    .back-link:hover { color: white; }
+
+    .arrow { font-size: 1.2rem; color: #4e73df; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Create New Part</h1>
+  <p class="subtitle">Select the order you are cutting this part for</p>
+
+  <!-- In Production -->
+  <div class="section-title">
+    <span class="dot dot-green"></span> In Production
+  </div>
+  {% for order in in_progress %}
+  <a href="{% url 'select_coil_for_order' order.pk %}" class="order-card">
+    <div class="order-left">
+      <div class="order-no">ORD-{{ order.pk|stringformat:"04d" }}</div>
+      <div class="order-company">{{ order.customer.name }}</div>
+      <div class="order-meta">
+        {% if order.grade %}<span>📐 {{ order.grade }}</span>{% endif %}
+        {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
+        {% if order.product_type %}<span>🔧 {{ order.product_type.name }}</span>{% endif %}
+      </div>
+      {% if not order.product_type %}
+      <div class="no-product-type">⚠ No product type set — admin needs to assign one</div>
+      {% endif %}
+    </div>
+    <div class="order-right">
+      {% if order.delivery_date %}
+      <div class="delivery-label">Deliver by</div>
+      <div class="delivery-date">{{ order.delivery_date|date:"d M Y" }}</div>
+      {% endif %}
+      <span class="badge badge-green" style="margin-top:0.4rem; display:inline-block;">In Production</span>
+    </div>
+    <div class="arrow" style="margin-left:1rem;">›</div>
+  </a>
+  {% empty %}
+  <p class="empty">No orders currently in production.</p>
+  {% endfor %}
+
+  <!-- Not Started -->
+  <div class="section-title">
+    <span class="dot dot-yellow"></span> Not Started
+  </div>
+  {% for order in not_started %}
+  <a href="{% url 'select_coil_for_order' order.pk %}" class="order-card">
+    <div class="order-left">
+      <div class="order-no">ORD-{{ order.pk|stringformat:"04d" }}</div>
+      <div class="order-company">{{ order.customer.name }}</div>
+      <div class="order-meta">
+        {% if order.grade %}<span>📐 {{ order.grade }}</span>{% endif %}
+        {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
+        {% if order.product_type %}<span>🔧 {{ order.product_type.name }}</span>{% endif %}
+      </div>
+      {% if not order.product_type %}
+      <div class="no-product-type">⚠ No product type set — admin needs to assign one</div>
+      {% endif %}
+    </div>
+    <div class="order-right">
+      {% if order.delivery_date %}
+      <div class="delivery-label">Deliver by</div>
+      <div class="delivery-date">{{ order.delivery_date|date:"d M Y" }}</div>
+      {% endif %}
+      <span class="badge badge-yellow" style="margin-top:0.4rem; display:inline-block;">Not Started</span>
+    </div>
+    <div class="arrow" style="margin-left:1rem;">›</div>
+  </a>
+  {% empty %}
+  <p class="empty">No confirmed orders waiting to start.</p>
+  {% endfor %}
+
+  <a href="{% url 'employee' %}" class="back-link">← Back</a>
+</div>
+</body>
+</html>
