@@ -9,7 +9,8 @@ from django.http import JsonResponse
 import qrcode
 import io
 import base64
-from .models import Material, CoilPart, ProductType, ProcessStep, ProductionJob, StepLog, Customer, Order
+import json
+from .models import Material, CoilPart, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
 from .forms import MaterialForm
 
 
@@ -53,6 +54,7 @@ def coil_tag(request, pk):
 
 
 def admin_login(request):
+    next_url = request.GET.get('next') or request.POST.get('next') or '/admin/'
     if request.method == "POST":
         username = request.POST.get("username")
         password = request.POST.get("password")
@@ -60,11 +62,11 @@ def admin_login(request):
 
         if user is not None:
             login(request, user)
-            return redirect("/admin/")
+            return redirect(next_url)
         else:
-            return render(request, "materials/admin_login.html", {"error": "Invalid credentials"})
+            return render(request, "materials/admin_login.html", {"error": "Invalid credentials", "next": next_url})
 
-    return render(request, "materials/admin_login.html")
+    return render(request, "materials/admin_login.html", {"next": next_url})
 
 
 # ── Coil parts ──────────────────────────────────────────────
@@ -74,6 +76,10 @@ def coil_parts(request, coil_pk):
     coil = get_object_or_404(Material, pk=coil_pk)
     parts = coil.parts.prefetch_related('jobs__product_type').order_by('created_at')
     product_types = ProductType.objects.all()
+
+    # Optional: coming from order-first flow
+    from_order_pk = request.GET.get('from_order') or request.POST.get('from_order')
+    from_order = Order.objects.select_related('product_type', 'customer').filter(pk=from_order_pk).first() if from_order_pk else None
 
     total_used = float(parts.aggregate(total=Sum('weight'))['total'] or 0)
     coil_weight = float(coil.quantity or 0)
@@ -86,7 +92,11 @@ def coil_parts(request, coil_pk):
 
         suffix = request.POST.get('suffix', '').strip().upper()
         new_weight = request.POST.get('weight') or None
-        product_type_id = request.POST.get('product_type')
+        # If coming from order flow, product type is fixed; otherwise use form selection
+        product_type_id = (
+            from_order.product_type.pk if from_order and from_order.product_type
+            else request.POST.get('product_type')
+        )
         error = None
 
         if not suffix:
@@ -110,6 +120,7 @@ def coil_parts(request, coil_pk):
             pt = get_object_or_404(ProductType, pk=product_type_id)
             job = ProductionJob.objects.create(
                 part=part, product_type=pt, job_no='PENDING',
+                order=from_order,
             )
             job.job_no = f"JOB-{job.pk:04d}"
             job.save(update_fields=['job_no'])
@@ -118,17 +129,86 @@ def coil_parts(request, coil_pk):
                     job=job, step=step, status='pending',
                     updated_by=request.user if request.user.is_authenticated else None,
                 )
+            # Mark order as in production when first part is cut for it
+            if from_order and from_order.status == 'confirmed':
+                from_order.status = 'in_production'
+                from_order.save(update_fields=['status'])
             return redirect('coil_parts', coil_pk=coil.pk)
 
         return render(request, 'materials/coil_parts.html', {
             'coil': coil, 'parts': parts, 'product_types': product_types,
             'total_used': total_used, 'remaining': remaining,
             'exhausted': exhausted, 'error': error,
+            'from_order': from_order,
         })
 
     return render(request, 'materials/coil_parts.html', {
         'coil': coil, 'parts': parts, 'product_types': product_types,
         'total_used': total_used, 'remaining': remaining, 'exhausted': exhausted,
+        'from_order': from_order,
+    })
+
+
+# ── Order-first part creation flow ───────────────────────────
+
+def select_order(request):
+    """Step 1: employee picks which order they're cutting a part for."""
+    not_started = (Order.objects
+                   .filter(status='confirmed')
+                   .select_related('customer', 'product_type')
+                   .order_by('delivery_date'))
+    in_progress  = (Order.objects
+                    .filter(status='in_production')
+                    .select_related('customer', 'product_type')
+                    .order_by('delivery_date'))
+    return render(request, 'materials/select_order.html', {
+        'not_started': not_started,
+        'in_progress': in_progress,
+    })
+
+
+def select_coil_for_order(request, order_pk):
+    """Step 2: show coils that match the order's product type allowed specs."""
+    order = get_object_or_404(
+        Order.objects.select_related('customer', 'product_type'),
+        pk=order_pk,
+    )
+
+    coils_qs = Material.objects.annotate(weight_used=Sum('parts__weight'))
+
+    # Filter by allowed specs if the order has a product type configured
+    if order.product_type:
+        specs = list(order.product_type.allowed_specs.all())
+        if specs:
+            from django.db.models import Q
+            q = Q()
+            for spec in specs:
+                spec_q = Q()
+                if spec.grade:
+                    spec_q &= Q(grade__iexact=spec.grade)
+                if spec.size:
+                    spec_q &= Q(size=spec.size)
+                if spec_q:
+                    q |= spec_q
+            coils_qs = coils_qs.filter(q)
+
+    # Only coils with remaining weight
+    coils = []
+    for coil in coils_qs.order_by('-coil_no'):
+        used      = float(coil.weight_used or 0)
+        total     = float(coil.quantity or 0)
+        remaining = total - used
+        if remaining > 0:
+            coils.append({
+                'coil': coil,
+                'remaining': remaining,
+                'total': total,
+                'pct_used': int((used / total * 100)) if total > 0 else 0,
+            })
+
+    return render(request, 'materials/select_coil_for_order.html', {
+        'order': order,
+        'coils': coils,
     })
 
 
@@ -190,6 +270,57 @@ def job_detail(request, pk):
     })
 
 
+def production_board(request):
+    """Employee view: all in-production orders with per-job progress."""
+    orders = (Order.objects
+              .filter(status='in_production')
+              .select_related('customer', 'product_type')
+              .prefetch_related(
+                  'jobs__part__coil',
+                  'jobs__product_type__steps',
+                  'jobs__step_logs__step',
+              )
+              .order_by('delivery_date'))
+
+    board = []
+    for order in orders:
+        jobs_data = []
+        for job in order.jobs.all():
+            steps = list(job.product_type.steps.all())
+            total = len(steps)
+
+            logs_by_step = {}
+            for log in sorted(job.step_logs.all(), key=lambda l: l.timestamp, reverse=True):
+                logs_by_step.setdefault(log.step_id, log)
+
+            completed = sum(
+                1 for s in steps
+                if logs_by_step.get(s.id) and logs_by_step[s.id].status == 'completed'
+            )
+
+            current_step = None
+            current_status = 'completed'
+            for step in steps:
+                log = logs_by_step.get(step.id)
+                if not log or log.status != 'completed':
+                    current_step = step
+                    current_status = log.status if log else 'pending'
+                    break
+
+            jobs_data.append({
+                'job': job,
+                'total': total,
+                'completed': completed,
+                'pct': int(completed / total * 100) if total > 0 else 0,
+                'current_step': current_step,
+                'current_status': current_status,
+            })
+
+        board.append({'order': order, 'jobs': jobs_data})
+
+    return render(request, 'materials/production_board.html', {'board': board})
+
+
 def employee_landing(request):
     coils = Material.objects.order_by('-coil_no')
     all_jobs = ProductionJob.objects.select_related(
@@ -206,15 +337,21 @@ def employee_landing(request):
 
 def order_dashboard(request):
     if not request.user.is_authenticated or not request.user.is_staff:
-        return redirect('home')
+        return redirect(f"{reverse('admin_login')}?next={reverse('order_dashboard')}")
 
-    orders = Order.objects.select_related('customer').order_by('-created_at')
+    orders = Order.objects.select_related('customer', 'product_type').order_by('-created_at')
     customers = Customer.objects.order_by('name')
+    product_types = ProductType.objects.order_by('name')
+    product_type_data = {
+        str(pt.pk): {'grade': pt.grade, 'size': str(pt.size) if pt.size else ''}
+        for pt in product_types
+    }
     error = None
 
     if request.method == 'POST':
-        customer_name = request.POST.get('name', '').strip()
-        quantity      = request.POST.get('quantity', '').strip()
+        customer_name   = request.POST.get('name', '').strip()
+        quantity        = request.POST.get('quantity', '').strip()
+        product_type_id = request.POST.get('product_type') or None
 
         if not customer_name:
             error = "Company name is required."
@@ -222,7 +359,6 @@ def order_dashboard(request):
             error = "Quantity is required."
         else:
             customer, _ = Customer.objects.get_or_create(name=customer_name)
-            # Update email/phone if provided
             email = request.POST.get('email', '').strip()
             phone = request.POST.get('phone', '').strip()
             if email or phone:
@@ -232,7 +368,9 @@ def order_dashboard(request):
 
             Order.objects.create(
                 customer=customer,
+                product_type_id=product_type_id,
                 grade=request.POST.get('grade', ''),
+                size=request.POST.get('size') or None,
                 mill_make=request.POST.get('mill_make', ''),
                 drawing_dimensions=request.POST.get('drawing_dimensions', ''),
                 mechanical_properties=request.POST.get('mechanical_properties', ''),
@@ -250,6 +388,8 @@ def order_dashboard(request):
     return render(request, 'materials/order_dashboard.html', {
         'orders': orders,
         'customers': customers,
+        'product_types': product_types,
+        'product_type_data': json.dumps(product_type_data),
         'error': error,
         'post': request.POST if error else {},
     })
@@ -290,16 +430,24 @@ def order_reject(request, pk):
 
 def quote_form(request, token):
     customer = get_object_or_404(Customer, quote_token=token)
+    product_types = ProductType.objects.order_by('name')
+    product_type_data = {
+        str(pt.pk): {'grade': pt.grade, 'size': str(pt.size) if pt.size else ''}
+        for pt in product_types
+    }
     error = None
 
     if request.method == 'POST':
-        quantity = request.POST.get('quantity', '').strip()
+        quantity        = request.POST.get('quantity', '').strip()
+        product_type_id = request.POST.get('product_type') or None
         if not quantity:
             error = "Quantity is required."
         else:
             Order.objects.create(
                 customer=customer,
+                product_type_id=product_type_id,
                 grade=request.POST.get('grade', ''),
+                size=request.POST.get('size') or None,
                 mill_make=request.POST.get('mill_make', ''),
                 drawing_dimensions=request.POST.get('drawing_dimensions', ''),
                 mechanical_properties=request.POST.get('mechanical_properties', ''),
@@ -316,6 +464,8 @@ def quote_form(request, token):
 
     return render(request, 'materials/quote_form.html', {
         'customer': customer,
+        'product_types': product_types,
+        'product_type_data': json.dumps(product_type_data),
         'error': error,
         'post': request.POST if error else {},
     })

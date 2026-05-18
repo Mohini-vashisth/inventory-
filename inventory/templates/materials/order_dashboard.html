@@ -257,13 +257,38 @@
         <!-- Manual fields — hidden until Fill Manually is clicked -->
         <div class="manual-fields" id="manual-fields">
 
-          <div class="section-label" style="margin-top:1.25rem;">Material Requirements</div>
-          <div class="form-row cols-3">
+          <div class="section-label" style="margin-top:1.25rem;">Final Product</div>
+          <div class="form-row" style="grid-template-columns:2fr 1fr 1fr;">
             <div class="form-group">
-              <label>Grade of Material</label>
-              <input type="text" name="grade" placeholder="e.g. EN8, SS304, 42CrMo4"
+              <label>Product Type</label>
+              <select name="product_type" id="dash-product-type">
+                <option value="">— select product type —</option>
+                {% for pt in product_types %}
+                <option value="{{ pt.pk }}" {% if post.product_type == pt.pk|stringformat:"s" %}selected{% endif %}>
+                  {{ pt.name }}
+                </option>
+                {% endfor %}
+              </select>
+              <span style="font-size:0.72rem; color:#aaa; margin-top:0.25rem;">
+                Sets allowed raw material coils
+              </span>
+            </div>
+            <div class="form-group">
+              <label>Grade</label>
+              <input type="text" name="grade" id="dash-grade"
+                     placeholder="e.g. EN8D, SS304"
                      value="{{ post.grade|default:'' }}">
             </div>
+            <div class="form-group">
+              <label>Size (mm)</label>
+              <input type="number" name="size" id="dash-size"
+                     step="0.001" min="0" placeholder="e.g. 2.500"
+                     value="{{ post.size|default:'' }}">
+            </div>
+          </div>
+
+          <div class="section-label">Material Requirements</div>
+          <div class="form-row cols-3">
             <div class="form-group">
               <label>Specific Mill Make</label>
               <input type="text" name="mill_make" placeholder="e.g. SAIL, Tata, Any"
@@ -353,10 +378,9 @@
         <tr>
           <th>Order #</th>
           <th>Company</th>
+          <th>Product</th>
           <th>Grade</th>
           <th>Qty (kg)</th>
-          <th>Form</th>
-          <th>Frequency</th>
           <th>Delivery</th>
           <th>Status</th>
           <th>Received</th>
@@ -368,10 +392,15 @@
         <tr>
           <td class="muted" style="font-family:monospace;">ORD-{{ order.pk|stringformat:"04d" }}</td>
           <td style="font-weight:600;">{{ order.customer.name }}</td>
+          <td>
+            {% if order.product_type %}
+              <span style="font-size:0.82rem; font-weight:600; color:#4e73df;">{{ order.product_type.name }}</span>
+            {% else %}
+              <span style="color:#f59e0b; font-size:0.78rem;">⚠ Not set</span>
+            {% endif %}
+          </td>
           <td>{{ order.grade|default:"—" }}</td>
           <td>{{ order.quantity }}</td>
-          <td>{{ order.get_delivery_form_display|default:"—" }}</td>
-          <td>{{ order.get_frequency_display|default:"—" }}</td>
           <td>{{ order.delivery_date|default:"—" }}</td>
           <td>
             {% if order.status == 'pending' %}
@@ -393,19 +422,21 @@
           </td>
         </tr>
         <tr id="detail-{{ order.pk }}" class="detail-row">
-          <td colspan="10" style="padding: 0 1rem 0.75rem;">
+          <td colspan="9" style="padding: 0 1rem 0.75rem;">
             <div class="detail-box">
               <div class="detail-item"><strong>Drawing / Dimensions</strong>{{ order.drawing_dimensions|default:"—" }}</div>
               <div class="detail-item"><strong>Mechanical Properties</strong>{{ order.mechanical_properties|default:"—" }}</div>
               <div class="detail-item"><strong>Mill Make</strong>{{ order.mill_make|default:"—" }}</div>
               <div class="detail-item"><strong>Processes</strong>{{ order.processes|default:"—" }}</div>
               <div class="detail-item"><strong>End Usage</strong>{{ order.end_usage|default:"—" }}</div>
+              <div class="detail-item"><strong>Delivery Form</strong>{{ order.get_delivery_form_display|default:"—" }}</div>
+              <div class="detail-item"><strong>Frequency</strong>{{ order.get_frequency_display|default:"—" }}</div>
               <div class="detail-item"><strong>Notes</strong>{{ order.notes|default:"—" }}</div>
             </div>
           </td>
         </tr>
         {% empty %}
-        <tr class="empty-row"><td colspan="10">No orders yet.</td></tr>
+        <tr class="empty-row"><td colspan="9">No orders yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -459,6 +490,16 @@
 
 <script>
   const autocompleteUrl = "{% url 'customer_autocomplete' %}";
+  const productTypeData = {{ product_type_data|safe }};
+
+  // ── Product type autofill ────────────────────────────────────
+  document.getElementById('dash-product-type').addEventListener('change', function() {
+    const data = productTypeData[this.value];
+    if (data) {
+      document.getElementById('dash-grade').value = data.grade || '';
+      document.getElementById('dash-size').value  = data.size  || '';
+    }
+  });
 
   // ── Autocomplete on the single company name input ────────
   (function() {
