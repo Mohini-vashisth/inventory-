@@ -6,6 +6,7 @@ from django.conf import settings
 from django.urls import reverse
 from django.db.models import Sum
 from django.http import JsonResponse
+import uuid
 import qrcode
 import io
 import base64
@@ -14,11 +15,35 @@ from .models import Material, CoilPart, ProductType, AllowedCoilSpec, ProcessSte
 from .forms import MaterialForm
 
 
+# ── Employee auth ────────────────────────────────────────────
+
+def employee_login(request):
+    next_url = request.GET.get('next') or request.POST.get('next') or reverse('employee')
+    if request.session.get('employee_auth'):
+        return redirect(next_url)
+    error = None
+    if request.method == 'POST':
+        if request.POST.get('pin', '') == settings.EMPLOYEE_PIN:
+            request.session['employee_auth'] = True
+            return redirect(next_url)
+        error = "Incorrect PIN."
+    return render(request, 'materials/employee_login.html', {'error': error, 'next': next_url})
+
+
+def _employee_required(request):
+    """Returns a redirect response if not authenticated, else None."""
+    if not request.session.get('employee_auth'):
+        return redirect(f"{reverse('employee_login')}?next={request.path}")
+    return None
+
+
 def home(request):
     return render(request, "home.html")
 
 
 def material_form(request):
+    guard = _employee_required(request)
+    if guard: return guard
     if request.method == "POST":
         form = MaterialForm(request.POST)
         if form.is_valid():
@@ -35,6 +60,8 @@ def material_form(request):
 
 
 def coil_tag(request, pk):
+    guard = _employee_required(request)
+    if guard: return guard
     coil = get_object_or_404(Material, pk=pk)
 
     # Generate QR code encoding the formatted coil number
@@ -72,7 +99,8 @@ def admin_login(request):
 # ── Coil parts ──────────────────────────────────────────────
 
 def coil_parts(request, coil_pk):
-    """List all parts cut from a coil + form to add a new part."""
+    guard = _employee_required(request)
+    if guard: return guard
     coil = get_object_or_404(Material, pk=coil_pk)
     parts = coil.parts.prefetch_related('jobs__product_type').order_by('created_at')
     product_types = ProductType.objects.all()
@@ -152,7 +180,8 @@ def coil_parts(request, coil_pk):
 # ── Order-first part creation flow ───────────────────────────
 
 def select_order(request):
-    """Step 1: employee picks which order they're cutting a part for."""
+    guard = _employee_required(request)
+    if guard: return guard
     not_started = (Order.objects
                    .filter(status='confirmed')
                    .select_related('customer', 'product_type')
@@ -168,7 +197,8 @@ def select_order(request):
 
 
 def select_coil_for_order(request, order_pk):
-    """Step 2: show coils that match the order's product type allowed specs."""
+    guard = _employee_required(request)
+    if guard: return guard
     order = get_object_or_404(
         Order.objects.select_related('customer', 'product_type'),
         pk=order_pk,
@@ -215,7 +245,8 @@ def select_coil_for_order(request, order_pk):
 # ── Production jobs ──────────────────────────────────────────
 
 def job_detail(request, pk):
-    """Step-ticking view for a production job."""
+    guard = _employee_required(request)
+    if guard: return guard
     job = get_object_or_404(
         ProductionJob.objects.select_related('part__coil', 'product_type')
                              .prefetch_related('step_logs', 'product_type__steps'),
@@ -271,7 +302,8 @@ def job_detail(request, pk):
 
 
 def production_board(request):
-    """Employee view: all in-production orders with per-job progress."""
+    guard = _employee_required(request)
+    if guard: return guard
     orders = (Order.objects
               .filter(status='in_production')
               .select_related('customer', 'product_type')
@@ -316,21 +348,22 @@ def production_board(request):
                 'current_status': current_status,
             })
 
-        board.append({'order': order, 'jobs': jobs_data})
+        weight_cut = sum(float(jd['job'].part.weight or 0) for jd in jobs_data)
+        weight_needed = float(order.quantity or 0)
+        board.append({
+            'order': order,
+            'jobs': jobs_data,
+            'weight_cut': weight_cut,
+            'weight_fulfilled': weight_needed > 0 and weight_cut >= weight_needed,
+        })
 
     return render(request, 'materials/production_board.html', {'board': board})
 
 
 def employee_landing(request):
-    coils = Material.objects.order_by('-coil_no')
-    all_jobs = ProductionJob.objects.select_related(
-        'part__coil', 'product_type'
-    ).order_by('-created_at')
-
-    return render(request, 'materials/employee_landing.html', {
-        'coils': coils,
-        'active_jobs': all_jobs,
-    })
+    guard = _employee_required(request)
+    if guard: return guard
+    return render(request, 'materials/employee_landing.html')
 
 
 # ── Orders ───────────────────────────────────────────────────
@@ -339,7 +372,10 @@ def order_dashboard(request):
     if not request.user.is_authenticated or not request.user.is_staff:
         return redirect(f"{reverse('admin_login')}?next={reverse('order_dashboard')}")
 
-    orders = Order.objects.select_related('customer', 'product_type').order_by('-created_at')
+    orders = (Order.objects
+              .select_related('customer', 'product_type')
+              .annotate(weight_cut=Sum('jobs__part__weight'))
+              .order_by('-created_at'))
     customers = Customer.objects.order_by('name')
     product_types = ProductType.objects.order_by('name')
     product_type_data = {
@@ -414,8 +450,23 @@ def order_confirm(request, pk):
     if not request.user.is_staff:
         return redirect('home')
     order = get_object_or_404(Order, pk=pk)
+    if not order.product_type_id:
+        messages.error(request, f"ORD-{order.pk:04d} cannot be confirmed without a product type. Edit the order to assign one.")
+        return redirect('order_dashboard')
     order.status = 'confirmed'
     order.save(update_fields=['status'])
+    messages.success(request, f"ORD-{order.pk:04d} confirmed.")
+    return redirect('order_dashboard')
+
+
+def order_dispatch(request, pk):
+    if not request.user.is_staff:
+        return redirect('home')
+    order = get_object_or_404(Order, pk=pk)
+    if order.status == 'in_production':
+        order.status = 'completed'
+        order.save(update_fields=['status'])
+        messages.success(request, f"ORD-{order.pk:04d} marked as dispatched.")
     return redirect('order_dashboard')
 
 
@@ -460,6 +511,9 @@ def quote_form(request, token):
                 notes=request.POST.get('notes', ''),
                 status='pending',
             )
+            # Invalidate this link — regenerate token so the URL becomes a 404
+            customer.quote_token = uuid.uuid4()
+            customer.save(update_fields=['quote_token'])
             return render(request, 'materials/quote_submitted.html', {'customer': customer})
 
     return render(request, 'materials/quote_form.html', {
