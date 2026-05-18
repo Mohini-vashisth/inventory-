@@ -128,12 +128,19 @@
           {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
         </div>
       </div>
-      {% if order.delivery_date %}
-      <div class="order-delivery">
+      <div style="text-align:right; flex-shrink:0;">
+        {% if order.delivery_date %}
         <div class="delivery-label">Deliver by</div>
         <div class="delivery-date">{{ order.delivery_date|date:"d M Y" }}</div>
+        {% endif %}
+        {% if order.quantity %}
+        <div style="margin-top:0.4rem; font-size:0.8rem;
+                    color:{% if item.weight_fulfilled %}#166534{% else %}#f59e0b{% endif %};
+                    font-weight:600;">
+          ✂ {{ item.weight_cut|floatformat:1 }} / {{ order.quantity }} kg
+        </div>
+        {% endif %}
       </div>
-      {% endif %}
     </div>
 
     <table>

@@ -400,7 +400,14 @@
             {% endif %}
           </td>
           <td>{{ order.grade|default:"—" }}</td>
-          <td>{{ order.quantity }}</td>
+          <td>
+            {{ order.quantity }}
+            {% if order.weight_cut %}
+            <br><span style="font-size:0.75rem; color:{% if order.weight_cut >= order.quantity %}#166534{% else %}#f59e0b{% endif %};">
+              ✂ {{ order.weight_cut|floatformat:1 }} kg cut
+            </span>
+            {% endif %}
+          </td>
           <td>{{ order.delivery_date|default:"—" }}</td>
           <td>
             {% if order.status == 'pending' %}
@@ -411,6 +418,12 @@
               <form method="post" action="{% url 'order_reject' order.pk %}" style="display:inline;">
                 {% csrf_token %}
                 <button class="action-btn btn-reject">✗ Reject</button>
+              </form>
+            {% elif order.status == 'in_production' %}
+              <span class="badge badge-in_production">In Production</span>
+              <form method="post" action="{% url 'order_dispatch' order.pk %}" style="display:inline; margin-left:4px;">
+                {% csrf_token %}
+                <button class="action-btn" style="background:#dbeafe;color:#1e40af;">🚚 Dispatch</button>
               </form>
             {% else %}
               <span class="badge badge-{{ order.status }}">{{ order.get_status_display }}</span>
@@ -431,6 +444,19 @@
               <div class="detail-item"><strong>End Usage</strong>{{ order.end_usage|default:"—" }}</div>
               <div class="detail-item"><strong>Delivery Form</strong>{{ order.get_delivery_form_display|default:"—" }}</div>
               <div class="detail-item"><strong>Frequency</strong>{{ order.get_frequency_display|default:"—" }}</div>
+              <div class="detail-item">
+                <strong>Weight Reconciliation</strong>
+                {% if order.weight_cut %}
+                  {{ order.weight_cut|floatformat:2 }} / {{ order.quantity }} kg cut
+                  {% if order.weight_cut >= order.quantity %}
+                    <span style="color:#166534; font-weight:600;"> ✓ Fulfilled</span>
+                  {% else %}
+                    <span style="color:#f59e0b; font-weight:600;"> ⚠ {{ order.quantity|add:"-0"|floatformat:2 }} kg needed</span>
+                  {% endif %}
+                {% else %}
+                  No parts cut yet
+                {% endif %}
+              </div>
               <div class="detail-item"><strong>Notes</strong>{{ order.notes|default:"—" }}</div>
             </div>
           </td>
