@@ -2,158 +2,280 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Material Entry</title>
-
+<title>New Coil Entry</title>
 <style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
 
-body{
+  body {
     font-family: Arial, Helvetica, sans-serif;
-    background:#f4f6f9;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    height:100vh;
-}
+    background: linear-gradient(135deg, #4e73df, #1cc88a);
+    min-height: 100vh;
+    padding: 2rem 1rem;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+  }
 
-.container{
-    background:white;
-    padding:30px;
-    border-radius:10px;
-    width:400px;
-    box-shadow:0 5px 20px rgba(0,0,0,0.1);
-}
+  .page { width: 100%; max-width: 480px; }
 
-h2{
-    text-align:center;
-    margin-bottom:20px;
-}
+  .back-link {
+    color: rgba(255,255,255,0.8); text-decoration: none;
+    font-size: 0.9rem; display: inline-block; margin-bottom: 1.25rem;
+  }
+  .back-link:hover { color: white; }
 
-.form-group{
-    margin-bottom:15px;
-}
+  h1 { color: white; font-size: 1.5rem; margin-bottom: 0.3rem; }
+  .subtitle { color: rgba(255,255,255,0.75); font-size: 0.88rem; margin-bottom: 1.75rem; }
 
-label{
-    display:block;
-    margin-bottom:5px;
-    font-weight:bold;
-}
+  .card {
+    background: white; border-radius: 16px;
+    padding: 1.75rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  }
 
-input, select{
-    width:100%;
-    padding:8px;
-    border:1px solid #ccc;
-    border-radius:5px;
-}
+  .form-group { margin-bottom: 1.1rem; }
 
-input:focus, select:focus{
-    border-color:#007BFF;
-    outline:none;
-}
+  label {
+    display: block;
+    font-size: 0.72rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    color: #666; margin-bottom: 0.35rem;
+  }
 
-button{
-    width:100%;
-    padding:10px;
-    background:#007BFF;
-    border:none;
-    color:white;
-    font-size:16px;
-    border-radius:5px;
-    cursor:pointer;
-}
+  input[type="text"], input[type="number"], input[type="date"] {
+    width: 100%; padding: 0.6rem 0.85rem;
+    border: 1px solid #ddd; border-radius: 8px;
+    font-size: 0.95rem; color: #333;
+  }
+  input:focus { outline: none; border-color: #4e73df; }
+  input[readonly] { background: #f8f9fb; color: #888; }
 
-button:hover{
-    background:#0056b3;
-}
+  /* Picker trigger */
+  .picker-btn {
+    width: 100%; padding: 0.6rem 0.85rem;
+    border: 1px solid #ddd; border-radius: 8px;
+    font-size: 0.95rem; background: white;
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; text-align: left;
+    transition: border-color 0.15s;
+  }
+  .picker-btn:hover { border-color: #4e73df; }
+  .picker-btn .val { color: #333; font-weight: 600; }
+  .picker-btn .placeholder { color: #aaa; }
+  .picker-btn .arrow { color: #4e73df; font-size: 1rem; }
 
-.back-link{
-    display:inline-block;
-    margin-bottom:15px;
-    color:#007BFF;
-    text-decoration:none;
-    font-size:14px;
-}
+  .btn-submit {
+    width: 100%; padding: 0.8rem;
+    background: #4e73df; color: white;
+    border: none; border-radius: 8px;
+    font-size: 1rem; font-weight: 600; cursor: pointer;
+    margin-top: 0.5rem;
+  }
+  .btn-submit:hover { background: #3a5ec0; }
 
-.back-link:hover{
-    text-decoration:underline;
-}
+  /* ── Full-screen picker overlay ── */
+  .picker-overlay {
+    display: none;
+    position: fixed; inset: 0; z-index: 999;
+    background: linear-gradient(135deg, #4e73df, #1cc88a);
+    overflow-y: auto; padding: 2rem 1rem;
+  }
+  .picker-overlay.open { display: block; }
 
+  .picker-inner { max-width: 480px; margin: 0 auto; }
+
+  .picker-back {
+    background: rgba(255,255,255,0.2); border: none;
+    color: white; font-size: 0.9rem; padding: 0.5rem 1rem;
+    border-radius: 8px; cursor: pointer; margin-bottom: 1.25rem;
+    display: inline-block;
+  }
+  .picker-back:hover { background: rgba(255,255,255,0.3); }
+
+  .picker-title {
+    color: white; font-size: 1.4rem; font-weight: 700;
+    margin-bottom: 0.3rem;
+  }
+  .picker-subtitle {
+    color: rgba(255,255,255,0.75); font-size: 0.85rem; margin-bottom: 1.75rem;
+  }
+
+  .picker-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.85rem;
+  }
+
+  .picker-option {
+    background: white; border: none; border-radius: 12px;
+    padding: 1.5rem 0.5rem;
+    font-size: 1.1rem; font-weight: 700; color: #333;
+    cursor: pointer; text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .picker-option:hover, .picker-option:active {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+    color: #4e73df;
+  }
+  .picker-option small {
+    display: block; font-size: 0.72rem;
+    font-weight: 400; color: #888; margin-top: 0.2rem;
+  }
+
+  .picker-empty {
+    background: rgba(255,255,255,0.15); border-radius: 12px;
+    padding: 2rem; text-align: center;
+    color: rgba(255,255,255,0.8); font-size: 0.95rem;
+  }
 </style>
 </head>
-
-
 <body>
 
-<div class="container">
+<div class="page">
+  <a href="{% url 'employee' %}" class="back-link">← Back to portal</a>
+  <h1>New Coil Entry</h1>
+  <p class="subtitle">Register a newly received coil into inventory</p>
 
-<a href="{% url 'employee' %}" class="back-link">← Back</a>
-<h2>Material Entry</h2>
-{% if messages %}
-    {% for message in messages %}
-        <p style="color:green;text-align:center">{{ message }}</p>
-    {% endfor %}
-{% endif %}
+  <div class="card">
+    <form method="POST" id="coil-form">
+      {% csrf_token %}
 
-<form method="POST">
-{% csrf_token %}
+      <div class="form-group">
+        <label>Coil No</label>
+        <input type="text" value="{{ coil_no }}" readonly>
+      </div>
 
-<div class="form-group">
-<label>Coil No</label>
-<input type="text" name="coil_no" value="{{ coil_no }}" readonly class="form-control">
+      <div class="form-group">
+        <label>Date</label>
+        <input type="date" name="date" id="date-input" required>
+      </div>
+
+      <div class="form-group">
+        <label>Heat No</label>
+        <input type="text" name="heat_no" placeholder="e.g. H24071" required>
+      </div>
+
+      <div class="form-group">
+        <label>Grade</label>
+        <input type="hidden" name="grade" id="grade-val">
+        <button type="button" class="picker-btn" onclick="openPicker('grade-picker')">
+          <span id="grade-display" class="placeholder">Tap to select grade</span>
+          <span class="arrow">›</span>
+        </button>
+      </div>
+
+      <div class="form-group">
+        <label>Size</label>
+        <input type="hidden" name="size" id="size-val">
+        <button type="button" class="picker-btn" onclick="openPicker('size-picker')">
+          <span id="size-display" class="placeholder">Tap to select size</span>
+          <span class="arrow">›</span>
+        </button>
+      </div>
+
+      <div class="form-group">
+        <label>Company</label>
+        <input type="text" name="company" placeholder="e.g. Tata Steel" required>
+      </div>
+
+      <div class="form-group">
+        <label>Vendor</label>
+        <input type="text" name="vendor" placeholder="e.g. ABC Traders" required>
+      </div>
+
+      <div class="form-group">
+        <label>Quantity (kg)</label>
+        <input type="number" name="quantity" step="0.001" placeholder="e.g. 500.000" required>
+      </div>
+
+      <button type="submit" class="btn-submit">Save Coil →</button>
+    </form>
+  </div>
 </div>
 
-<div class="form-group">
-<label>Date</label>
-<input type="date" name="date" required>
+<!-- ── Grade picker overlay ── -->
+<div id="grade-picker" class="picker-overlay">
+  <div class="picker-inner">
+    <button class="picker-back" onclick="closePicker('grade-picker')">← Back</button>
+    <div class="picker-title">Select Grade</div>
+    <p class="picker-subtitle">Tap the grade of this coil</p>
+    <div class="picker-grid">
+      {% for g in grades %}
+      <button type="button" class="picker-option" onclick="selectGrade('{{ g.name }}')">
+        {{ g.name }}
+      </button>
+      {% empty %}
+      <div class="picker-empty" style="grid-column:1/-1;">
+        No grades configured yet.<br>Ask admin to add grades in the admin panel.
+      </div>
+      {% endfor %}
+    </div>
+  </div>
 </div>
 
-<div class="form-group">
-<label>Grade</label>
-<select name="grade" required>
-<option value="">Select Grade</option>
-<option>EN8D</option>
-<option>EN8</option>
-<option>RAW</option>
-<option>430</option>
-</select>
+<!-- ── Size picker overlay ── -->
+<div id="size-picker" class="picker-overlay">
+  <div class="picker-inner">
+    <button class="picker-back" onclick="closePicker('size-picker')">← Back</button>
+    <div class="picker-title">Select Size</div>
+    <p class="picker-subtitle">Tap the diameter / thickness of this coil</p>
+    <div class="picker-grid">
+      {% for s in sizes %}
+      <button type="button" class="picker-option" onclick="selectSize('{{ s.value }}')">
+        {{ s.value }}
+        <small>mm</small>
+      </button>
+      {% empty %}
+      <div class="picker-empty" style="grid-column:1/-1;">
+        No sizes configured yet.<br>Ask admin to add sizes in the admin panel.
+      </div>
+      {% endfor %}
+    </div>
+  </div>
 </div>
 
-<div class="form-group">
-<label>Size</label>
-<select name="size" required>
-<option value="">Select Size</option>
-<option>0.23</option>
-<option>0.3</option>
-<option>1.0</option>
-<option>1.2</option>
-<option>1.5</option>
-</select>
-</div>
+<script>
+  // Auto-set date to today
+  document.getElementById('date-input').value = new Date().toISOString().split('T')[0];
 
-<div class="form-group">
-<label>Company</label>
-<input type="text" name="company" placeholder="Enter company name" required>
-</div>
+  function openPicker(id) {
+    document.getElementById(id).classList.add('open');
+    window.scrollTo(0, 0);
+  }
 
-<div class="form-group">
-<label>Vendor</label>
-<input type="text" name="vendor" placeholder="Enter vendor name" required>
-</div>
+  function closePicker(id) {
+    document.getElementById(id).classList.remove('open');
+  }
 
-<div class="form-group">
-<label>Quantity</label>
-<input type="number" name="quantity" step="0.001" placeholder="e.g. 500.000" required>
-</div>
+  function selectGrade(val) {
+    document.getElementById('grade-val').value = val;
+    const display = document.getElementById('grade-display');
+    display.textContent = val;
+    display.className = 'val';
+    closePicker('grade-picker');
+  }
 
-<div class="form-group">
-<label>Heat No</label>
-<input type="text" name="heat_no" placeholder="Enter heat number" required>
-</div>
+  function selectSize(val) {
+    document.getElementById('size-val').value = val;
+    const display = document.getElementById('size-display');
+    display.textContent = val + ' mm';
+    display.className = 'val';
+    closePicker('size-picker');
+  }
 
-<button type="submit">Save Material</button>
-
-</form>
-
-</div>
+  // Validate grade and size are selected before submit
+  document.getElementById('coil-form').addEventListener('submit', function(e) {
+    if (!document.getElementById('grade-val').value) {
+      e.preventDefault();
+      openPicker('grade-picker');
+    } else if (!document.getElementById('size-val').value) {
+      e.preventDefault();
+      openPicker('size-picker');
+    }
+  });
+</script>
 
 </body>
 </html>

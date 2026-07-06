@@ -34,6 +34,22 @@ class CoilPart(models.Model):
         return self.part_no
 
 
+class GradeOption(models.Model):
+    name = models.CharField(max_length=20, unique=True)
+    class Meta:
+        ordering = ['name']
+    def __str__(self):
+        return self.name
+
+
+class SizeOption(models.Model):
+    value = models.DecimalField(max_digits=10, decimal_places=3, unique=True)
+    class Meta:
+        ordering = ['value']
+    def __str__(self):
+        return f"{self.value} mm"
+
+
 class ProductType(models.Model):
     """e.g. 'EN8D Bar 2.5mm' — defines the final product, its preset grade/size, and which steps apply."""
     name        = models.CharField(max_length=100)

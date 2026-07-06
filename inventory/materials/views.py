@@ -11,7 +11,7 @@ import qrcode
 import io
 import base64
 import json
-from .models import Material, CoilPart, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
+from .models import Material, CoilPart, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
 from .forms import MaterialForm
 
 
@@ -56,7 +56,12 @@ def material_form(request):
     next_coil = (last_material.coil_no + 1) if last_material else 1
     formatted_coil = f"COIL{next_coil:04d}"
 
-    return render(request, "materials/material_form.html", {"coil_no": formatted_coil, "form": form})
+    return render(request, "materials/material_form.html", {
+        "coil_no": formatted_coil,
+        "form": form,
+        "grades": GradeOption.objects.all(),
+        "sizes": SizeOption.objects.all(),
+    })
 
 
 def coil_tag(request, pk):
