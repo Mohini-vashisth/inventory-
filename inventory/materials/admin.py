@@ -2,7 +2,19 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
 from django.db.models import Sum
-from .models import Material, CoilPart, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
+from .models import Material, CoilPart, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
+
+
+@admin.register(GradeOption)
+class GradeOptionAdmin(admin.ModelAdmin):
+    list_display = ['name']
+    ordering = ['name']
+
+
+@admin.register(SizeOption)
+class SizeOptionAdmin(admin.ModelAdmin):
+    list_display = ['value']
+    ordering = ['value']
 
 
 # ── Inline steps inside ProductType ─────────────────────────
