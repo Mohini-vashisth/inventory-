@@ -40,6 +40,7 @@ python3 manage.py migrate
 
 - **Material** — raw coil inventory (grade, size mm, vendor, quantity kg, heat no)
 - **CoilPart** — a physical piece cut from a coil (part_no format: `COIL0001-A`)
+- **GradeOption** / **SizeOption** — admin-managed lists of valid grades/sizes shown as tap-to-pick options on the New Coil Entry form (`/material-form/`); keeps the picker in sync without a code change
 - **ProductType** — final product definition with preset grade + size; has ordered ProcessSteps and AllowedCoilSpecs
 - **AllowedCoilSpec** — admin-configured coil grade/size that can be used as raw material for a ProductType
 - **ProcessStep** — one manufacturing step belonging to a ProductType (ordered)
@@ -69,6 +70,7 @@ python3 manage.py migrate
 ## Employee workflow
 
 1. New Coil Entry → `/material-form/` → prints QR tag
+   - Grade and size are chosen from a tap-to-pick overlay, populated from `GradeOption`/`SizeOption` (admin-managed). If either list is empty, the picker shows "not configured" and the form can't be submitted.
 2. Create New Part → `/select-order/` → `/order/<pk>/select-coil/` → `/coil/<pk>/parts/`
    - Order determines product type; only AllowedCoilSpec-matching coils are shown
    - Product type is locked from the order — employees cannot override it
