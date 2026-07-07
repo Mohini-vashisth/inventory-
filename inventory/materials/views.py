@@ -4,8 +4,10 @@ from django.contrib import messages
 from django.core.mail import send_mail
 from django.conf import settings
 from django.urls import reverse
+from django.db import transaction
 from django.db.models import Sum
 from django.http import JsonResponse
+from django.utils.http import url_has_allowed_host_and_scheme
 import uuid
 import qrcode
 import io
@@ -15,10 +17,17 @@ from .models import Material, CoilPart, GradeOption, SizeOption, ProductType, Al
 from .forms import MaterialForm
 
 
+def _safe_next(request, next_url, default):
+    """Only follow `next` if it points back at this host — blocks open-redirect via a spoofed link."""
+    if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
+        return next_url
+    return default
+
+
 # ── Employee auth ────────────────────────────────────────────
 
 def employee_login(request):
-    next_url = request.GET.get('next') or request.POST.get('next') or reverse('employee')
+    next_url = _safe_next(request, request.GET.get('next') or request.POST.get('next'), reverse('employee'))
     if request.session.get('employee_auth'):
         return redirect(next_url)
     error = None
@@ -86,7 +95,7 @@ def coil_tag(request, pk):
 
 
 def admin_login(request):
-    next_url = request.GET.get('next') or request.POST.get('next') or '/admin/'
+    next_url = _safe_next(request, request.GET.get('next') or request.POST.get('next'), '/admin/')
     if request.method == "POST":
         username = request.POST.get("username")
         password = request.POST.get("password")
@@ -130,6 +139,7 @@ def coil_parts(request, coil_pk):
             from_order.product_type.pk if from_order and from_order.product_type
             else request.POST.get('product_type')
         )
+        pt = ProductType.objects.filter(pk=product_type_id).first()
         error = None
 
         if not suffix:
@@ -141,31 +151,33 @@ def coil_parts(request, coil_pk):
                 f"Part weight ({float(new_weight):.3f} kg) exceeds the remaining coil weight "
                 f"({remaining:.3f} kg). Reduce the weight or split into smaller parts."
             )
+        elif pt is None:
+            error = "Please select a valid product type."
         else:
-            part = CoilPart.objects.create(
-                coil=coil,
-                part_no=f"{coil.formatted_coil()}-{suffix}",
-                weight=new_weight,
-                length=request.POST.get('length') or None,
-                cut_date=request.POST.get('cut_date') or None,
-                notes=request.POST.get('notes', ''),
-            )
-            pt = get_object_or_404(ProductType, pk=product_type_id)
-            job = ProductionJob.objects.create(
-                part=part, product_type=pt, job_no='PENDING',
-                order=from_order,
-            )
-            job.job_no = f"JOB-{job.pk:04d}"
-            job.save(update_fields=['job_no'])
-            for step in pt.steps.all():
-                StepLog.objects.create(
-                    job=job, step=step, status='pending',
-                    updated_by=request.user if request.user.is_authenticated else None,
+            with transaction.atomic():
+                part = CoilPart.objects.create(
+                    coil=coil,
+                    part_no=f"{coil.formatted_coil()}-{suffix}",
+                    weight=new_weight,
+                    length=request.POST.get('length') or None,
+                    cut_date=request.POST.get('cut_date') or None,
+                    notes=request.POST.get('notes', ''),
                 )
-            # Mark order as in production when first part is cut for it
-            if from_order and from_order.status == 'confirmed':
-                from_order.status = 'in_production'
-                from_order.save(update_fields=['status'])
+                job = ProductionJob.objects.create(
+                    part=part, product_type=pt, job_no='PENDING',
+                    order=from_order,
+                )
+                job.job_no = f"JOB-{job.pk:04d}"
+                job.save(update_fields=['job_no'])
+                for step in pt.steps.all():
+                    StepLog.objects.create(
+                        job=job, step=step, status='pending',
+                        updated_by=request.user if request.user.is_authenticated else None,
+                    )
+                # Mark order as in production when first part is cut for it
+                if from_order and from_order.status == 'confirmed':
+                    from_order.status = 'in_production'
+                    from_order.save(update_fields=['status'])
             return redirect('coil_parts', coil_pk=coil.pk)
 
         return render(request, 'materials/coil_parts.html', {
