@@ -514,9 +514,10 @@
 
 </div>
 
+{{ product_type_data|json_script:"product-type-data" }}
 <script>
   const autocompleteUrl = "{% url 'customer_autocomplete' %}";
-  const productTypeData = {{ product_type_data|safe }};
+  const productTypeData = JSON.parse(document.getElementById('product-type-data').textContent);
 
   // ── Product type autofill ────────────────────────────────────
   document.getElementById('dash-product-type').addEventListener('change', function() {

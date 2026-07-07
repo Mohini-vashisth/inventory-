@@ -195,8 +195,9 @@
   </div>
 </div>
 
+{{ product_type_data|json_script:"product-type-data" }}
 <script>
-  const productTypeData = {{ product_type_data|safe }};
+  const productTypeData = JSON.parse(document.getElementById('product-type-data').textContent);
   document.getElementById('q-product-type').addEventListener('change', function() {
     const data = productTypeData[this.value];
     if (data) {
