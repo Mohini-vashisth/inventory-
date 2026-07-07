@@ -8,13 +8,13 @@ from django.db import transaction
 from django.db.models import Sum
 from django.http import JsonResponse
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.utils.crypto import constant_time_compare
 import uuid
 import qrcode
 import io
 import base64
-import json
 from .models import Material, CoilPart, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
-from .forms import MaterialForm
+from .forms import MaterialForm, OrderForm
 
 
 def _safe_next(request, next_url, default):
@@ -22,6 +22,12 @@ def _safe_next(request, next_url, default):
     if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
         return next_url
     return default
+
+
+def _first_form_error(form):
+    for errors in form.errors.values():
+        return errors[0]
+    return "Invalid order details."
 
 
 # ── Employee auth ────────────────────────────────────────────
@@ -32,7 +38,7 @@ def employee_login(request):
         return redirect(next_url)
     error = None
     if request.method == 'POST':
-        if request.POST.get('pin', '') == settings.EMPLOYEE_PIN:
+        if constant_time_compare(request.POST.get('pin', ''), settings.EMPLOYEE_PIN):
             request.session['employee_auth'] = True
             return redirect(next_url)
         error = "Incorrect PIN."
@@ -287,6 +293,8 @@ def job_detail(request, pk):
     if request.method == 'POST':
         step_id = request.POST.get('step_id')
         action = request.POST.get('action')
+        if action not in ('start', 'complete'):
+            return redirect('job_detail', pk=job.pk)
         new_status = 'completed' if action == 'complete' else 'in_progress'
         step = get_object_or_404(ProcessStep, pk=step_id)
 
@@ -402,14 +410,13 @@ def order_dashboard(request):
     error = None
 
     if request.method == 'POST':
-        customer_name   = request.POST.get('name', '').strip()
-        quantity        = request.POST.get('quantity', '').strip()
-        product_type_id = request.POST.get('product_type') or None
+        customer_name = request.POST.get('name', '').strip()
+        form = OrderForm(request.POST)
 
         if not customer_name:
             error = "Company name is required."
-        elif not quantity:
-            error = "Quantity is required."
+        elif not form.is_valid():
+            error = _first_form_error(form)
         else:
             customer, _ = Customer.objects.get_or_create(name=customer_name)
             email = request.POST.get('email', '').strip()
@@ -419,30 +426,17 @@ def order_dashboard(request):
                 if phone: customer.phone = phone
                 customer.save(update_fields=['email', 'phone'])
 
-            Order.objects.create(
-                customer=customer,
-                product_type_id=product_type_id,
-                grade=request.POST.get('grade', ''),
-                size=request.POST.get('size') or None,
-                mill_make=request.POST.get('mill_make', ''),
-                drawing_dimensions=request.POST.get('drawing_dimensions', ''),
-                mechanical_properties=request.POST.get('mechanical_properties', ''),
-                processes=request.POST.get('processes', ''),
-                end_usage=request.POST.get('end_usage', ''),
-                delivery_form=request.POST.get('delivery_form', ''),
-                quantity=quantity,
-                frequency=request.POST.get('frequency', ''),
-                delivery_date=request.POST.get('delivery_date') or None,
-                notes=request.POST.get('notes', ''),
-                status='confirmed',
-            )
+            order = form.save(commit=False)
+            order.customer = customer
+            order.status = 'confirmed'
+            order.save()
             return redirect('order_dashboard')
 
     return render(request, 'materials/order_dashboard.html', {
         'orders': orders,
         'customers': customers,
         'product_types': product_types,
-        'product_type_data': json.dumps(product_type_data),
+        'product_type_data': product_type_data,
         'error': error,
         'post': request.POST if error else {},
     })
@@ -506,28 +500,14 @@ def quote_form(request, token):
     error = None
 
     if request.method == 'POST':
-        quantity        = request.POST.get('quantity', '').strip()
-        product_type_id = request.POST.get('product_type') or None
-        if not quantity:
-            error = "Quantity is required."
+        form = OrderForm(request.POST)
+        if not form.is_valid():
+            error = _first_form_error(form)
         else:
-            Order.objects.create(
-                customer=customer,
-                product_type_id=product_type_id,
-                grade=request.POST.get('grade', ''),
-                size=request.POST.get('size') or None,
-                mill_make=request.POST.get('mill_make', ''),
-                drawing_dimensions=request.POST.get('drawing_dimensions', ''),
-                mechanical_properties=request.POST.get('mechanical_properties', ''),
-                processes=request.POST.get('processes', ''),
-                end_usage=request.POST.get('end_usage', ''),
-                delivery_form=request.POST.get('delivery_form', ''),
-                quantity=quantity,
-                frequency=request.POST.get('frequency', ''),
-                delivery_date=request.POST.get('delivery_date') or None,
-                notes=request.POST.get('notes', ''),
-                status='pending',
-            )
+            order = form.save(commit=False)
+            order.customer = customer
+            order.status = 'pending'
+            order.save()
             # Invalidate this link — regenerate token so the URL becomes a 404
             customer.quote_token = uuid.uuid4()
             customer.save(update_fields=['quote_token'])
@@ -536,7 +516,7 @@ def quote_form(request, token):
     return render(request, 'materials/quote_form.html', {
         'customer': customer,
         'product_types': product_types,
-        'product_type_data': json.dumps(product_type_data),
+        'product_type_data': product_type_data,
         'error': error,
         'post': request.POST if error else {},
     })

@@ -243,7 +243,6 @@ class MaterialAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).annotate(
             weight_used=Sum('parts__weight'),
-            parts_total=Sum('parts__weight', distinct=False),
         ).prefetch_related('parts')
 
     def parts_count(self, obj):
