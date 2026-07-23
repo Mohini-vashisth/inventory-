@@ -51,11 +51,18 @@ class SizeOption(models.Model):
 
 
 class ProductType(models.Model):
-    """e.g. 'EN8D Bar 2.5mm' — defines the final product, its preset grade/size, and which steps apply."""
+    """e.g. 'EN8D Bar 2.5mm' — defines the final product, its preset grade/size, and which steps apply.
+
+    A grade/size combination identifies exactly one product type — the two
+    can't be reused across different product types.
+    """
     name        = models.CharField(max_length=100)
     grade       = models.CharField(max_length=20, blank=True, verbose_name="Grade")
     size        = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Size (mm)")
     description = models.TextField(blank=True)
+
+    class Meta:
+        unique_together = ['grade', 'size']
 
     def __str__(self):
         return self.name
