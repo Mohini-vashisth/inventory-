@@ -41,7 +41,7 @@ python3 manage.py migrate
 - **Material** — raw coil inventory (grade, size mm, vendor, quantity kg, heat no)
 - **CoilPart** — a physical piece cut from a coil (part_no format: `COIL0001-A`)
 - **GradeOption** / **SizeOption** — admin-managed lists of valid grades/sizes shown as tap-to-pick options on the New Coil Entry form (`/material-form/`); keeps the picker in sync without a code change
-- **ProductType** — final product definition with preset grade + size; has ordered ProcessSteps and AllowedCoilSpecs
+- **ProductType** — final product definition with preset grade + size; has ordered ProcessSteps and AllowedCoilSpecs. Grade + size is the identity of a product type — `unique_together` enforces one ProductType per grade/size combo
 - **AllowedCoilSpec** — admin-configured coil grade/size that can be used as raw material for a ProductType
 - **ProcessStep** — one manufacturing step belonging to a ProductType (ordered)
 - **ProductionJob** — links a CoilPart to a ProductType + Order; tracks overall status
