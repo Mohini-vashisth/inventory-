@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
 
@@ -8,6 +9,21 @@ from .models import (
     CoilPart, Customer, GradeOption, Material, Order, ProcessStep,
     ProductionJob, ProductType, SizeOption,
 )
+
+
+class ProductTypeUniquenessTests(TestCase):
+    """A grade/size combination identifies exactly one product type."""
+
+    def test_duplicate_grade_and_size_rejected(self):
+        ProductType.objects.create(name='Bar A', grade='EN8D', size='1.200')
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                ProductType.objects.create(name='Bar B', grade='EN8D', size='1.200')
+
+    def test_same_grade_different_size_allowed(self):
+        ProductType.objects.create(name='Bar A', grade='EN8D', size='1.200')
+        ProductType.objects.create(name='Bar B', grade='EN8D', size='1.500')
+        self.assertEqual(ProductType.objects.filter(grade='EN8D').count(), 2)
 
 
 class MaterialFormValidationTests(TestCase):
