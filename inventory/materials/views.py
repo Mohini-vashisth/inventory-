@@ -45,6 +45,12 @@ def employee_login(request):
     return render(request, 'materials/employee_login.html', {'error': error, 'next': next_url})
 
 
+def employee_logout(request):
+    if request.method == 'POST':
+        request.session.flush()
+    return redirect('employee_login')
+
+
 def _employee_required(request):
     """Returns a redirect response if not authenticated, else None."""
     if not request.session.get('employee_auth'):

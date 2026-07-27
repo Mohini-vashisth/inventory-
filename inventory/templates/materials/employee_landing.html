@@ -87,6 +87,28 @@
     .back-link:hover {
       color: white;
     }
+
+    .logout-form {
+      display: inline;
+    }
+
+    .logout-link {
+      display: inline-block;
+      margin-top: 2.5rem;
+      margin-left: 1.5rem;
+      color: rgba(255,255,255,0.75);
+      font-size: 0.9rem;
+      background: none;
+      border: none;
+      font-family: inherit;
+      cursor: pointer;
+      text-decoration: none;
+      padding: 0;
+    }
+
+    .logout-link:hover {
+      color: white;
+    }
   </style>
 </head>
 <body>
@@ -125,6 +147,10 @@
   </div>
 
   <a href="{% url 'home' %}" class="back-link">← Back to home</a>
+  <form method="POST" action="{% url 'employee_logout' %}" class="logout-form">
+    {% csrf_token %}
+    <button type="submit" class="logout-link">Log out</button>
+  </form>
 
 </div>
 

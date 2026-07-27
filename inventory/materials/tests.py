@@ -57,6 +57,21 @@ class MaterialFormValidationTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
 
 
+class EmployeeLogoutTests(TestCase):
+    def test_post_clears_session_and_requires_relogin(self):
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('employee_logout'))
+        response = self.client.get(reverse('employee'))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse('employee_login'), response.url)
+
+    def test_get_does_not_log_out(self):
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.get(reverse('employee_logout'))
+        response = self.client.get(reverse('employee'))
+        self.assertEqual(response.status_code, 200)
+
+
 class EmployeeLoginRedirectTests(TestCase):
     """The `next` param must never send an authenticated session off-site."""
 
