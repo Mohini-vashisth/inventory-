@@ -57,6 +57,27 @@ class MaterialFormValidationTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
 
 
+class MaterialFormViewErrorDisplayTests(TestCase):
+    """A rejected submission must show why, and not force the employee to retype everything."""
+
+    def setUp(self):
+        GradeOption.objects.get_or_create(name='EN8D')
+        SizeOption.objects.get_or_create(value='1.200')
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+
+    def test_invalid_grade_shows_error_and_repopulates_fields(self):
+        response = self.client.post(reverse('material_form'), {
+            'date': '2026-07-06', 'grade': 'MADE-UP', 'size': '1.200',
+            'company': 'Tata Steel', 'vendor': 'ABC Traders',
+            'quantity': '500.000', 'heat_no': 'H001',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Select a grade from the list.')
+        self.assertContains(response, 'H001')
+        self.assertContains(response, 'Tata Steel')
+        self.assertEqual(Material.objects.count(), 0)
+
+
 class EmployeeLogoutTests(TestCase):
     def test_post_clears_session_and_requires_relogin(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
