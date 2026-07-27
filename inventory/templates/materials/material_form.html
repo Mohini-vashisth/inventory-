@@ -129,6 +129,12 @@
     padding: 2rem; text-align: center;
     color: rgba(255,255,255,0.8); font-size: 0.95rem;
   }
+
+  .error-msg {
+    background: #fee2e2; color: #991b1b;
+    padding: 0.6rem 0.9rem; border-radius: 8px;
+    font-size: 0.87rem; margin-bottom: 1rem;
+  }
 </style>
 </head>
 <body>
@@ -139,6 +145,7 @@
   <p class="subtitle">Register a newly received coil into inventory</p>
 
   <div class="card">
+    {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
     <form method="POST" id="coil-form">
       {% csrf_token %}
 
@@ -149,45 +156,45 @@
 
       <div class="form-group">
         <label>Date</label>
-        <input type="date" name="date" id="date-input" required>
+        <input type="date" name="date" id="date-input" value="{{ post.date|default:'' }}" required>
       </div>
 
       <div class="form-group">
         <label>Heat No</label>
-        <input type="text" name="heat_no" placeholder="e.g. H24071" required>
+        <input type="text" name="heat_no" value="{{ post.heat_no|default:'' }}" placeholder="e.g. H24071" required>
       </div>
 
       <div class="form-group">
         <label>Grade</label>
-        <input type="hidden" name="grade" id="grade-val">
+        <input type="hidden" name="grade" id="grade-val" value="{{ post.grade|default:'' }}">
         <button type="button" class="picker-btn" onclick="openPicker('grade-picker')">
-          <span id="grade-display" class="placeholder">Tap to select grade</span>
+          <span id="grade-display" class="{% if post.grade %}val{% else %}placeholder{% endif %}">{{ post.grade|default:"Tap to select grade" }}</span>
           <span class="arrow">›</span>
         </button>
       </div>
 
       <div class="form-group">
         <label>Size</label>
-        <input type="hidden" name="size" id="size-val">
+        <input type="hidden" name="size" id="size-val" value="{{ post.size|default:'' }}">
         <button type="button" class="picker-btn" onclick="openPicker('size-picker')">
-          <span id="size-display" class="placeholder">Tap to select size</span>
+          <span id="size-display" class="{% if post.size %}val{% else %}placeholder{% endif %}">{% if post.size %}{{ post.size }} mm{% else %}Tap to select size{% endif %}</span>
           <span class="arrow">›</span>
         </button>
       </div>
 
       <div class="form-group">
         <label>Company</label>
-        <input type="text" name="company" placeholder="e.g. Tata Steel" required>
+        <input type="text" name="company" value="{{ post.company|default:'' }}" placeholder="e.g. Tata Steel" required>
       </div>
 
       <div class="form-group">
         <label>Vendor</label>
-        <input type="text" name="vendor" placeholder="e.g. ABC Traders" required>
+        <input type="text" name="vendor" value="{{ post.vendor|default:'' }}" placeholder="e.g. ABC Traders" required>
       </div>
 
       <div class="form-group">
         <label>Quantity (kg)</label>
-        <input type="number" name="quantity" step="0.001" placeholder="e.g. 500.000" required>
+        <input type="number" name="quantity" step="0.001" value="{{ post.quantity|default:'' }}" placeholder="e.g. 500.000" required>
       </div>
 
       <button type="submit" class="btn-submit">Save Coil →</button>
@@ -237,8 +244,11 @@
 </div>
 
 <script>
-  // Auto-set date to today
-  document.getElementById('date-input').value = new Date().toISOString().split('T')[0];
+  // Auto-set date to today, unless a value was already repopulated after a validation error
+  var dateInput = document.getElementById('date-input');
+  if (!dateInput.value) {
+    dateInput.value = new Date().toISOString().split('T')[0];
+  }
 
   function openPicker(id) {
     document.getElementById(id).classList.add('open');
