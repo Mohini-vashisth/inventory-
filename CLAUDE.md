@@ -66,6 +66,7 @@ python3 manage.py migrate
 **Employee** (PIN-based session):
 - Access via `/employee/` — requires PIN (`EMPLOYEE_PIN` in `.env`)
 - Can register coils, cut parts, update production step progress
+- "Log out" button on the portal (`/employee-logout/`, POST-only) clears the session — the shared PIN stays valid, only that browser's login is ended
 
 ## Employee workflow
 

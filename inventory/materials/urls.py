@@ -7,6 +7,7 @@ urlpatterns = [
     path("admin-login/", views.admin_login, name="admin_login"),
     path("employee/", views.employee_landing, name="employee"),
     path("employee-login/", views.employee_login, name="employee_login"),
+    path("employee-logout/", views.employee_logout, name="employee_logout"),
     path('coil/<int:pk>/tag/', views.coil_tag, name='coil_tag'),
     path('coil/<int:coil_pk>/parts/', views.coil_parts, name='coil_parts'),
     path('select-order/', views.select_order, name='select_order'),
