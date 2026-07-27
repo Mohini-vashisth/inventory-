@@ -65,11 +65,13 @@ def home(request):
 def material_form(request):
     guard = _employee_required(request)
     if guard: return guard
+    error = None
     if request.method == "POST":
         form = MaterialForm(request.POST)
         if form.is_valid():
             coil = form.save()
             return redirect('coil_tag', pk=coil.coil_no)
+        error = _first_form_error(form)
     else:
         form = MaterialForm()
 
@@ -82,6 +84,8 @@ def material_form(request):
         "form": form,
         "grades": GradeOption.objects.all(),
         "sizes": SizeOption.objects.all(),
+        "error": error,
+        "post": request.POST if error else {},
     })
 
 
