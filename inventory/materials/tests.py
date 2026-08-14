@@ -144,6 +144,25 @@ class CoilPartsCreationTests(TestCase):
         job = ProductionJob.objects.get(part=part)
         self.assertEqual(job.step_logs.count(), 2)
 
+    def test_empty_product_type_shows_error_instead_of_crashing(self):
+        """An unselected <select> submits product_type='' — must not raise ValueError."""
+        response = self.client.post(
+            reverse('coil_parts', kwargs={'coil_pk': self.coil.pk}),
+            {'suffix': 'A', 'weight': '10', 'product_type': ''},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Please select a valid product type.")
+        self.assertEqual(CoilPart.objects.filter(coil=self.coil).count(), 0)
+
+    def test_non_numeric_weight_shows_error_instead_of_crashing(self):
+        response = self.client.post(
+            reverse('coil_parts', kwargs={'coil_pk': self.coil.pk}),
+            {'suffix': 'A', 'weight': 'not-a-number', 'product_type': str(self.product_type.pk)},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Weight must be a number.")
+        self.assertEqual(CoilPart.objects.filter(coil=self.coil).count(), 0)
+
 
 class JobStepUnlockTests(TestCase):
     """A step can only be advanced once every earlier step is completed."""
@@ -171,6 +190,13 @@ class JobStepUnlockTests(TestCase):
         )
         self.assertEqual(response.status_code, 302)
         self.assertFalse(self.job.step_logs.filter(step=self.step1).exists())
+
+    def test_malformed_step_id_does_not_crash(self):
+        response = self.client.post(
+            reverse('job_detail', kwargs={'pk': self.job.pk}),
+            {'step_id': 'not-a-number', 'action': 'start'},
+        )
+        self.assertEqual(response.status_code, 302)
 
 
 class OrderWorkflowTests(TestCase):
