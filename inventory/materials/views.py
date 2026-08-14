@@ -470,7 +470,11 @@ def customer_autocomplete(request):
 def order_confirm(request, pk):
     if not request.user.is_staff:
         return redirect('home')
+    if request.method != 'POST':
+        return redirect('order_dashboard')
     order = get_object_or_404(Order, pk=pk)
+    if order.status != 'pending':
+        return redirect('order_dashboard')
     if not order.product_type_id:
         messages.error(request, f"ORD-{order.pk:04d} cannot be confirmed without a product type. Edit the order to assign one.")
         return redirect('order_dashboard')
@@ -483,6 +487,8 @@ def order_confirm(request, pk):
 def order_dispatch(request, pk):
     if not request.user.is_staff:
         return redirect('home')
+    if request.method != 'POST':
+        return redirect('order_dashboard')
     order = get_object_or_404(Order, pk=pk)
     if order.status == 'in_production':
         order.status = 'completed'
@@ -494,7 +500,11 @@ def order_dispatch(request, pk):
 def order_reject(request, pk):
     if not request.user.is_staff:
         return redirect('home')
+    if request.method != 'POST':
+        return redirect('order_dashboard')
     order = get_object_or_404(Order, pk=pk)
+    if order.status != 'pending':
+        return redirect('order_dashboard')
     order.status = 'cancelled'
     order.save(update_fields=['status'])
     return redirect('order_dashboard')
