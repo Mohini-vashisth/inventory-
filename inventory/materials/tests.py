@@ -185,6 +185,36 @@ class OrderWorkflowTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.status, 'pending')
 
+    def test_confirm_dispatch_reject_ignore_get_requests(self):
+        """A bare GET must never confirm/dispatch/reject an order (CSRF via link/image)."""
+        product_type = ProductType.objects.create(name='Bar', grade='EN8D', size='1.200')
+        order = Order.objects.create(
+            customer=self.customer, quantity=100, status='pending', product_type=product_type,
+        )
+        self.client.force_login(self.staff)
+
+        self.client.get(reverse('order_confirm', kwargs={'pk': order.pk}))
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'pending')
+
+        order.status = 'in_production'
+        order.save(update_fields=['status'])
+        self.client.get(reverse('order_dispatch', kwargs={'pk': order.pk}))
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'in_production')
+
+        self.client.get(reverse('order_reject', kwargs={'pk': order.pk}))
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'in_production')
+
+        # the real POST path still works
+        self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}))
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'in_production')  # already past 'confirmed', unaffected by re-confirm
+        self.client.post(reverse('order_dispatch', kwargs={'pk': order.pk}))
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'completed')
+
     def test_quote_token_regenerates_after_submission(self):
         old_token = self.customer.quote_token
         self.client.post(
