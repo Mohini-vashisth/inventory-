@@ -13,6 +13,8 @@ import uuid
 import qrcode
 import io
 import base64
+from decimal import Decimal, InvalidOperation
+from django.core.exceptions import ValidationError
 from .models import Material, CoilPart, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
 from .forms import MaterialForm, OrderForm
 
@@ -28,6 +30,17 @@ def _first_form_error(form):
     for errors in form.errors.values():
         return errors[0]
     return "Invalid order details."
+
+
+def _safe_get(queryset, pk):
+    """Look up a row by a pk that may be missing, empty, or malformed (e.g. raw POST data)
+    without raising ValueError — Model.objects.filter(pk=...) still raises on a non-numeric pk."""
+    if pk in (None, ''):
+        return None
+    try:
+        return queryset.filter(pk=pk).first()
+    except (ValueError, TypeError):
+        return None
 
 
 # ── Employee auth ────────────────────────────────────────────
@@ -137,7 +150,7 @@ def coil_parts(request, coil_pk):
 
     # Optional: coming from order-first flow
     from_order_pk = request.GET.get('from_order') or request.POST.get('from_order')
-    from_order = Order.objects.select_related('product_type', 'customer').filter(pk=from_order_pk).first() if from_order_pk else None
+    from_order = _safe_get(Order.objects.select_related('product_type', 'customer'), from_order_pk)
 
     total_used = float(parts.aggregate(total=Sum('weight'))['total'] or 0)
     coil_weight = float(coil.quantity or 0)
@@ -149,52 +162,68 @@ def coil_parts(request, coil_pk):
             return redirect('coil_parts', coil_pk=coil.pk)
 
         suffix = request.POST.get('suffix', '').strip().upper()
-        new_weight = request.POST.get('weight') or None
+        raw_weight = request.POST.get('weight') or None
+        raw_length = request.POST.get('length') or None
+        raw_cut_date = request.POST.get('cut_date') or None
         # If coming from order flow, product type is fixed; otherwise use form selection
         product_type_id = (
             from_order.product_type.pk if from_order and from_order.product_type
             else request.POST.get('product_type')
         )
-        pt = ProductType.objects.filter(pk=product_type_id).first()
+        pt = _safe_get(ProductType.objects, product_type_id)
+
+        weight_value, weight_invalid = None, False
+        if raw_weight:
+            try:
+                weight_value = Decimal(raw_weight)
+            except InvalidOperation:
+                weight_invalid = True
+
         error = None
 
         if not suffix:
             error = "Part suffix cannot be empty."
+        elif weight_invalid:
+            error = "Weight must be a number."
         elif CoilPart.objects.filter(part_no=f"{coil.formatted_coil()}-{suffix}").exists():
             error = f"A part with suffix '{suffix}' already exists for this coil."
-        elif new_weight and float(new_weight) > remaining:
+        elif weight_value is not None and weight_value > Decimal(str(remaining)):
             error = (
-                f"Part weight ({float(new_weight):.3f} kg) exceeds the remaining coil weight "
+                f"Part weight ({weight_value:.3f} kg) exceeds the remaining coil weight "
                 f"({remaining:.3f} kg). Reduce the weight or split into smaller parts."
             )
         elif pt is None:
             error = "Please select a valid product type."
         else:
-            with transaction.atomic():
-                part = CoilPart.objects.create(
-                    coil=coil,
-                    part_no=f"{coil.formatted_coil()}-{suffix}",
-                    weight=new_weight,
-                    length=request.POST.get('length') or None,
-                    cut_date=request.POST.get('cut_date') or None,
-                    notes=request.POST.get('notes', ''),
-                )
-                job = ProductionJob.objects.create(
-                    part=part, product_type=pt, job_no='PENDING',
-                    order=from_order,
-                )
-                job.job_no = f"JOB-{job.pk:04d}"
-                job.save(update_fields=['job_no'])
-                for step in pt.steps.all():
-                    StepLog.objects.create(
-                        job=job, step=step, status='pending',
-                        updated_by=request.user if request.user.is_authenticated else None,
+            try:
+                with transaction.atomic():
+                    part = CoilPart.objects.create(
+                        coil=coil,
+                        part_no=f"{coil.formatted_coil()}-{suffix}",
+                        weight=weight_value,
+                        length=raw_length,
+                        cut_date=raw_cut_date,
+                        notes=request.POST.get('notes', ''),
                     )
-                # Mark order as in production when first part is cut for it
-                if from_order and from_order.status == 'confirmed':
-                    from_order.status = 'in_production'
-                    from_order.save(update_fields=['status'])
-            return redirect('coil_parts', coil_pk=coil.pk)
+                    job = ProductionJob.objects.create(
+                        part=part, product_type=pt, job_no='PENDING',
+                        order=from_order,
+                    )
+                    job.job_no = f"JOB-{job.pk:04d}"
+                    job.save(update_fields=['job_no'])
+                    for step in pt.steps.all():
+                        StepLog.objects.create(
+                            job=job, step=step, status='pending',
+                            updated_by=request.user if request.user.is_authenticated else None,
+                        )
+                    # Mark order as in production when first part is cut for it
+                    if from_order and from_order.status == 'confirmed':
+                        from_order.status = 'in_production'
+                        from_order.save(update_fields=['status'])
+            except (InvalidOperation, ValidationError, ValueError):
+                error = "Check that length and cut date are valid."
+            else:
+                return redirect('coil_parts', coil_pk=coil.pk)
 
         return render(request, 'materials/coil_parts.html', {
             'coil': coil, 'parts': parts, 'product_types': product_types,
@@ -306,9 +335,9 @@ def job_detail(request, pk):
         if action not in ('start', 'complete'):
             return redirect('job_detail', pk=job.pk)
         new_status = 'completed' if action == 'complete' else 'in_progress'
-        step = get_object_or_404(ProcessStep, pk=step_id)
+        step = _safe_get(ProcessStep.objects, step_id)
 
-        if step.id not in unlocked_step_ids:
+        if step is None or step.id not in unlocked_step_ids:
             return redirect('job_detail', pk=job.pk)
 
         StepLog.objects.create(
