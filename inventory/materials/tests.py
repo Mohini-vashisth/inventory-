@@ -3,12 +3,71 @@ from django.contrib.auth.models import User
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
+from rest_framework.test import APIClient
 
 from .forms import MaterialForm
 from .models import (
     CoilPart, Customer, GradeOption, Material, Order, ProcessStep,
     ProductionJob, ProductType, SizeOption,
 )
+
+
+class OrderApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.staff = User.objects.create_user('api_staff', password='pw', is_staff=True)
+        self.customer = Customer.objects.create(name='Acme Corp')
+        self.product_type = ProductType.objects.create(name='Bar', grade='EN8D', size='1.200')
+        self.order = Order.objects.create(
+            customer=self.customer, product_type=self.product_type,
+            quantity=250, status='in_production',
+        )
+
+    def test_anonymous_request_is_rejected(self):
+        response = self.client.get('/api/orders/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_non_staff_request_is_rejected(self):
+        non_staff = User.objects.create_user('nobody', password='pw')
+        self.client.force_authenticate(user=non_staff)
+        response = self.client.get('/api/orders/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_staff_can_list_orders(self):
+        self.client.force_authenticate(user=self.staff)
+        response = self.client.get('/api/orders/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['results'][0]['customer_name'], 'Acme Corp')
+
+    def test_status_filter(self):
+        Order.objects.create(customer=self.customer, quantity=10, status='pending')
+        self.client.force_authenticate(user=self.staff)
+        response = self.client.get('/api/orders/?status=in_production')
+        ids = [row['id'] for row in response.data['results']]
+        self.assertEqual(ids, [self.order.pk])
+
+    def test_write_endpoints_do_not_exist(self):
+        """This API is deliberately read-only — state changes go through the guarded web views."""
+        self.client.force_authenticate(user=self.staff)
+        response = self.client.post('/api/orders/', {'quantity': 5}, format='json')
+        self.assertEqual(response.status_code, 405)
+
+
+class CoilApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.staff = User.objects.create_user('api_staff2', password='pw', is_staff=True)
+
+    def test_remaining_filter_excludes_exhausted_coils_and_keeps_untouched_ones(self):
+        untouched = Material.objects.create(quantity=500, grade='EN8D', size='1.2')
+        exhausted = Material.objects.create(quantity=100, grade='EN8D', size='1.2')
+        CoilPart.objects.create(coil=exhausted, part_no='EX-A', weight=100)
+
+        self.client.force_authenticate(user=self.staff)
+        response = self.client.get('/api/coils/?remaining=true')
+        ids = [row['coil_no'] for row in response.data['results']]
+        self.assertIn(untouched.pk, ids)
+        self.assertNotIn(exhausted.pk, ids)
 
 
 class ProductTypeUniquenessTests(TestCase):
