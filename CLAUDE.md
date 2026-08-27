@@ -22,7 +22,7 @@ python3 manage.py migrate
 
 ## Key dependencies
 
-- Django 4.2, django-jazzmin (admin theme), qrcode + Pillow (coil QR tags), python-dotenv
+- Django 4.2, django-jazzmin (admin theme), qrcode + Pillow (coil QR tags), python-dotenv, djangorestframework
 
 ## Environment variables (`.env` in `inventory/`)
 
@@ -84,6 +84,10 @@ When an order has a ProductType with AllowedCoilSpecs configured, only coils mat
 ## Quote form flow
 
 Admin enters company name/email/phone in the Orders dashboard → sends a unique link via email → customer fills the form → order is created with status `pending` → admin reviews. The quote link is **single-use**: the token regenerates after submission, making the old URL a 404.
+
+## REST API (`materials/api.py`, `materials/serializers.py`)
+
+Read-only DRF API under `/api/` — `orders`, `coils`, `jobs`, `product-types`. Staff-only (`IsAdminUser`, session auth — same login as `/admin/`). Deliberately read-only: the state-transition rules (product type required to confirm, sequential step unlock, atomic part creation) live in `materials/views.py` and aren't re-implemented here — this surface is for reading data out, not changing it. `coils` supports `?remaining=true`; `orders` and `jobs` support `?status=`; `jobs` also supports `?order=<id>`. Browsable API login at `/api-auth/`.
 
 ## Commit style
 
