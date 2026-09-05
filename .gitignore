@@ -2,5 +2,8 @@
 __pycache__/
 inventory/STOCK INVENTORY SHEET.xlsx
 .DS_Store
+inventory/staticfiles/
+inventory/db_backups/
+inventory/db.sqlite3
 
 .env
