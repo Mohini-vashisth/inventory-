@@ -22,17 +22,35 @@ python3 manage.py migrate
 
 ## Key dependencies
 
-- Django 4.2, django-jazzmin (admin theme), qrcode + Pillow (coil QR tags), python-dotenv, djangorestframework
+- Django 4.2, django-jazzmin (admin theme), qrcode + Pillow (coil QR tags), python-dotenv, djangorestframework, whitenoise (static files in production), gunicorn (production WSGI server)
 
-## Environment variables (`.env` in `inventory/`)
+## Environment variables (`.env` in `inventory/`, template at `inventory/.env.example`)
 
 | Variable | Purpose |
 |---|---|
-| `DJANGO_SECRET_KEY` | Django secret key |
+| `DJANGO_DEBUG` | `True`/`False`. Defaults to `True` (local dev only) — **must be `False`** on any real deployment |
+| `DJANGO_SECRET_KEY` | Django secret key. Falls back to an insecure dev-only value if unset, but **raises `ImproperlyConfigured` at startup if `DJANGO_DEBUG=False` and this isn't set** — a misconfigured prod deploy can't silently boot on the known dev key |
+| `DJANGO_ALLOWED_HOSTS` | Comma-separated hostnames/IPs Django will answer to. Required once `DJANGO_DEBUG=False` |
 | `EMPLOYEE_PIN` | Shared PIN for employee portal (default: `1234`) |
 | `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USE_TLS` | SMTP config |
-| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | SMTP credentials |
+| `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | SMTP credentials — Gmail needs an App Password, not the account password |
 | `DEFAULT_FROM_EMAIL` | Sender address for quote emails |
+
+## Deploying to a real machine (not local dev)
+
+Local dev (`DEBUG=True`, `manage.py runserver`) skips several things a real deployment needs:
+
+1. Set `.env` from `inventory/.env.example` — at minimum `DJANGO_DEBUG=False`, a real `DJANGO_SECRET_KEY`, and `DJANGO_ALLOWED_HOSTS` set to the machine's hostname/IP.
+2. `python3 manage.py collectstatic --noinput` — with `DEBUG=False`, `runserver` no longer serves CSS/JS itself. WhiteNoise (already in `MIDDLEWARE`) serves whatever `collectstatic` gathers into `staticfiles/`. Re-run this after any static-asset change.
+3. Run under `gunicorn`, not `runserver` — the dev server isn't hardened for unattended use:
+   ```bash
+   gunicorn inventory.wsgi:application --bind 0.0.0.0:8000
+   ```
+4. Schedule `python3 manage.py backup_db` (cron/Task Scheduler, e.g. nightly) — copies `db.sqlite3` to `db_backups/` with a timestamp and prunes anything older than `--keep-days` (default 30).
+
+### Why `db.sqlite3` isn't tracked in git
+
+It was committed and untracked twice before (`git log` shows both flips, each reverted within days) — untracking it broke a workflow where the database was being passed between machines via `git pull`/`push` in lieu of a real deployment. Now that the app runs as one persistent instance rather than being re-cloned onto different machines, that workflow no longer applies: `git pull` only touches code, and `db.sqlite3` sits on the deployed machine untouched by git, backed up separately via `backup_db`. **If you ever go back to syncing data between machines via git, this file needs to be tracked again** — the two reverts weren't accidents.
 
 ## Architecture
 
