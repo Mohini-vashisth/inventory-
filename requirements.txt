@@ -5,7 +5,7 @@ pillow==11.3.0
 qrcode==8.2
 sqlparse==0.5.5
 typing_extensions==4.15.0
-jazzmin
+django-jazzmin==3.0.1
 python-dotenv
 djangorestframework==3.16.1
 whitenoise==6.11.0
