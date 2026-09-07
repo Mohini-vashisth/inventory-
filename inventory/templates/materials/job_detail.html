@@ -3,6 +3,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ job.job_no }} — Steps</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -90,24 +91,26 @@
     .step-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
 
     .btn-start {
-      padding: 0.45rem 1rem;
+      min-height: 44px;
+      padding: 0.6rem 1.25rem;
       background: #dbeafe;
       color: #1e40af;
       border: none;
       border-radius: 8px;
-      font-size: 0.82rem;
+      font-size: 0.9rem;
       font-weight: 600;
       cursor: pointer;
     }
     .btn-start:hover { background: #bfdbfe; }
 
     .btn-complete {
-      padding: 0.45rem 1rem;
+      min-height: 44px;
+      padding: 0.6rem 1.25rem;
       background: #4e73df;
       color: white;
       border: none;
       border-radius: 8px;
-      font-size: 0.82rem;
+      font-size: 0.9rem;
       font-weight: 600;
       cursor: pointer;
     }
