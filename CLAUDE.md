@@ -42,9 +42,13 @@ Local dev (`DEBUG=True`, `manage.py runserver`) skips several things a real depl
 
 1. Set `.env` from `inventory/.env.example` — at minimum `DJANGO_DEBUG=False`, a real `DJANGO_SECRET_KEY`, and `DJANGO_ALLOWED_HOSTS` set to the machine's hostname/IP.
 2. `python3 manage.py collectstatic --noinput` — with `DEBUG=False`, `runserver` no longer serves CSS/JS itself. WhiteNoise (already in `MIDDLEWARE`) serves whatever `collectstatic` gathers into `staticfiles/`. Re-run this after any static-asset change.
-3. Run under `gunicorn`, not `runserver` — the dev server isn't hardened for unattended use:
+3. Run under a real WSGI server, not `runserver` — the dev server isn't hardened for unattended use. `requirements.txt` installs the right one per OS automatically (environment markers): `gunicorn` on Mac/Linux, `waitress` on Windows — **gunicorn does not run on Windows at all**, it depends on Unix-only OS features.
    ```bash
+   # Mac/Linux
    gunicorn inventory.wsgi:application --bind 0.0.0.0:8000
+
+   # Windows
+   waitress-serve --host=0.0.0.0 --port=8000 inventory.wsgi:application
    ```
 4. Schedule `python3 manage.py backup_db` (cron/Task Scheduler, e.g. nightly) — copies `db.sqlite3` to `db_backups/` with a timestamp and prunes anything older than `--keep-days` (default 30).
 
