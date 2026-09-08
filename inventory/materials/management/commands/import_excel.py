@@ -10,6 +10,7 @@ from decimal import Decimal, InvalidOperation
 
 import pandas as pd
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 from materials.models import Material
 
 # Spreadsheet column -> Material field, and that field's max length (None = no limit / not a CharField)
@@ -102,22 +103,31 @@ class Command(BaseCommand):
                 self.stdout.write("Aborted.")
                 return
 
-        Material.objects.all().delete()
-
         created = 0
-        for _, row in df.iterrows():
-            Material.objects.create(
-                date=self._clean_date(row.get('DATE')),
-                grade=self._clean_str(row.get('GRADE'), 10),
-                size=self._clean_size(row.get('SIZE')),
-                company=self._clean_str(row.get('COMPANY'), 100),
-                vendor=self._clean_str(row.get('VENDOR'), 50),
-                quantity=self._clean_decimal(row.get('QTY (KGS)')),
-                heat_no=self._clean_str(row.get('HEAT NO.'), 8),
-            )
-            created += 1
+        bad_dates = 0
+        with transaction.atomic():
+            Material.objects.all().delete()
+
+            for _, row in df.iterrows():
+                date, date_ok = self._clean_date(row.get('DATE'))
+                if not date_ok:
+                    bad_dates += 1
+                Material.objects.create(
+                    date=date,
+                    grade=self._clean_str(row.get('GRADE'), 10),
+                    size=self._clean_size(row.get('SIZE')),
+                    company=self._clean_str(row.get('COMPANY'), 100),
+                    vendor=self._clean_str(row.get('VENDOR'), 50),
+                    quantity=self._clean_decimal(row.get('QTY (KGS)')),
+                    heat_no=self._clean_str(row.get('HEAT NO.'), 8),
+                )
+                created += 1
 
         self.stdout.write(self.style.SUCCESS(f"Imported {created} rows successfully."))
+        if bad_dates:
+            self.stdout.write(self.style.WARNING(
+                f"{bad_dates} row(s) had a date that couldn't be parsed — imported with date left blank."
+            ))
 
     # ── Cell cleaning ────────────────────────────────────────
 
@@ -128,9 +138,16 @@ class Command(BaseCommand):
         return s[:max_len] if s else None
 
     def _clean_date(self, value):
+        """Returns (date_or_None, was_parseable). Real sheets have typos like
+        '11/058/2023' (no such day) — those get a blank date, not a crash."""
         if pd.isna(value):
-            return None
-        return value.date() if hasattr(value, 'date') else value
+            return None, True
+        if hasattr(value, 'date'):
+            return value.date(), True
+        parsed = pd.to_datetime(value, errors='coerce', dayfirst=True)
+        if pd.isna(parsed):
+            return None, False
+        return parsed.date(), True
 
     def _clean_decimal(self, value):
         if pd.isna(value):
