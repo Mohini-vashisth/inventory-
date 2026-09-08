@@ -50,6 +50,39 @@ class ImportExcelTests(TestCase):
         self.assertEqual(second.size, Decimal('16.3'))  # ' MM' suffix stripped
         self.assertEqual(second.heat_no, 'B3085501')  # truncated to 8 chars
 
+    def test_malformed_date_does_not_crash_the_whole_import(self):
+        """Real data had a typo like '11/058/2023' (no such day) that used to
+        crash the entire import partway through, leaving a partial DB state."""
+        path = self._write_sheet([
+            [1, 'WR0001', '11/058/2023', 'SAE 1008', 6, 'VSP', 'ADITYA STEEL', 1250.0, 'H001'],
+            [2, 'WR0002', '2024-02-01', 'EN8D', 6, 'TATA', 'XYZ TRADERS', 500.0, 'H002'],
+        ])
+        call_command('import_excel', f'--file={path}', '--yes')
+
+        self.assertEqual(Material.objects.count(), 2)
+        bad_row = Material.objects.get(heat_no='H001')
+        self.assertIsNone(bad_row.date)
+        good_row = Material.objects.get(heat_no='H002')
+        self.assertIsNotNone(good_row.date)
+
+    def test_crash_partway_through_leaves_no_partial_data(self):
+        """The whole delete+import runs in one transaction — a failure partway
+        through must roll back completely, not leave some rows imported."""
+        Material.objects.create(grade='EXISTING', quantity=1)
+        path = self._write_sheet([
+            [1, 'WR0001', '2024-01-15', 'SAE 1008', 6, 'VSP', 'ADITYA STEEL', 1250.0, 'H001'],
+        ])
+        with patch(
+            'materials.management.commands.import_excel.Command._clean_decimal',
+            side_effect=RuntimeError('simulated failure'),
+        ):
+            with self.assertRaises(RuntimeError):
+                call_command('import_excel', f'--file={path}', '--yes')
+
+        # Rolled back to exactly the pre-import state — the old row is still there.
+        self.assertEqual(Material.objects.count(), 1)
+        self.assertEqual(Material.objects.first().grade, 'EXISTING')
+
     def test_dry_run_touches_nothing(self):
         path = self._write_sheet([
             [1, 'WR0001', '2024-01-15', 'SAE 1008', 6, 'VSP', 'ADITYA STEEL', 1250.0, 'H001'],
