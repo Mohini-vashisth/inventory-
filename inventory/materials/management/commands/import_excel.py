@@ -40,13 +40,41 @@ class Command(BaseCommand):
             '--file', default="STOCK INVENTORY SHEET.xlsx",
             help="Path to the spreadsheet (default: STOCK INVENTORY SHEET.xlsx in the current directory).",
         )
+        parser.add_argument(
+            '--sheet', default=0,
+            help="Sheet name or 0-based index to read (default: the first sheet). "
+                 "Use --list-sheets to see what's in the file.",
+        )
+        parser.add_argument(
+            '--list-sheets', action='store_true',
+            help="Print the sheet names in the file and exit — nothing is imported.",
+        )
 
     def handle(self, *args, **options):
         file_path = options['file']
+
+        if options['list_sheets']:
+            try:
+                names = pd.ExcelFile(file_path).sheet_names
+            except FileNotFoundError:
+                raise CommandError(f"'{file_path}' not found.")
+            self.stdout.write(f"Sheets in '{file_path}':")
+            for name in names:
+                self.stdout.write(f"  - {name}")
+            return
+
+        # --sheet accepts either a name ("Stock 2024") or a 0-based index ("1") — try the
+        # index form first since argparse always hands this in as a string.
+        sheet = options['sheet']
+        if isinstance(sheet, str) and sheet.isdigit():
+            sheet = int(sheet)
+
         try:
-            df = pd.read_excel(file_path)
+            df = pd.read_excel(file_path, sheet_name=sheet)
         except FileNotFoundError:
             raise CommandError(f"'{file_path}' not found.")
+        except ValueError as e:
+            raise CommandError(f"Couldn't open sheet {sheet!r}: {e}. Try --list-sheets to see what's available.")
 
         df.columns = df.columns.str.strip()
         missing = [c for c in COLUMN_MAP if c not in df.columns]
