@@ -16,6 +16,23 @@ class Material(models.Model):
     def formatted_coil(self):
         return f"COIL{self.coil_no:04d}"
 
+    def weight_used(self):
+        """Total weight already cut into parts. Single source of truth —
+        admin, the REST API, and the part-cutting form all call this rather
+        than each computing their own aggregate."""
+        return self.parts.aggregate(total=models.Sum('weight'))['total'] or 0
+
+    def weight_remaining(self):
+        if not self.quantity:
+            return 0
+        return self.quantity - self.weight_used()
+
+    def is_used_up(self):
+        """A coil with no quantity on file is neither used nor unused — just unknown."""
+        if not self.quantity:
+            return False
+        return self.weight_remaining() <= 0
+
     def __str__(self):
         return self.formatted_coil()
 

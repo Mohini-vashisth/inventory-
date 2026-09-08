@@ -185,9 +185,66 @@ class CoilApiTests(TestCase):
 
         self.client.force_authenticate(user=self.staff)
         response = self.client.get('/api/coils/?remaining=true')
+        self.assertEqual(response.status_code, 200)
         ids = [row['coil_no'] for row in response.data['results']]
         self.assertIn(untouched.pk, ids)
         self.assertNotIn(exhausted.pk, ids)
+
+
+class MaterialUsedStatusTests(TestCase):
+    """A coil is 'used' once every kg of it has been cut into parts."""
+
+    def test_untouched_coil_is_unused(self):
+        coil = Material.objects.create(quantity=500)
+        self.assertFalse(coil.is_used_up())
+        self.assertEqual(coil.weight_used(), 0)
+        self.assertEqual(coil.weight_remaining(), 500)
+
+    def test_partially_cut_coil_is_still_unused(self):
+        coil = Material.objects.create(quantity=500)
+        CoilPart.objects.create(coil=coil, part_no='PARTIAL-A', weight=200)
+        self.assertFalse(coil.is_used_up())
+        self.assertEqual(coil.weight_remaining(), 300)
+
+    def test_fully_cut_coil_is_used(self):
+        coil = Material.objects.create(quantity=500)
+        CoilPart.objects.create(coil=coil, part_no='FULL-A', weight=300)
+        CoilPart.objects.create(coil=coil, part_no='FULL-B', weight=200)
+        self.assertTrue(coil.is_used_up())
+        self.assertEqual(coil.weight_remaining(), 0)
+
+    def test_coil_with_no_quantity_on_file_is_not_marked_used(self):
+        """No quantity means unknown, not used — mirrors the existing
+        'exhausted' check elsewhere in the app (coil_parts view)."""
+        coil = Material.objects.create(quantity=None)
+        self.assertFalse(coil.is_used_up())
+
+    def test_admin_list_shows_correct_status_badge(self):
+        staff = User.objects.create_user('used_status_admin', password='pw', is_staff=True, is_superuser=True)
+        used = Material.objects.create(quantity=100, heat_no='USEDH01')
+        CoilPart.objects.create(coil=used, part_no='BADGE-A', weight=100)
+        unused = Material.objects.create(quantity=100, heat_no='UNUSEDH1')
+
+        self.client.force_login(staff)
+        response = self.client.get(f'/admin/materials/material/?q={used.heat_no}')
+        self.assertContains(response, 'Used</span>')
+        response = self.client.get(f'/admin/materials/material/?q={unused.heat_no}')
+        self.assertContains(response, 'Unused</span>')
+
+    def test_admin_filter_by_used_status(self):
+        staff = User.objects.create_user('used_status_admin2', password='pw', is_staff=True, is_superuser=True)
+        used = Material.objects.create(quantity=100, heat_no='FILTUSED')
+        CoilPart.objects.create(coil=used, part_no='FILTER-A', weight=100)
+        unused = Material.objects.create(quantity=100, heat_no='FILTUNUSD')
+
+        self.client.force_login(staff)
+        response = self.client.get('/admin/materials/material/?used_status=used')
+        self.assertContains(response, used.heat_no)
+        self.assertNotContains(response, unused.heat_no)
+
+        response = self.client.get('/admin/materials/material/?used_status=unused')
+        self.assertContains(response, unused.heat_no)
+        self.assertNotContains(response, used.heat_no)
 
 
 class ProductTypeUniquenessTests(TestCase):

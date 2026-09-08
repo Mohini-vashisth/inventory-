@@ -34,9 +34,12 @@ class MaterialViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         qs = Material.objects.prefetch_related('parts').order_by('-coil_no')
         if self.request.query_params.get('remaining') == 'true':
-            qs = (qs.annotate(weight_used=Coalesce(
+            # Annotation alias is deliberately not "weight_used" — that name
+            # collides with Material.weight_used(), the method the serializer
+            # calls, and a queryset annotation of the same name shadows it.
+            qs = (qs.annotate(_weight_used=Coalesce(
                         Sum('parts__weight'), Value(Decimal('0')), output_field=DecimalField()))
-                    .filter(quantity__gt=F('weight_used')))
+                    .filter(quantity__gt=F('_weight_used')))
         return qs
 
 

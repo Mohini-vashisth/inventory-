@@ -19,24 +19,29 @@ class ProductTypeSerializer(serializers.ModelSerializer):
 
 
 class MaterialSerializer(serializers.ModelSerializer):
-    """A coil, with remaining weight computed the same way MaterialAdmin does."""
+    """A coil. weight_used/weight_remaining/is_used_up all come from
+    Material's own methods — the single source of truth also used by the
+    admin and the part-cutting form."""
     coil_no_formatted = serializers.CharField(source='formatted_coil', read_only=True)
     weight_used = serializers.SerializerMethodField()
     weight_remaining = serializers.SerializerMethodField()
+    is_used_up = serializers.SerializerMethodField()
 
     class Meta:
         model = Material
         fields = [
             'coil_no', 'coil_no_formatted', 'date', 'grade', 'size', 'company',
-            'vendor', 'quantity', 'heat_no', 'weight_used', 'weight_remaining',
+            'vendor', 'quantity', 'heat_no', 'weight_used', 'weight_remaining', 'is_used_up',
         ]
 
     def get_weight_used(self, obj):
-        return obj.parts.aggregate(total=Sum('weight'))['total'] or 0
+        return obj.weight_used()
 
     def get_weight_remaining(self, obj):
-        used = self.get_weight_used(obj)
-        return (obj.quantity or 0) - used
+        return obj.weight_remaining()
+
+    def get_is_used_up(self, obj):
+        return obj.is_used_up()
 
 
 class StepLogSerializer(serializers.ModelSerializer):
