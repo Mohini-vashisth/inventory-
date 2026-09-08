@@ -1,5 +1,11 @@
+import tempfile
+from decimal import Decimal
+from unittest.mock import patch
+
+import pandas as pd
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.core.management import call_command
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
@@ -10,6 +16,56 @@ from .models import (
     CoilPart, Customer, GradeOption, Material, Order, ProcessStep,
     ProductionJob, ProductType, SizeOption,
 )
+
+
+class ImportExcelTests(TestCase):
+    """Uses a small synthetic spreadsheet rather than the real (gitignored) one,
+    so this runs the same in CI as it does locally."""
+
+    def _write_sheet(self, rows):
+        df = pd.DataFrame(rows, columns=[
+            'SR. NO.', 'COIL NO.', 'DATE', 'GRADE', 'SIZE', 'COMPANY', 'VENDOR',
+            'QTY (KGS)', 'HEAT NO.',
+        ])
+        tmp = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+        df.to_excel(tmp.name, index=False)
+        return tmp.name
+
+    def test_imports_real_rows_and_skips_blank_ones(self):
+        path = self._write_sheet([
+            [1, 'WR0001', '2024-01-15', 'SAE 1008', 6, 'VSP', 'ADITYA STEEL', 1250.0, 'H001'],
+            [2, None, None, None, None, None, None, None, None],  # blank template row
+            # unit-suffixed size, oversized heat_no (9 chars, model max is 8)
+            [3, 'WR0003', '2024-02-01', 'EN8D', '16.3 MM', 'TATA', 'XYZ TRADERS', 500.0, 'B30855015'],
+        ])
+        call_command('import_excel', f'--file={path}', '--yes')
+
+        self.assertEqual(Material.objects.count(), 2)
+        first = Material.objects.order_by('coil_no').first()
+        self.assertEqual(first.grade, 'SAE 1008')
+        self.assertEqual(first.quantity, 1250)
+
+        second = Material.objects.order_by('coil_no').last()
+        self.assertEqual(second.size, Decimal('16.3'))  # ' MM' suffix stripped
+        self.assertEqual(second.heat_no, 'B3085501')  # truncated to 8 chars
+
+    def test_dry_run_touches_nothing(self):
+        path = self._write_sheet([
+            [1, 'WR0001', '2024-01-15', 'SAE 1008', 6, 'VSP', 'ADITYA STEEL', 1250.0, 'H001'],
+        ])
+        call_command('import_excel', f'--file={path}', '--dry-run')
+        self.assertEqual(Material.objects.count(), 0)
+
+    def test_prompts_before_deleting_existing_rows(self):
+        Material.objects.create(grade='OLD', quantity=1)
+        path = self._write_sheet([
+            [1, 'WR0001', '2024-01-15', 'SAE 1008', 6, 'VSP', 'ADITYA STEEL', 1250.0, 'H001'],
+        ])
+        # Simulate answering "no" at the confirmation prompt.
+        with patch('builtins.input', return_value='n'):
+            call_command('import_excel', f'--file={path}')
+        self.assertEqual(Material.objects.count(), 1)
+        self.assertEqual(Material.objects.first().grade, 'OLD')
 
 
 class OrderApiTests(TestCase):

@@ -50,6 +50,9 @@
     .cols-4 { grid-template-columns: 2fr 1fr 1fr 1fr; }
     .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
     .cols-2 { grid-template-columns: 1fr 1fr; }
+    .cols-pt { grid-template-columns: 2fr 1fr 1fr; }
+
+    .table-scroll { overflow-x: auto; }
 
     .form-group { display: flex; flex-direction: column; }
     label {
@@ -188,6 +191,21 @@
 
     .manual-fields { display: none; margin-top: 1.25rem; }
     .manual-fields.open { display: block; }
+
+    @media (max-width: 640px) {
+      header { padding: 1rem; flex-wrap: wrap; gap: 0.5rem; }
+      .content { padding: 0 0.85rem; margin: 1rem auto; }
+      .card-body { padding: 1.1rem; }
+
+      .card-header { flex-direction: column; align-items: flex-start; gap: 0.3rem; }
+
+      .cols-4, .cols-3, .cols-2, .cols-pt { grid-template-columns: 1fr; }
+      .detail-box { grid-template-columns: 1fr; }
+
+      .choice-row { flex-direction: column; align-items: stretch; }
+      .choice-row span { margin-left: 0; }
+      .btn-send, .btn-manual { width: 100%; text-align: center; }
+    }
   </style>
 </head>
 <body>
@@ -259,7 +277,7 @@
         <div class="manual-fields" id="manual-fields">
 
           <div class="section-label" style="margin-top:1.25rem;">Final Product</div>
-          <div class="form-row" style="grid-template-columns:2fr 1fr 1fr;">
+          <div class="form-row cols-pt">
             <div class="form-group">
               <label>Product Type</label>
               <select name="product_type" id="dash-product-type">
@@ -374,6 +392,7 @@
       All Orders
       <span>{{ orders|length }} total</span>
     </div>
+    <div class="table-scroll">
     <table>
       <thead>
         <tr>
@@ -467,6 +486,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 
   <!-- ── Companies & Quote Links ──────────────────────────── -->
@@ -475,6 +495,7 @@
       Companies
       <span>Resend the quote form to any company</span>
     </div>
+    <div class="table-scroll">
     <table>
       <thead>
         <tr>
@@ -511,6 +532,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 
 </div>
