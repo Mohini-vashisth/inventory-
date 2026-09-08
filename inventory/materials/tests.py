@@ -6,6 +6,7 @@ import pandas as pd
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
@@ -66,6 +67,36 @@ class ImportExcelTests(TestCase):
             call_command('import_excel', f'--file={path}')
         self.assertEqual(Material.objects.count(), 1)
         self.assertEqual(Material.objects.first().grade, 'OLD')
+
+    def _write_multi_sheet(self):
+        tmp = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
+        with pd.ExcelWriter(tmp.name) as writer:
+            pd.DataFrame({'Notes': ['not real data']}).to_excel(writer, sheet_name='Cover Page', index=False)
+            pd.DataFrame({
+                'SR. NO.': [1], 'COIL NO.': ['WR0001'], 'DATE': ['2024-01-15'],
+                'GRADE': ['SAE 1008'], 'SIZE': [6], 'COMPANY': ['VSP'],
+                'VENDOR': ['ADITYA STEEL'], 'QTY (KGS)': [1250.0], 'HEAT NO.': ['H001'],
+            }).to_excel(writer, sheet_name='Stock 2024', index=False)
+        return tmp.name
+
+    def test_list_sheets_imports_nothing(self):
+        path = self._write_multi_sheet()
+        call_command('import_excel', f'--file={path}', '--list-sheets')
+        self.assertEqual(Material.objects.count(), 0)
+
+    def test_wrong_default_sheet_is_rejected_clearly(self):
+        path = self._write_multi_sheet()
+        with self.assertRaises(CommandError):
+            call_command('import_excel', f'--file={path}', '--dry-run')
+
+    def test_can_target_sheet_by_name_or_index(self):
+        path = self._write_multi_sheet()
+        call_command('import_excel', f'--file={path}', '--sheet=Stock 2024', '--yes')
+        self.assertEqual(Material.objects.count(), 1)
+
+        Material.objects.all().delete()
+        call_command('import_excel', f'--file={path}', '--sheet=1', '--yes')
+        self.assertEqual(Material.objects.count(), 1)
 
 
 class OrderApiTests(TestCase):
