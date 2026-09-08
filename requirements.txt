@@ -9,4 +9,5 @@ django-jazzmin==3.0.1
 python-dotenv
 djangorestframework==3.16.1
 whitenoise==6.11.0
-gunicorn==23.0.0
+gunicorn==23.0.0; sys_platform != 'win32'
+waitress==3.0.2; sys_platform == 'win32'
