@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.urls import reverse
-from django.db.models import Sum
+from django.db.models import F, Q, Sum
 from .models import Material, CoilPart, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
 
 
@@ -229,20 +229,40 @@ class StepLogAdmin(admin.ModelAdmin):
     status_badge.short_description = 'Status'
 
 
+class UsedStatusFilter(admin.SimpleListFilter):
+    """Filters against the _weight_used annotation MaterialAdmin already adds
+    to its queryset — no per-row Python computation, just SQL."""
+    title = 'used status'
+    parameter_name = 'used_status'
+
+    def lookups(self, request, model_admin):
+        return [('used', 'Fully used'), ('unused', 'Has stock remaining')]
+
+    def queryset(self, request, queryset):
+        if self.value() == 'used':
+            return queryset.filter(quantity__gt=0, _weight_used__gte=F('quantity'))
+        if self.value() == 'unused':
+            return queryset.filter(
+                Q(quantity__isnull=True) | Q(quantity=0) |
+                Q(_weight_used__isnull=True) | Q(_weight_used__lt=F('quantity'))
+            )
+        return queryset
+
+
 @admin.register(Material)
 class MaterialAdmin(admin.ModelAdmin):
     list_display = [
         'formatted_coil', 'date', 'grade', 'size',
         'company', 'vendor', 'quantity', 'heat_no',
-        'parts_count', 'weight_remaining',
+        'parts_count', 'weight_remaining', 'status_badge',
     ]
-    list_filter   = ['grade', 'size', 'company']
+    list_filter   = ['grade', 'size', 'company', UsedStatusFilter]
     search_fields = ['coil_no', 'heat_no', 'vendor', 'company']
     ordering = ['-coil_no']
 
     def get_queryset(self, request):
         return super().get_queryset(request).annotate(
-            weight_used=Sum('parts__weight'),
+            _weight_used=Sum('parts__weight'),
         ).prefetch_related('parts')
 
     def parts_count(self, obj):
@@ -252,7 +272,7 @@ class MaterialAdmin(admin.ModelAdmin):
     def weight_remaining(self, obj):
         if not obj.quantity:
             return '—'
-        used = float(obj.weight_used or 0)
+        used = float(obj._weight_used or 0)
         remaining = float(obj.quantity) - used
         color = '#dc2626' if remaining <= 0 else '#166534'
         return format_html(
@@ -260,6 +280,18 @@ class MaterialAdmin(admin.ModelAdmin):
             color, f'{remaining:.1f}',
         )
     weight_remaining.short_description = 'Remaining'
+
+    def status_badge(self, obj):
+        if not obj.quantity:
+            return format_html('<span style="color:#aaa;">—</span>')
+        used_up = float(obj._weight_used or 0) >= float(obj.quantity)
+        bg, text, label = ('#fee2e2', '#991b1b', 'Used') if used_up else ('#dcfce7', '#166534', 'Unused')
+        return format_html(
+            '<span style="background:{};color:{};padding:2px 10px;'
+            'border-radius:999px;font-size:12px;font-weight:600;">{}</span>',
+            bg, text, label,
+        )
+    status_badge.short_description = 'Status'
 
 
 # ── Customer & Order ─────────────────────────────────────────

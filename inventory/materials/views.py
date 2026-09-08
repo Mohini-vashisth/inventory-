@@ -266,7 +266,7 @@ def select_coil_for_order(request, order_pk):
         pk=order_pk,
     )
 
-    coils_qs = Material.objects.annotate(weight_used=Sum('parts__weight'))
+    coils_qs = Material.objects.annotate(_weight_used=Sum('parts__weight'))
 
     # Filter by allowed specs if the order has a product type configured
     if order.product_type:
@@ -287,7 +287,7 @@ def select_coil_for_order(request, order_pk):
     # Only coils with remaining weight
     coils = []
     for coil in coils_qs.order_by('-coil_no'):
-        used      = float(coil.weight_used or 0)
+        used      = float(coil._weight_used or 0)
         total     = float(coil.quantity or 0)
         remaining = total - used
         if remaining > 0:
