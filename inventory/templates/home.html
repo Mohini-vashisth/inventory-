@@ -11,10 +11,12 @@ body{
     font-family: Arial, Helvetica, sans-serif;
     background: linear-gradient(135deg,#4e73df,#1cc88a);
     margin:0;
-    height:100vh;
+    min-height:100vh;
     display:flex;
     justify-content:center;
     align-items:center;
+    padding:2rem 1.25rem;
+    box-sizing:border-box;
 }
 
 .container{
@@ -29,8 +31,16 @@ h1{
 
 .cards{
     display:flex;
+    flex-wrap:wrap;
     gap:40px;
     justify-content:center;
+}
+
+@media (max-width: 640px) {
+    h1{ font-size:28px; margin-bottom:28px; }
+    .cards{ gap:20px; }
+    .card{ width:150px; padding:28px 16px; }
+    .icon{ font-size:38px; margin-bottom:14px; }
 }
 
 .card-link{
