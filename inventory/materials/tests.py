@@ -102,6 +102,18 @@ class ImportExcelTests(TestCase):
         self.assertEqual(Material.objects.count(), 1)
         self.assertEqual(Material.objects.first().grade, 'OLD')
 
+    def test_reset_sequence_renumbers_from_one(self):
+        """Without --reset-sequence, coil_no keeps counting up from wherever
+        deleted rows left off (SQLite doesn't rewind AUTOINCREMENT on delete).
+        With it, the next imported coil starts at 1."""
+        old = Material.objects.create(grade='OLD', quantity=1)
+        old.delete()  # pushes SQLite's autoincrement counter past 1
+        path = self._write_sheet([
+            [1, 'WR0001', '2024-01-15', 'SAE 1008', 6, 'VSP', 'ADITYA STEEL', 1250.0, 'H001'],
+        ])
+        call_command('import_excel', f'--file={path}', '--yes', '--reset-sequence')
+        self.assertEqual(Material.objects.get().coil_no, 1)
+
     def _write_multi_sheet(self):
         tmp = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
         with pd.ExcelWriter(tmp.name) as writer:
