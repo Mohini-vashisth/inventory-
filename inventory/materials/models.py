@@ -12,6 +12,7 @@ class Material(models.Model):
     vendor = models.CharField(max_length=50, null=True, blank=True)
     quantity = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     heat_no = models.CharField(max_length=8, null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
 
     def formatted_coil(self):
         return f"COIL{self.coil_no:04d}"
@@ -32,6 +33,9 @@ class Material(models.Model):
         if not self.quantity:
             return False
         return self.weight_remaining() <= 0
+
+    def is_archived(self):
+        return self.archived_at is not None
 
     def __str__(self):
         return self.formatted_coil()

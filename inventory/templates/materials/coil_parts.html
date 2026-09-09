@@ -240,8 +240,17 @@
   </div>
   {% endif %}
 
+  <!-- Archived banner -->
+  {% if archived %}
+  <div style="background:#f3f4f6; border:1px solid #d1d5db; border-radius:12px;
+              padding:1rem 1.5rem; margin-bottom:1.5rem; color:#374151;
+              font-weight:600; text-align:center;">
+    🗄️ This coil has been archived — no more parts can be created.
+  </div>
+  {% endif %}
+
   <!-- Exhausted banner -->
-  {% if exhausted %}
+  {% if exhausted and not archived %}
   <div style="background:#fee2e2; border:1px solid #fca5a5; border-radius:12px;
               padding:1rem 1.5rem; margin-bottom:1.5rem; color:#991b1b;
               font-weight:600; text-align:center;">
@@ -266,7 +275,7 @@
     Admin → Orders → ORD-{{ from_order.pk|stringformat:"04d" }}</a> and assign a Product Type before cutting parts.
   </div>
   {% else %}
-  <div class="card" {% if exhausted %}style="opacity:0.5; pointer-events:none;"{% endif %}>
+  <div class="card" {% if exhausted or archived %}style="opacity:0.5; pointer-events:none;"{% endif %}>
     <h2>Add a new part</h2>
     <form method="post">
       {% csrf_token %}
@@ -275,7 +284,7 @@
 
         <div class="form-group">
           <label>Part suffix</label>
-          <input name="suffix" placeholder="e.g. A, B, C" {% if not exhausted %}required{% endif %}>
+          <input name="suffix" placeholder="e.g. A, B, C" {% if not exhausted and not archived %}required{% endif %}>
         </div>
 
         <div class="form-group">

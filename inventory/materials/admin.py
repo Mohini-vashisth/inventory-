@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.utils import timezone
 from django.utils.html import format_html
 from django.urls import reverse
 from django.db.models import F, Q, Sum
@@ -249,16 +250,34 @@ class UsedStatusFilter(admin.SimpleListFilter):
         return queryset
 
 
+class ArchivedFilter(admin.SimpleListFilter):
+    """Archived coils are hidden by default so mistaken entries don't clutter
+    the day-to-day list — but nothing is ever lost, just a filter click away."""
+    title = 'archived'
+    parameter_name = 'archived'
+
+    def lookups(self, request, model_admin):
+        return [('yes', 'Archived only'), ('all', 'All (including archived)')]
+
+    def queryset(self, request, queryset):
+        if self.value() == 'yes':
+            return queryset.filter(archived_at__isnull=False)
+        if self.value() == 'all':
+            return queryset
+        return queryset.filter(archived_at__isnull=True)
+
+
 @admin.register(Material)
 class MaterialAdmin(admin.ModelAdmin):
     list_display = [
         'formatted_coil', 'date', 'grade', 'size',
         'company', 'vendor', 'quantity', 'heat_no',
-        'parts_count', 'weight_remaining', 'status_badge',
+        'parts_count', 'weight_remaining', 'status_badge', 'archived_badge',
     ]
-    list_filter   = ['grade', 'size', 'company', UsedStatusFilter]
+    list_filter   = ['grade', 'size', 'company', UsedStatusFilter, ArchivedFilter]
     search_fields = ['coil_no', 'heat_no', 'vendor', 'company']
     ordering = ['-coil_no']
+    actions = ['archive_coils', 'unarchive_coils']
 
     def get_queryset(self, request):
         return super().get_queryset(request).annotate(
@@ -292,6 +311,26 @@ class MaterialAdmin(admin.ModelAdmin):
             bg, text, label,
         )
     status_badge.short_description = 'Status'
+
+    def archived_badge(self, obj):
+        if not obj.archived_at:
+            return ''
+        return format_html(
+            '<span style="background:#f3f4f6;color:#6b7280;padding:2px 10px;'
+            'border-radius:999px;font-size:12px;font-weight:600;">Archived {}</span>',
+            obj.archived_at.strftime('%d %b %Y'),
+        )
+    archived_badge.short_description = 'Archived'
+
+    def archive_coils(self, request, queryset):
+        count = queryset.filter(archived_at__isnull=True).update(archived_at=timezone.now())
+        self.message_user(request, f"Archived {count} coil(s).")
+    archive_coils.short_description = "Archive selected coils"
+
+    def unarchive_coils(self, request, queryset):
+        count = queryset.filter(archived_at__isnull=False).update(archived_at=None)
+        self.message_user(request, f"Unarchived {count} coil(s).")
+    unarchive_coils.short_description = "Unarchive selected coils"
 
 
 # ── Customer & Order ─────────────────────────────────────────

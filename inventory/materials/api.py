@@ -28,11 +28,14 @@ class ProductTypeViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class MaterialViewSet(viewsets.ReadOnlyModelViewSet):
-    """Coils. Supports ?remaining=true to only show coils with weight left to cut."""
+    """Coils. Supports ?remaining=true (only coils with weight left to cut)
+    and ?include_archived=true (archived coils are excluded by default)."""
     serializer_class = MaterialSerializer
 
     def get_queryset(self):
         qs = Material.objects.prefetch_related('parts').order_by('-coil_no')
+        if self.request.query_params.get('include_archived') != 'true':
+            qs = qs.filter(archived_at__isnull=True)
         if self.request.query_params.get('remaining') == 'true':
             # Annotation alias is deliberately not "weight_used" — that name
             # collides with Material.weight_used(), the method the serializer

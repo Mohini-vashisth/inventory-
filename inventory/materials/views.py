@@ -156,9 +156,10 @@ def coil_parts(request, coil_pk):
     coil_weight = float(coil.quantity or 0)
     remaining = coil_weight - total_used
     exhausted = coil_weight > 0 and remaining <= 0
+    archived = coil.is_archived()
 
     if request.method == 'POST':
-        if exhausted:
+        if exhausted or archived:
             return redirect('coil_parts', coil_pk=coil.pk)
 
         suffix = request.POST.get('suffix', '').strip().upper()
@@ -228,14 +229,14 @@ def coil_parts(request, coil_pk):
         return render(request, 'materials/coil_parts.html', {
             'coil': coil, 'parts': parts, 'product_types': product_types,
             'total_used': total_used, 'remaining': remaining,
-            'exhausted': exhausted, 'error': error,
+            'exhausted': exhausted, 'archived': archived, 'error': error,
             'from_order': from_order,
         })
 
     return render(request, 'materials/coil_parts.html', {
         'coil': coil, 'parts': parts, 'product_types': product_types,
         'total_used': total_used, 'remaining': remaining, 'exhausted': exhausted,
-        'from_order': from_order,
+        'archived': archived, 'from_order': from_order,
     })
 
 
@@ -266,7 +267,7 @@ def select_coil_for_order(request, order_pk):
         pk=order_pk,
     )
 
-    coils_qs = Material.objects.annotate(_weight_used=Sum('parts__weight'))
+    coils_qs = Material.objects.filter(archived_at__isnull=True).annotate(_weight_used=Sum('parts__weight'))
 
     # Filter by allowed specs if the order has a product type configured
     if order.product_type:
