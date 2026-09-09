@@ -24,11 +24,14 @@ class ImportExcelTests(TestCase):
     """Uses a small synthetic spreadsheet rather than the real (gitignored) one,
     so this runs the same in CI as it does locally."""
 
-    def _write_sheet(self, rows):
-        df = pd.DataFrame(rows, columns=[
+    def _write_sheet(self, rows, extra_columns=None):
+        columns = [
             'SR. NO.', 'COIL NO.', 'DATE', 'GRADE', 'SIZE', 'COMPANY', 'VENDOR',
             'QTY (KGS)', 'HEAT NO.',
-        ])
+        ]
+        if extra_columns:
+            columns += extra_columns
+        df = pd.DataFrame(rows, columns=columns)
         tmp = tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False)
         df.to_excel(tmp.name, index=False)
         return tmp.name
@@ -101,6 +104,27 @@ class ImportExcelTests(TestCase):
             call_command('import_excel', f'--file={path}')
         self.assertEqual(Material.objects.count(), 1)
         self.assertEqual(Material.objects.first().grade, 'OLD')
+
+    def test_issued_qty_columns_become_legacy_used_weight(self):
+        """ISSUED QTY 1/2/3 track weight already used before the app existed —
+        summed into legacy_used_weight so status reflects real-world usage."""
+        path = self._write_sheet(
+            [
+                [1, 'WR0001', '2024-01-15', 'SAE 1008', 6, 'VSP', 'ADITYA STEEL',
+                 1250.0, 'H001', 500.0, 250.0, None],
+                [2, 'WR0002', '2024-02-01', 'EN8D', 6, 'TATA', 'XYZ TRADERS',
+                 500.0, 'H002', None, None, None],
+            ],
+            extra_columns=['ISSUED QTY 1', 'ISSUED QTY 2', 'ISSUED QTY 3'],
+        )
+        call_command('import_excel', f'--file={path}', '--yes')
+
+        used = Material.objects.get(heat_no='H001')
+        self.assertEqual(used.legacy_used_weight, Decimal('750'))
+        self.assertEqual(used.weight_used(), Decimal('750'))
+
+        untouched = Material.objects.get(heat_no='H002')
+        self.assertEqual(untouched.legacy_used_weight, Decimal('0'))
 
     def test_reset_sequence_renumbers_from_one(self):
         """Without --reset-sequence, coil_no keeps counting up from wherever
@@ -226,6 +250,19 @@ class MaterialUsedStatusTests(TestCase):
         self.assertTrue(coil.is_used_up())
         self.assertEqual(coil.weight_remaining(), 0)
 
+    def test_legacy_used_weight_counts_toward_usage(self):
+        """Usage recorded before this coil was tracked in the app (imported
+        from the spreadsheet's ISSUED QTY columns) counts the same as weight
+        cut through the app."""
+        coil = Material.objects.create(quantity=500, legacy_used_weight=200)
+        self.assertEqual(coil.weight_used(), 200)
+        self.assertEqual(coil.weight_remaining(), 300)
+        self.assertFalse(coil.is_used_up())
+
+        CoilPart.objects.create(coil=coil, part_no='LEGACY-A', weight=300)
+        self.assertEqual(coil.weight_used(), 500)
+        self.assertTrue(coil.is_used_up())
+
     def test_coil_with_no_quantity_on_file_is_not_marked_used(self):
         """No quantity means unknown, not used — mirrors the existing
         'exhausted' check elsewhere in the app (coil_parts view)."""
@@ -243,6 +280,19 @@ class MaterialUsedStatusTests(TestCase):
         self.assertContains(response, 'Used</span>')
         response = self.client.get(f'/admin/materials/material/?q={unused.heat_no}')
         self.assertContains(response, 'Unused</span>')
+
+    def test_fully_legacy_used_coil_excluded_from_order_coil_selection(self):
+        """A coil imported with legacy_used_weight already covering its full
+        quantity has no weight left to offer, same as one used up via the app."""
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        customer = Customer.objects.create(name='Legacy Test Co')
+        order = Order.objects.create(customer=customer, quantity=100, status='confirmed')
+        Material.objects.create(quantity=500, legacy_used_weight=500)
+        active = Material.objects.create(quantity=500)
+
+        response = self.client.get(reverse('select_coil_for_order', kwargs={'order_pk': order.pk}))
+        coil_ids = [c['coil'].pk for c in response.context['coils']]
+        self.assertEqual(coil_ids, [active.pk])
 
     def test_admin_filter_by_used_status(self):
         staff = User.objects.create_user('used_status_admin2', password='pw', is_staff=True, is_superuser=True)

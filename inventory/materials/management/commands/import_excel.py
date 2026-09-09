@@ -24,6 +24,11 @@ COLUMN_MAP = {
     'HEAT NO.': ('heat_no', 8),
 }
 
+# Summed into legacy_used_weight — usage that happened before this coil was
+# tracked in the app. Not in COLUMN_MAP: these aren't required (a sheet without
+# them just imports with legacy_used_weight=0), unlike the columns above.
+ISSUED_QTY_COLUMNS = ['ISSUED QTY 1', 'ISSUED QTY 2', 'ISSUED QTY 3']
+
 
 class Command(BaseCommand):
     help = "Replace all Material rows with the contents of STOCK INVENTORY SHEET.xlsx"
@@ -134,6 +139,7 @@ class Command(BaseCommand):
                     vendor=self._clean_str(row.get('VENDOR'), 50),
                     quantity=self._clean_decimal(row.get('QTY (KGS)')),
                     heat_no=self._clean_str(row.get('HEAT NO.'), 8),
+                    legacy_used_weight=self._clean_legacy_used_weight(row),
                 )
                 created += 1
 
@@ -170,6 +176,20 @@ class Command(BaseCommand):
             return Decimal(str(value))
         except InvalidOperation:
             return None
+
+    def _clean_legacy_used_weight(self, row):
+        """Sum of ISSUED QTY 1/2/3 — weight already issued before this coil
+        was tracked in the app. Missing/blank cells contribute 0."""
+        total = Decimal('0')
+        for col in ISSUED_QTY_COLUMNS:
+            value = row.get(col)
+            if pd.isna(value):
+                continue
+            try:
+                total += Decimal(str(value))
+            except InvalidOperation:
+                continue
+        return total
 
     def _clean_size(self, value):
         """SIZE is mostly numeric but a few rows have units, e.g. '16.3 MM'."""
