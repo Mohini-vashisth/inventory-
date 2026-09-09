@@ -40,8 +40,10 @@ class MaterialViewSet(viewsets.ReadOnlyModelViewSet):
             # Annotation alias is deliberately not "weight_used" — that name
             # collides with Material.weight_used(), the method the serializer
             # calls, and a queryset annotation of the same name shadows it.
+            # Includes legacy_used_weight, same as the model method.
             qs = (qs.annotate(_weight_used=Coalesce(
-                        Sum('parts__weight'), Value(Decimal('0')), output_field=DecimalField()))
+                        Sum('parts__weight'), Value(Decimal('0')), output_field=DecimalField())
+                        + F('legacy_used_weight'))
                     .filter(quantity__gt=F('_weight_used')))
         return qs
 

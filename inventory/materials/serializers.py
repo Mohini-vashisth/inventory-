@@ -33,7 +33,7 @@ class MaterialSerializer(serializers.ModelSerializer):
         fields = [
             'coil_no', 'coil_no_formatted', 'date', 'grade', 'size', 'company',
             'vendor', 'quantity', 'heat_no', 'weight_used', 'weight_remaining',
-            'is_used_up', 'is_archived', 'archived_at',
+            'is_used_up', 'is_archived', 'archived_at', 'legacy_used_weight',
         ]
 
     def get_weight_used(self, obj):

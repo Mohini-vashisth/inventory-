@@ -2,7 +2,10 @@ from django.contrib import admin
 from django.utils import timezone
 from django.utils.html import format_html
 from django.urls import reverse
-from django.db.models import F, Q, Sum
+from decimal import Decimal
+
+from django.db.models import DecimalField, F, Q, Sum, Value
+from django.db.models.functions import Coalesce
 from .models import Material, CoilPart, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
 
 
@@ -244,8 +247,7 @@ class UsedStatusFilter(admin.SimpleListFilter):
             return queryset.filter(quantity__gt=0, _weight_used__gte=F('quantity'))
         if self.value() == 'unused':
             return queryset.filter(
-                Q(quantity__isnull=True) | Q(quantity=0) |
-                Q(_weight_used__isnull=True) | Q(_weight_used__lt=F('quantity'))
+                Q(quantity__isnull=True) | Q(quantity=0) | Q(_weight_used__lt=F('quantity'))
             )
         return queryset
 
@@ -281,7 +283,8 @@ class MaterialAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).annotate(
-            _weight_used=Sum('parts__weight'),
+            _weight_used=Coalesce(Sum('parts__weight'), Value(Decimal('0')), output_field=DecimalField())
+                         + F('legacy_used_weight'),
         ).prefetch_related('parts')
 
     def parts_count(self, obj):

@@ -5,7 +5,8 @@ from django.core.mail import send_mail
 from django.conf import settings
 from django.urls import reverse
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import DecimalField, F, Sum, Value
+from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.crypto import constant_time_compare
@@ -152,7 +153,7 @@ def coil_parts(request, coil_pk):
     from_order_pk = request.GET.get('from_order') or request.POST.get('from_order')
     from_order = _safe_get(Order.objects.select_related('product_type', 'customer'), from_order_pk)
 
-    total_used = float(parts.aggregate(total=Sum('weight'))['total'] or 0)
+    total_used = float(coil.weight_used())
     coil_weight = float(coil.quantity or 0)
     remaining = coil_weight - total_used
     exhausted = coil_weight > 0 and remaining <= 0
@@ -267,7 +268,10 @@ def select_coil_for_order(request, order_pk):
         pk=order_pk,
     )
 
-    coils_qs = Material.objects.filter(archived_at__isnull=True).annotate(_weight_used=Sum('parts__weight'))
+    coils_qs = Material.objects.filter(archived_at__isnull=True).annotate(
+        _weight_used=Coalesce(Sum('parts__weight'), Value(Decimal('0')), output_field=DecimalField())
+                     + F('legacy_used_weight'),
+    )
 
     # Filter by allowed specs if the order has a product type configured
     if order.product_type:
