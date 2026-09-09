@@ -72,7 +72,7 @@ It was committed and untracked twice before (`git log` shows both flips, each re
 
 ### Models (`materials/models.py`)
 
-- **Material** — raw coil inventory (grade, size mm, vendor, quantity kg, heat no)
+- **Material** — raw coil inventory (grade, size mm, vendor, quantity kg, heat no). `weight_used()`/`weight_remaining()`/`is_used_up()` are the single source of truth for how much of a coil has been cut — admin, the REST API, and the part-cutting form all call these rather than each computing their own aggregate. `archived_at` marks a mistaken entry as archived (hidden from normal admin/employee views, excluded from part-cutting) without ever deleting it or renumbering `coil_no` — that number may already be on a physical QR tag, so it's never reused or reassigned
 - **CoilPart** — a physical piece cut from a coil (part_no format: `COIL0001-A`)
 - **GradeOption** / **SizeOption** — admin-managed lists of valid grades/sizes shown as tap-to-pick options on the New Coil Entry form (`/material-form/`); keeps the picker in sync without a code change
 - **ProductType** — final product definition with preset grade + size; has ordered ProcessSteps and AllowedCoilSpecs. Grade + size is the identity of a product type — `unique_together` enforces one ProductType per grade/size combo
@@ -96,6 +96,7 @@ It was committed and untracked twice before (`git log` shows both flips, each re
 **Admin/staff** (`is_staff=True` Django user):
 - Access via `/admin-login/` → Django admin (`/admin/`) or `/orders/` dashboard
 - Can confirm/reject/dispatch orders, manage product types, view all data
+- Materials list shows a Used/Unused status badge and filter (computed from cut weight, not stored). A mistaken coil entry should be **archived** (bulk action in the admin), not deleted — archiving hides it from the materials list and from employee coil-selection/part-cutting, but keeps its `coil_no` intact. Archived coils are hidden by default; `?archived=yes` or `?archived=all` in the admin URL shows them
 
 **Employee** (PIN-based session):
 - Access via `/employee/` — requires PIN (`EMPLOYEE_PIN` in `.env`)
@@ -121,7 +122,7 @@ Admin enters company name/email/phone in the Orders dashboard → sends a unique
 
 ## REST API (`materials/api.py`, `materials/serializers.py`)
 
-Read-only DRF API under `/api/` — `orders`, `coils`, `jobs`, `product-types`. Staff-only (`IsAdminUser`, session auth — same login as `/admin/`). Deliberately read-only: the state-transition rules (product type required to confirm, sequential step unlock, atomic part creation) live in `materials/views.py` and aren't re-implemented here — this surface is for reading data out, not changing it. `coils` supports `?remaining=true`; `orders` and `jobs` support `?status=`; `jobs` also supports `?order=<id>`. Browsable API login at `/api-auth/`.
+Read-only DRF API under `/api/` — `orders`, `coils`, `jobs`, `product-types`. Staff-only (`IsAdminUser`, session auth — same login as `/admin/`). Deliberately read-only: the state-transition rules (product type required to confirm, sequential step unlock, atomic part creation) live in `materials/views.py` and aren't re-implemented here — this surface is for reading data out, not changing it. `coils` supports `?remaining=true` and `?include_archived=true` (archived coils excluded by default); `orders` and `jobs` support `?status=`; `jobs` also supports `?order=<id>`. Browsable API login at `/api-auth/`.
 
 ## Commit style
 
