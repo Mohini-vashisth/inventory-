@@ -10,6 +10,7 @@ from django.core.management.base import CommandError
 from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .forms import MaterialForm
@@ -245,6 +246,99 @@ class MaterialUsedStatusTests(TestCase):
         response = self.client.get('/admin/materials/material/?used_status=unused')
         self.assertContains(response, unused.heat_no)
         self.assertNotContains(response, used.heat_no)
+
+
+class MaterialArchivingTests(TestCase):
+    """Archiving hides a mistaken entry from normal use without ever
+    renumbering coil_no — that number may already be on a printed QR tag."""
+
+    def test_archiving_does_not_change_coil_no(self):
+        coil = Material.objects.create(quantity=100)
+        pk = coil.pk
+        self.assertFalse(coil.is_archived())
+        coil.archived_at = timezone.now()
+        coil.save()
+        coil.refresh_from_db()
+        self.assertEqual(coil.pk, pk)
+        self.assertTrue(coil.is_archived())
+
+    def test_admin_hides_archived_coils_by_default(self):
+        staff = User.objects.create_user('archive_admin', password='pw', is_staff=True, is_superuser=True)
+        active = Material.objects.create(quantity=100, heat_no='ACTIVE01')
+        archived = Material.objects.create(quantity=100, heat_no='ARCHIVED1', archived_at=timezone.now())
+
+        self.client.force_login(staff)
+        response = self.client.get('/admin/materials/material/')
+        self.assertContains(response, active.heat_no)
+        self.assertNotContains(response, archived.heat_no)
+
+        response = self.client.get('/admin/materials/material/?archived=yes')
+        self.assertContains(response, archived.heat_no)
+        self.assertNotContains(response, active.heat_no)
+
+        response = self.client.get('/admin/materials/material/?archived=all')
+        self.assertContains(response, active.heat_no)
+        self.assertContains(response, archived.heat_no)
+
+    def test_admin_archive_and_unarchive_actions(self):
+        staff = User.objects.create_user('archive_admin2', password='pw', is_staff=True, is_superuser=True)
+        coil = Material.objects.create(quantity=100)
+        self.client.force_login(staff)
+
+        self.client.post('/admin/materials/material/', {
+            'action': 'archive_coils', '_selected_action': [coil.pk],
+        })
+        coil.refresh_from_db()
+        self.assertTrue(coil.is_archived())
+
+        # Archived coils are hidden by default — has to be on the "archived" filter
+        # to even see (and select) the checkbox in the first place, same as a real user.
+        self.client.post('/admin/materials/material/?archived=yes', {
+            'action': 'unarchive_coils', '_selected_action': [coil.pk],
+        })
+        coil.refresh_from_db()
+        self.assertFalse(coil.is_archived())
+
+    def test_archived_coil_excluded_from_order_coil_selection(self):
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        customer = Customer.objects.create(name='Archive Test Co')
+        order = Order.objects.create(customer=customer, quantity=100, status='confirmed')
+        Material.objects.create(quantity=500, archived_at=timezone.now())
+        active = Material.objects.create(quantity=500)
+
+        response = self.client.get(reverse('select_coil_for_order', kwargs={'order_pk': order.pk}))
+        coil_ids = [c['coil'].pk for c in response.context['coils']]
+        self.assertIn(active.pk, coil_ids)
+        self.assertEqual(len(coil_ids), 1)
+
+    def test_cannot_cut_a_part_from_an_archived_coil(self):
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        coil = Material.objects.create(quantity=500, archived_at=timezone.now())
+        product_type = ProductType.objects.create(name='Bar', grade='EN8D', size='1.200')
+
+        response = self.client.post(
+            reverse('coil_parts', kwargs={'coil_pk': coil.pk}),
+            {'suffix': 'A', 'weight': '10', 'product_type': str(product_type.pk)},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(CoilPart.objects.filter(coil=coil).count(), 0)
+
+    def test_api_excludes_archived_by_default(self):
+        staff = User.objects.create_user('archive_api_staff', password='pw', is_staff=True)
+        client = APIClient()
+        client.force_authenticate(user=staff)
+        active = Material.objects.create(quantity=100)
+        archived = Material.objects.create(quantity=100, archived_at=timezone.now())
+
+        response = client.get('/api/coils/')
+        ids = [row['coil_no'] for row in response.data['results']]
+        self.assertIn(active.pk, ids)
+        self.assertNotIn(archived.pk, ids)
+
+        response = client.get('/api/coils/?include_archived=true')
+        ids = [row['coil_no'] for row in response.data['results']]
+        self.assertIn(active.pk, ids)
+        self.assertIn(archived.pk, ids)
 
 
 class ProductTypeUniquenessTests(TestCase):

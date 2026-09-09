@@ -26,12 +26,14 @@ class MaterialSerializer(serializers.ModelSerializer):
     weight_used = serializers.SerializerMethodField()
     weight_remaining = serializers.SerializerMethodField()
     is_used_up = serializers.SerializerMethodField()
+    is_archived = serializers.SerializerMethodField()
 
     class Meta:
         model = Material
         fields = [
             'coil_no', 'coil_no_formatted', 'date', 'grade', 'size', 'company',
-            'vendor', 'quantity', 'heat_no', 'weight_used', 'weight_remaining', 'is_used_up',
+            'vendor', 'quantity', 'heat_no', 'weight_used', 'weight_remaining',
+            'is_used_up', 'is_archived', 'archived_at',
         ]
 
     def get_weight_used(self, obj):
@@ -39,6 +41,9 @@ class MaterialSerializer(serializers.ModelSerializer):
 
     def get_weight_remaining(self, obj):
         return obj.weight_remaining()
+
+    def get_is_archived(self, obj):
+        return obj.is_archived()
 
     def get_is_used_up(self, obj):
         return obj.is_used_up()
