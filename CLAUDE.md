@@ -68,6 +68,10 @@ If this ever moves to the cloud instead, the deployment steps above (WhiteNoise,
 
 It was committed and untracked twice before (`git log` shows both flips, each reverted within days) — untracking it broke a workflow where the database was being passed between machines via `git pull`/`push` in lieu of a real deployment. Now that the app runs as one persistent instance rather than being re-cloned onto different machines, that workflow no longer applies: `git pull` only touches code, and `db.sqlite3` sits on the deployed machine untouched by git, backed up separately via `backup_db`. **If you ever go back to syncing data between machines via git, this file needs to be tracked again** — the two reverts weren't accidents.
 
+## Importing from the client's spreadsheet (`materials/management/commands/import_excel.py`)
+
+`import_excel` fully replaces every `Material` row on each run (delete-all + reimport in one transaction) — it's a one-time/occasional full reimport tool, not routine syncing, since a coil's `coil_no` may already be printed on a physical QR tag by the time you run it again. `--reset-sequence` additionally rewinds `coil_no` to start counting from 1 — deleting rows alone doesn't rewind SQLite's autoincrement counter, so without this flag newly imported coils keep counting up from wherever the old ones left off (this is why coil numbering on a machine that's had earlier test data can start well above 1). **Only use `--reset-sequence` if nothing in the current data has a printed QR tag yet** — every coil gets renumbered.
+
 ## Architecture
 
 ### Models (`materials/models.py`)
