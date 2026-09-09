@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 
 import pandas as pd
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.db import connection, transaction
 from materials.models import Material
 
 # Spreadsheet column -> Material field, and that field's max length (None = no limit / not a CharField)
@@ -49,6 +49,14 @@ class Command(BaseCommand):
         parser.add_argument(
             '--list-sheets', action='store_true',
             help="Print the sheet names in the file and exit — nothing is imported.",
+        )
+        parser.add_argument(
+            '--reset-sequence', action='store_true',
+            help="Reset coil_no numbering to start from 1 (SQLite only). Deleting rows doesn't "
+                 "rewind the autoincrement counter on its own, so without this flag newly "
+                 "imported coils keep counting up from wherever the old rows left off. Only "
+                 "use this if no coil_no from the current data has been printed on a physical "
+                 "QR tag yet — every coil gets renumbered.",
         )
 
     def handle(self, *args, **options):
@@ -95,9 +103,10 @@ class Command(BaseCommand):
 
         existing = Material.objects.count()
         if existing and not options['yes']:
+            warning = " Every coil will also be RENUMBERED from 1." if options['reset_sequence'] else ""
             confirm = input(
                 f"This will delete all {existing} existing Material rows before importing "
-                f"{len(df)} rows from '{file_path}'. Continue? [y/N] "
+                f"{len(df)} rows from '{file_path}'.{warning} Continue? [y/N] "
             )
             if confirm.strip().lower() != 'y':
                 self.stdout.write("Aborted.")
@@ -107,6 +116,11 @@ class Command(BaseCommand):
         bad_dates = 0
         with transaction.atomic():
             Material.objects.all().delete()
+            if options['reset_sequence']:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "DELETE FROM sqlite_sequence WHERE name = 'materials_material'"
+                    )
 
             for _, row in df.iterrows():
                 date, date_ok = self._clean_date(row.get('DATE'))
