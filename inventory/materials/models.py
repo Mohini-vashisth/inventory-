@@ -13,15 +13,23 @@ class Material(models.Model):
     quantity = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     heat_no = models.CharField(max_length=8, null=True, blank=True)
     archived_at = models.DateTimeField(null=True, blank=True)
+    legacy_used_weight = models.DecimalField(
+        max_digits=10, decimal_places=3, default=0, blank=True,
+        help_text="Weight already issued before this coil was tracked in the app — "
+                  "imported from the spreadsheet's ISSUED QTY columns. Added to weight "
+                  "cut via the app to compute total usage.",
+    )
 
     def formatted_coil(self):
         return f"COIL{self.coil_no:04d}"
 
     def weight_used(self):
-        """Total weight already cut into parts. Single source of truth —
-        admin, the REST API, and the part-cutting form all call this rather
-        than each computing their own aggregate."""
-        return self.parts.aggregate(total=models.Sum('weight'))['total'] or 0
+        """Total weight used: parts cut via the app, plus legacy_used_weight for
+        usage that happened before this coil was tracked in the app. Single
+        source of truth — admin, the REST API, and the part-cutting form all
+        call this rather than each computing their own aggregate."""
+        parts_total = self.parts.aggregate(total=models.Sum('weight'))['total'] or 0
+        return parts_total + self.legacy_used_weight
 
     def weight_remaining(self):
         if not self.quantity:
