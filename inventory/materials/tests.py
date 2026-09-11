@@ -209,6 +209,25 @@ class OrderApiTests(TestCase):
         response = self.client.post('/api/orders/', {'quantity': 5}, format='json')
         self.assertEqual(response.status_code, 405)
 
+    def test_weight_cut_does_not_grow_query_count_with_more_orders(self):
+        """weight_cut used to run a fresh aggregate per order (N+1) — the
+        viewset now annotates it on the queryset instead. Query count for the
+        list endpoint should stay flat as the number of orders grows."""
+        job_product_type = ProductType.objects.create(name='Jobbed', grade='EN8D', size='2.5')
+        for i in range(5):
+            order = Order.objects.create(customer=self.customer, quantity=10, status='pending')
+            coil = Material.objects.create(quantity=50)
+            part = CoilPart.objects.create(coil=coil, part_no=f'QCOUNT-{i}', weight=20)
+            ProductionJob.objects.create(
+                part=part, product_type=job_product_type, job_no=f'QJOB-{i}', order=order,
+            )
+        self.client.force_authenticate(user=self.staff)
+
+        with self.assertNumQueries(2):  # pagination count + the annotated list query
+            response = self.client.get('/api/orders/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['results']), 6)  # 5 new + the one from setUp
+
 
 class CoilApiTests(TestCase):
     def setUp(self):
@@ -226,6 +245,21 @@ class CoilApiTests(TestCase):
         ids = [row['coil_no'] for row in response.data['results']]
         self.assertIn(untouched.pk, ids)
         self.assertNotIn(exhausted.pk, ids)
+
+    def test_weight_used_does_not_grow_query_count_with_more_coils(self):
+        """weight_used()/weight_remaining() used to run a fresh aggregate per
+        coil (N+1) even though the viewset prefetches parts — .aggregate()
+        bypasses the prefetch cache. weight_used() now sums over the
+        prefetched rows instead, so query count stays flat as coils grow."""
+        for i in range(5):
+            coil = Material.objects.create(quantity=100, heat_no=f'QCOUNT{i}')
+            CoilPart.objects.create(coil=coil, part_no=f'QCOUNT-{i}-A', weight=30)
+        self.client.force_authenticate(user=self.staff)
+
+        with self.assertNumQueries(3):  # pagination count + the list query + one prefetch of all parts
+            response = self.client.get('/api/coils/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['results']), 5)
 
 
 class MaterialUsedStatusTests(TestCase):
@@ -554,6 +588,25 @@ class CoilPartsCreationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Weight must be a number.")
         self.assertEqual(CoilPart.objects.filter(coil=self.coil).count(), 0)
+
+    def test_concurrent_cut_overshooting_remaining_weight_rolls_back(self):
+        """Two requests can both pass the initial "remaining" check against a
+        stale read before either has written anything. weight_used() is called
+        again after the part is inserted — simulate a second, already-committed
+        cut showing up between those two calls and confirm the whole write
+        (part + job + step logs) rolls back instead of over-cutting the coil."""
+        with patch.object(
+            Material, 'weight_used',
+            side_effect=[Decimal('50'), Decimal('600')],  # under, then over quantity=500
+        ):
+            response = self.client.post(
+                reverse('coil_parts', kwargs={'coil_pk': self.coil.pk}),
+                {'suffix': 'A', 'weight': '400', 'product_type': str(self.product_type.pk)},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Reload the page and try again")
+        self.assertEqual(CoilPart.objects.filter(coil=self.coil).count(), 0)
+        self.assertEqual(ProductionJob.objects.count(), 0)
 
 
 class JobStepUnlockTests(TestCase):
