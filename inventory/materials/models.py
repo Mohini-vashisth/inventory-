@@ -1,4 +1,6 @@
 import uuid
+from decimal import Decimal
+
 from django.db import models
 from django.contrib.auth.models import User
 
@@ -27,8 +29,16 @@ class Material(models.Model):
         """Total weight used: parts cut via the app, plus legacy_used_weight for
         usage that happened before this coil was tracked in the app. Single
         source of truth — admin, the REST API, and the part-cutting form all
-        call this rather than each computing their own aggregate."""
-        parts_total = self.parts.aggregate(total=models.Sum('weight'))['total'] or 0
+        call this rather than each computing their own aggregate.
+
+        If the caller prefetched `parts` (e.g. .prefetch_related('parts') on a
+        list), sum over the already-fetched rows instead of issuing a fresh
+        aggregate query per coil — .aggregate() always hits the DB, bypassing
+        the prefetch cache, which turned every coil list into an N+1."""
+        if 'parts' in getattr(self, '_prefetched_objects_cache', {}):
+            parts_total = sum((p.weight or Decimal('0') for p in self.parts.all()), Decimal('0'))
+        else:
+            parts_total = self.parts.aggregate(total=models.Sum('weight'))['total'] or Decimal('0')
         return parts_total + self.legacy_used_weight
 
     def weight_remaining(self):

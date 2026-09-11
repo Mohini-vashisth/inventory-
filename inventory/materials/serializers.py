@@ -98,4 +98,10 @@ class OrderSerializer(serializers.ModelSerializer):
         ]
 
     def get_weight_cut(self, obj):
-        return obj.jobs.aggregate(total=Sum('part__weight'))['total'] or 0
+        # OrderViewSet annotates _weight_cut so this is one query for the
+        # whole list, not one aggregate per order — fall back to a direct
+        # aggregate if the serializer is ever used on an unannotated queryset.
+        annotated = getattr(obj, '_weight_cut', None)
+        return annotated if annotated is not None else (
+            obj.jobs.aggregate(total=Sum('part__weight'))['total'] or 0
+        )
