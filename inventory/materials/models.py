@@ -14,7 +14,7 @@ class Material(models.Model):
     vendor = models.CharField(max_length=50, null=True, blank=True)
     quantity = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     heat_no = models.CharField(max_length=8, null=True, blank=True)
-    archived_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
     legacy_used_weight = models.DecimalField(
         max_digits=10, decimal_places=3, default=0, blank=True,
         help_text="Weight already issued before this coil was tracked in the app — "
@@ -148,7 +148,7 @@ class ProductionJob(models.Model):
     product_type = models.ForeignKey(ProductType, on_delete=models.PROTECT)
     order        = models.ForeignKey('Order', on_delete=models.SET_NULL, null=True, blank=True, related_name='jobs')
     job_no       = models.CharField(max_length=30, unique=True)   # e.g. JOB-0001
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     notes = models.TextField(blank=True)
@@ -238,7 +238,7 @@ class Order(models.Model):
 
     delivery_date = models.DateField(null=True, blank=True)
     notes         = models.TextField(blank=True)
-    status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
     created_at    = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
