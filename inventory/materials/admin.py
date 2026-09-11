@@ -217,6 +217,27 @@ class StepLogAdmin(admin.ModelAdmin):
     search_fields = ['job__job_no', 'step__name']
     readonly_fields = ['timestamp']
 
+    # Job status is a rollup of its StepLogs' statuses (see
+    # ProductionJob.recalculate_status) — the employee portal keeps it in
+    # sync on its own, but a StepLog added, changed, or deleted directly
+    # here (e.g. marking a step 'failed', which only exists as an admin/API
+    # concept — the portal never logs it) needs the same recalculation or
+    # the job's status silently goes stale.
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        obj.job.recalculate_status()
+
+    def delete_model(self, request, obj):
+        job = obj.job
+        super().delete_model(request, obj)
+        job.recalculate_status()
+
+    def delete_queryset(self, request, queryset):
+        jobs = {log.job for log in queryset}
+        super().delete_queryset(request, queryset)
+        for job in jobs:
+            job.recalculate_status()
+
     def status_badge(self, obj):
         colors = {
             'pending':     ('#fef3c7', '#92400e'),

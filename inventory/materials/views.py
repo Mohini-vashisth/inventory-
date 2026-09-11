@@ -371,16 +371,7 @@ def job_detail(request, pk):
             job=job, step=step, status=new_status,
             updated_by=request.user if request.user.is_authenticated else None,
         )
-
-        # Refresh logs to recalculate job status
-        all_latest = {s.id: job.step_logs.filter(step=s).order_by('-timestamp').first()
-                      for s in steps}
-        statuses = [l.status for l in all_latest.values() if l]
-        if all(s == 'completed' for s in statuses):
-            job.status = 'completed'
-        elif any(s == 'in_progress' for s in statuses):
-            job.status = 'in_progress'
-        job.save()
+        job.recalculate_status()
 
         return redirect('job_detail', pk=job.pk)
 

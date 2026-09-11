@@ -84,8 +84,8 @@ The real client sheet has extra columns beyond `COLUMN_MAP` — `ISSUED QTY 1`, 
 - **ProductType** — final product definition with preset grade + size; has ordered ProcessSteps and AllowedCoilSpecs. Grade + size is the identity of a product type — `unique_together` enforces one ProductType per grade/size combo
 - **AllowedCoilSpec** — admin-configured coil grade/size that can be used as raw material for a ProductType
 - **ProcessStep** — one manufacturing step belonging to a ProductType (ordered)
-- **ProductionJob** — links a CoilPart to a ProductType + Order; tracks overall status
-- **StepLog** — append-only log of step status changes for a job
+- **ProductionJob** — links a CoilPart to a ProductType + Order. `status` (`pending`/`in_progress`/`on_hold`/`completed`) is a rollup of its steps' latest StepLog, computed by `recalculate_status()` — the single source of truth, called from the employee step-update view and from `StepLogAdmin` (add/change/delete) so it stays correct no matter where a StepLog came from. A step logged `failed` (only possible via the admin — the employee portal only ever logs `in_progress`/`completed`) always puts the job on `on_hold`, shown to employees as a red banner on the job detail page, so a failed step can't silently look pending/in-progress forever
+- **StepLog** — append-only log of step status changes for a job. `status` includes `failed`, settable only through the admin (`/admin/materials/steplog/`) — there's no "mark failed" action in the employee portal
 - **Customer** — company name, email, phone, UUID quote token (regenerated after each form submission)
 - **Order** — customer requirement: product_type FK, grade, size, quantity, delivery date, status
 
