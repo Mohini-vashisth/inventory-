@@ -16,7 +16,7 @@ from rest_framework.test import APIClient
 from .forms import MaterialForm
 from .models import (
     CoilPart, Customer, GradeOption, Material, Order, ProcessStep,
-    ProductionJob, ProductType, SizeOption,
+    ProductionJob, ProductType, SizeOption, StepLog,
 )
 
 
@@ -642,6 +642,105 @@ class JobStepUnlockTests(TestCase):
             {'step_id': 'not-a-number', 'action': 'start'},
         )
         self.assertEqual(response.status_code, 302)
+
+
+class JobStatusRollupTests(TestCase):
+    """A job's overall status is a rollup of its steps' latest StepLog —
+    recalculate_status() is the single place that computes it."""
+
+    def setUp(self):
+        coil = Material.objects.create(quantity=500)
+        part = CoilPart.objects.create(coil=coil, part_no='COIL0001-A', weight=10)
+        self.product_type = ProductType.objects.create(name='Bar 1.2mm')
+        self.step1 = ProcessStep.objects.create(product_type=self.product_type, name='Cutting', order=1)
+        self.step2 = ProcessStep.objects.create(product_type=self.product_type, name='Heat treat', order=2)
+        self.job = ProductionJob.objects.create(part=part, product_type=self.product_type, job_no='JOB-0001')
+
+    def test_no_logs_is_pending(self):
+        self.job.recalculate_status()
+        self.assertEqual(self.job.status, 'pending')
+
+    def test_one_step_in_progress(self):
+        StepLog.objects.create(job=self.job, step=self.step1, status='in_progress')
+        self.job.recalculate_status()
+        self.assertEqual(self.job.status, 'in_progress')
+
+    def test_all_steps_completed(self):
+        StepLog.objects.create(job=self.job, step=self.step1, status='completed')
+        StepLog.objects.create(job=self.job, step=self.step2, status='completed')
+        self.job.recalculate_status()
+        self.assertEqual(self.job.status, 'completed')
+
+    def test_one_step_completed_not_all_is_not_marked_completed(self):
+        """Only step1 has ever been logged — step2 has no log at all yet.
+        Must not read as 'completed' just because the steps that do have
+        logs all happen to be completed."""
+        StepLog.objects.create(job=self.job, step=self.step1, status='completed')
+        self.job.recalculate_status()
+        self.assertNotEqual(self.job.status, 'completed')
+
+    def test_failed_step_puts_job_on_hold(self):
+        """A step can only be marked 'failed' via the admin/API — the
+        employee portal only ever logs in_progress/completed — but wherever
+        it comes from, the job must not silently stay pending/in_progress."""
+        StepLog.objects.create(job=self.job, step=self.step1, status='completed')
+        StepLog.objects.create(job=self.job, step=self.step2, status='failed')
+        self.job.recalculate_status()
+        self.assertEqual(self.job.status, 'on_hold')
+
+    def test_failed_step_takes_priority_over_completed(self):
+        """Even if every step has since been completed, a failed entry
+        anywhere in a step's history — with nothing logged after it for that
+        step — means that step's *latest* status is still 'failed', and the
+        job should stay on hold rather than reading as done."""
+        StepLog.objects.create(job=self.job, step=self.step1, status='completed')
+        StepLog.objects.create(job=self.job, step=self.step2, status='failed')
+        # No re-completion logged for step2 — its latest status is still 'failed'.
+        self.job.recalculate_status()
+        self.assertEqual(self.job.status, 'on_hold')
+
+    def test_employee_starting_a_step_recalculates_status(self):
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(
+            reverse('job_detail', kwargs={'pk': self.job.pk}),
+            {'step_id': self.step1.pk, 'action': 'start'},
+        )
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'in_progress')
+
+    def test_employee_completing_the_only_started_step_does_not_read_as_done(self):
+        """Only step1 (of two) has a log at all, and it's 'completed' — must
+        not roll up to 'completed' just because every step *with* a log
+        happens to be completed; step2 was never touched."""
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(
+            reverse('job_detail', kwargs={'pk': self.job.pk}),
+            {'step_id': self.step1.pk, 'action': 'complete'},
+        )
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'pending')
+
+    def test_admin_marking_a_step_failed_puts_job_on_hold(self):
+        staff = User.objects.create_user('joblog_admin', password='pw', is_staff=True, is_superuser=True)
+        self.client.force_login(staff)
+        response = self.client.post('/admin/materials/steplog/add/', {
+            'job': self.job.pk, 'step': self.step1.pk, 'status': 'failed',
+            'notes': 'Bent on the die', 'updated_by': staff.pk,
+        })
+        self.assertEqual(response.status_code, 302)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'on_hold')
+
+    def test_admin_deleting_the_failing_log_recalculates_status(self):
+        staff = User.objects.create_user('joblog_admin2', password='pw', is_staff=True, is_superuser=True)
+        log = StepLog.objects.create(job=self.job, step=self.step1, status='failed')
+        self.job.recalculate_status()
+        self.assertEqual(self.job.status, 'on_hold')
+
+        self.client.force_login(staff)
+        self.client.post(f'/admin/materials/steplog/{log.pk}/delete/', {'post': 'yes'})
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'pending')  # back to no logs at all
 
 
 class OrderWorkflowTests(TestCase):

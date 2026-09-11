@@ -160,6 +160,33 @@ class ProductionJob(models.Model):
         """Returns the latest StepLog entry for this job."""
         return self.step_logs.order_by('-timestamp').first()
 
+    def recalculate_status(self):
+        """Recomputes overall status from the latest StepLog per step and
+        saves it. A failed step needs attention, so it takes priority over
+        everything else — otherwise a step marked 'failed' (only possible via
+        admin; the employee portal only ever logs 'in_progress'/'completed')
+        would leave the job silently looking pending/in-progress forever.
+        Single source of truth — called from the employee step-update view
+        and from StepLogAdmin whenever a StepLog is added, changed, or
+        deleted, so this stays correct regardless of where a log came from."""
+        steps = list(self.product_type.steps.all())
+        latest_by_step = {
+            step.id: self.step_logs.filter(step=step).order_by('-timestamp').first()
+            for step in steps
+        }
+        latest_statuses = [log.status for log in latest_by_step.values() if log]
+
+        if 'failed' in latest_statuses:
+            self.status = 'on_hold'
+        elif steps and all(latest_by_step.get(step.id) and latest_by_step[step.id].status == 'completed'
+                            for step in steps):
+            self.status = 'completed'
+        elif 'in_progress' in latest_statuses:
+            self.status = 'in_progress'
+        else:
+            self.status = 'pending'
+        self.save(update_fields=['status'])
+
 
 class StepLog(models.Model):
     """Each time a step status changes, a row is written here."""
