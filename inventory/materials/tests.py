@@ -7,15 +7,16 @@ from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.core import mail
 from django.db import IntegrityError, transaction
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .forms import MaterialForm
 from .models import (
-    CoilPart, Customer, GradeOption, Material, Order, ProcessStep,
+    AllowedCoilSpec, CoilPart, Customer, GradeOption, Material, Order, ProcessStep,
     ProductionJob, ProductType, SizeOption, StepLog,
 )
 
@@ -260,6 +261,59 @@ class CoilApiTests(TestCase):
             response = self.client.get('/api/coils/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data['results']), 5)
+
+
+class ProductTypeAndJobApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.staff = User.objects.create_user('api_staff3', password='pw', is_staff=True)
+        self.product_type = ProductType.objects.create(name='API Bar', grade='EN8D', size='1.200')
+        ProcessStep.objects.create(product_type=self.product_type, name='Cutting', order=1)
+        coil = Material.objects.create(quantity=500)
+        self.order = Order.objects.create(
+            customer=Customer.objects.create(name='API Job Co'), quantity=100, status='in_production',
+        )
+        self.part = CoilPart.objects.create(coil=coil, part_no='APIJOB-A', weight=50)
+        self.job = ProductionJob.objects.create(
+            part=self.part, product_type=self.product_type, job_no='API-JOB-0001',
+            order=self.order, status='in_progress',
+        )
+
+    def test_product_type_list_includes_steps(self):
+        self.client.force_authenticate(user=self.staff)
+        response = self.client.get('/api/product-types/')
+        self.assertEqual(response.status_code, 200)
+        row = next(r for r in response.data['results'] if r['id'] == self.product_type.pk)
+        self.assertEqual(row['steps'][0]['name'], 'Cutting')
+
+    def test_job_status_filter(self):
+        other_job_part = CoilPart.objects.create(coil=self.part.coil, part_no='APIJOB-B', weight=50)
+        other = ProductionJob.objects.create(
+            part=other_job_part, product_type=self.product_type, job_no='API-JOB-0002', status='completed',
+        )
+        self.client.force_authenticate(user=self.staff)
+        response = self.client.get('/api/jobs/?status=completed')
+        ids = [row['id'] for row in response.data['results']]
+        self.assertEqual(ids, [other.pk])
+
+    def test_job_order_filter(self):
+        other_order = Order.objects.create(
+            customer=self.order.customer, quantity=10, status='in_production',
+        )
+        other_job_part = CoilPart.objects.create(coil=self.part.coil, part_no='APIJOB-C', weight=50)
+        ProductionJob.objects.create(
+            part=other_job_part, product_type=self.product_type, job_no='API-JOB-0003', order=other_order,
+        )
+        self.client.force_authenticate(user=self.staff)
+        response = self.client.get(f'/api/jobs/?order={self.order.pk}')
+        ids = [row['id'] for row in response.data['results']]
+        self.assertEqual(ids, [self.job.pk])
+
+    def test_job_serializer_includes_coil_and_part_info(self):
+        self.client.force_authenticate(user=self.staff)
+        response = self.client.get(f'/api/jobs/{self.job.pk}/')
+        self.assertEqual(response.data['part_no'], 'APIJOB-A')
+        self.assertEqual(response.data['coil_no'], self.part.coil.formatted_coil())
 
 
 class MaterialUsedStatusTests(TestCase):
@@ -589,6 +643,15 @@ class CoilPartsCreationTests(TestCase):
         self.assertContains(response, "Weight must be a number.")
         self.assertEqual(CoilPart.objects.filter(coil=self.coil).count(), 0)
 
+    def test_weight_exceeding_remaining_shows_error_instead_of_crashing(self):
+        response = self.client.post(
+            reverse('coil_parts', kwargs={'coil_pk': self.coil.pk}),
+            {'suffix': 'A', 'weight': '600', 'product_type': str(self.product_type.pk)},  # coil is 500kg
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "exceeds the remaining coil weight")
+        self.assertEqual(CoilPart.objects.filter(coil=self.coil).count(), 0)
+
     def test_concurrent_cut_overshooting_remaining_weight_rolls_back(self):
         """Two requests can both pass the initial "remaining" check against a
         stale read before either has written anything. weight_used() is called
@@ -805,3 +868,242 @@ class OrderWorkflowTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Order.objects.filter(customer=self.customer).exists())
+
+
+class PublicPageTests(TestCase):
+    """Pages with no auth guard at all: home and the admin login form."""
+
+    def test_home_page_loads(self):
+        response = self.client.get(reverse('home'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Management System')
+
+    def test_admin_login_rejects_bad_credentials(self):
+        User.objects.create_user('realstaff', password='correct-pw', is_staff=True)
+        response = self.client.post(reverse('admin_login'), {
+            'username': 'realstaff', 'password': 'wrong-pw',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Invalid credentials')
+
+    def test_admin_login_succeeds_and_redirects_to_next(self):
+        User.objects.create_user('realstaff2', password='correct-pw', is_staff=True)
+        response = self.client.post(
+            reverse('admin_login') + '?next=' + reverse('order_dashboard'),
+            {'username': 'realstaff2', 'password': 'correct-pw', 'next': reverse('order_dashboard')},
+        )
+        self.assertRedirects(response, reverse('order_dashboard'))
+
+    def test_admin_login_ignores_unsafe_next_url(self):
+        """An attacker-supplied next=//evil.com must not be followed — this is
+        the open-redirect guard (_safe_next), exercised end-to-end here."""
+        User.objects.create_user('realstaff3', password='correct-pw', is_staff=True)
+        response = self.client.post(
+            reverse('admin_login'),
+            {'username': 'realstaff3', 'password': 'correct-pw', 'next': 'https://evil.example.com/'},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, '/admin/')  # falls back to the default, not the unsafe URL
+
+
+class EmployeePortalPageTests(TestCase):
+    """Simple read-only employee-portal pages: the landing page, order
+    selection list, coil QR tag, and production board."""
+
+    def setUp(self):
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+
+    def test_employee_landing_requires_login(self):
+        self.client.post(reverse('employee_logout'))
+        response = self.client.get(reverse('employee'))
+        self.assertRedirects(response, f"{reverse('employee_login')}?next={reverse('employee')}")
+
+    def test_employee_landing_loads_when_logged_in(self):
+        response = self.client.get(reverse('employee'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Employee Portal')
+
+    def test_select_order_splits_confirmed_and_in_production(self):
+        customer = Customer.objects.create(name='Select Order Co')
+        confirmed = Order.objects.create(customer=customer, quantity=10, status='confirmed')
+        in_prod = Order.objects.create(customer=customer, quantity=10, status='in_production')
+        Order.objects.create(customer=customer, quantity=10, status='completed')  # excluded
+
+        response = self.client.get(reverse('select_order'))
+        self.assertEqual(response.status_code, 200)
+        not_started_ids = [o.pk for o in response.context['not_started']]
+        in_progress_ids = [o.pk for o in response.context['in_progress']]
+        self.assertEqual(not_started_ids, [confirmed.pk])
+        self.assertEqual(in_progress_ids, [in_prod.pk])
+
+    def test_coil_tag_renders_qr_code(self):
+        coil = Material.objects.create(quantity=500, heat_no='TAGME01')
+        response = self.client.get(reverse('coil_tag', kwargs={'pk': coil.pk}))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, coil.formatted_coil())
+        self.assertContains(response, 'data:image/png;base64,')
+
+    def test_production_board_shows_only_in_production_orders(self):
+        customer = Customer.objects.create(name='Board Co')
+        product_type = ProductType.objects.create(name='Bar', grade='EN8D', size='1.200')
+        step = ProcessStep.objects.create(product_type=product_type, name='Cutting', order=1)
+
+        in_prod_order = Order.objects.create(customer=customer, quantity=10, status='in_production')
+        coil = Material.objects.create(quantity=500)
+        part = CoilPart.objects.create(coil=coil, part_no='BOARD-A', weight=10)
+        ProductionJob.objects.create(
+            part=part, product_type=product_type, job_no='BOARD-JOB-1', order=in_prod_order,
+        )
+        Order.objects.create(customer=customer, quantity=10, status='confirmed')  # not shown
+
+        response = self.client.get(reverse('production_board'))
+        self.assertEqual(response.status_code, 200)
+        order_ids = [row['order'].pk for row in response.context['board']]
+        self.assertEqual(order_ids, [in_prod_order.pk])
+
+
+class SelectCoilForOrderSpecFilterTests(TestCase):
+    """When a product type has AllowedCoilSpecs configured, only matching
+    coils are offered — the earlier archiving/legacy tests only cover the
+    no-specs-configured case."""
+
+    def setUp(self):
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.customer = Customer.objects.create(name='Spec Test Co')
+        self.product_type = ProductType.objects.create(name='Spec Bar', grade='X', size='9.999')
+        AllowedCoilSpec.objects.create(product_type=self.product_type, grade='EN8D', size='1.200')
+        self.order = Order.objects.create(
+            customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed',
+        )
+
+    def test_only_matching_spec_coils_are_offered(self):
+        matching = Material.objects.create(quantity=500, grade='EN8D', size='1.200')
+        non_matching = Material.objects.create(quantity=500, grade='SAE1008', size='6.000')
+
+        response = self.client.get(reverse('select_coil_for_order', kwargs={'order_pk': self.order.pk}))
+        coil_ids = [c['coil'].pk for c in response.context['coils']]
+        self.assertEqual(coil_ids, [matching.pk])
+        self.assertNotIn(non_matching.pk, coil_ids)
+
+
+class OrderDashboardTests(TestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user('dash_staff', password='pw', is_staff=True)
+
+    def test_anonymous_request_redirects_to_admin_login(self):
+        response = self.client.get(reverse('order_dashboard'))
+        self.assertRedirects(response, f"{reverse('admin_login')}?next={reverse('order_dashboard')}")
+
+    def test_non_staff_request_redirects_to_admin_login(self):
+        User.objects.create_user('not_staff', password='pw')
+        self.client.login(username='not_staff', password='pw')
+        response = self.client.get(reverse('order_dashboard'))
+        self.assertRedirects(response, f"{reverse('admin_login')}?next={reverse('order_dashboard')}")
+
+    def test_staff_can_create_order_directly_as_confirmed(self):
+        """Orders entered by staff (not via the customer quote form) skip
+        straight to 'confirmed' — no review step needed for their own entry."""
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse('order_dashboard'), {
+            'name': 'New Dashboard Co', 'email': 'contact@newdash.co', 'quantity': '150',
+        })
+        self.assertRedirects(response, reverse('order_dashboard'))
+        order = Order.objects.get(customer__name='New Dashboard Co')
+        self.assertEqual(order.status, 'confirmed')
+        self.assertEqual(order.customer.email, 'contact@newdash.co')
+
+    def test_missing_company_name_shows_error_instead_of_crashing(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse('order_dashboard'), {'quantity': '150'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Company name is required.")
+        self.assertFalse(Order.objects.exists())
+
+    def test_missing_quantity_shows_form_error(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse('order_dashboard'), {'name': 'No Qty Co'})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Order.objects.exists())
+
+
+class CustomerAutocompleteTests(TestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user('autocomplete_staff', password='pw', is_staff=True)
+        Customer.objects.create(name='Acme Traders', email='a@acme.com')
+        Customer.objects.create(name='Beta Industries', email='b@beta.com')
+
+    def test_anonymous_request_gets_empty_list(self):
+        response = self.client.get(reverse('customer_autocomplete'), {'q': 'Acme'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), [])
+
+    def test_empty_query_returns_nothing(self):
+        self.client.force_login(self.staff)
+        response = self.client.get(reverse('customer_autocomplete'))
+        self.assertEqual(response.json(), [])
+
+    def test_matches_by_partial_name(self):
+        self.client.force_login(self.staff)
+        response = self.client.get(reverse('customer_autocomplete'), {'q': 'acme'})
+        names = [r['name'] for r in response.json()]
+        self.assertEqual(names, ['Acme Traders'])
+
+
+class QuoteEmailDispatchTests(TestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user('quote_email_staff', password='pw', is_staff=True)
+        self.customer = Customer.objects.create(name='Email Test Co', email='client@example.com')
+
+    def test_anonymous_cannot_send(self):
+        response = self.client.post(reverse('send_quote_email', kwargs={'pk': self.customer.pk}))
+        self.assertRedirects(response, reverse('home'))
+        self.assertEqual(len(mail.outbox), 0)
+
+    @override_settings(EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com')
+    def test_staff_send_quote_email_delivers_with_the_link(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(
+            reverse('send_quote_email', kwargs={'pk': self.customer.pk}), follow=True,
+        )
+        self.assertContains(response, f"Quote form sent to {self.customer.email}")
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.customer.email, mail.outbox[0].to)
+        self.assertIn(str(self.customer.quote_token), mail.outbox[0].body)
+
+    def test_send_quote_email_fails_gracefully_without_recipient_address(self):
+        no_email_customer = Customer.objects.create(name='No Email Co')
+        self.client.force_login(self.staff)
+        response = self.client.post(
+            reverse('send_quote_email', kwargs={'pk': no_email_customer.pk}), follow=True,
+        )
+        self.assertContains(response, f"No email address on file for {no_email_customer.name}")
+        self.assertEqual(len(mail.outbox), 0)
+
+    @override_settings(EMAIL_HOST_USER='')
+    def test_send_quote_email_shows_error_when_email_not_configured(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(
+            reverse('send_quote_email', kwargs={'pk': self.customer.pk}), follow=True,
+        )
+        self.assertContains(response, "Email is not configured")
+        self.assertEqual(len(mail.outbox), 0)
+
+    @override_settings(EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com')
+    def test_quick_send_quote_creates_customer_and_sends(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse('quick_send_quote'), {
+            'name': 'Brand New Co', 'email': 'new@example.com', 'phone': '9999999999',
+        }, follow=True)
+        self.assertContains(response, "Quote form sent to new@example.com")
+        customer = Customer.objects.get(name='Brand New Co')
+        self.assertEqual(customer.email, 'new@example.com')
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_quick_send_quote_requires_email(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(
+            reverse('quick_send_quote'), {'name': 'No Email Provided Co'}, follow=True,
+        )
+        self.assertContains(response, "Email address is required")
+        self.assertFalse(Customer.objects.filter(name='No Email Provided Co').exists())
+        self.assertEqual(len(mail.outbox), 0)
