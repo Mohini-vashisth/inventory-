@@ -73,6 +73,10 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
     def get_queryset(self):
         qs = (Order.objects
               .select_related('customer', 'product_type')
+              # Annotated so OrderSerializer.get_weight_cut can read this off
+              # the row instead of issuing a fresh aggregate query per order.
+              .annotate(_weight_cut=Coalesce(
+                  Sum('jobs__part__weight'), Value(Decimal('0')), output_field=DecimalField()))
               .order_by('-created_at'))
         status_param = self.request.query_params.get('status')
         if status_param:

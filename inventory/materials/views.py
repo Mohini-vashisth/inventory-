@@ -20,6 +20,14 @@ from .models import Material, CoilPart, GradeOption, SizeOption, ProductType, Al
 from .forms import MaterialForm, OrderForm
 
 
+class _CoilOverCommitted(Exception):
+    """Raised inside coil_parts's atomic block when, after actually writing
+    a new part, the coil's total used weight now exceeds its quantity —
+    catches two concurrent cuts on the same coil that both passed the
+    earlier read-based check against a stale "remaining" value before
+    either had written anything."""
+
+
 def _safe_next(request, next_url, default):
     """Only follow `next` if it points back at this host — blocks open-redirect via a spoofed link."""
     if next_url and url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}, require_https=request.is_secure()):
@@ -207,6 +215,15 @@ def coil_parts(request, coil_pk):
                         cut_date=raw_cut_date,
                         notes=request.POST.get('notes', ''),
                     )
+                    # Re-check against the coil's actual total now that this part
+                    # is written (visible within this same transaction) — two
+                    # tablets cutting from the same coil at nearly the same
+                    # moment could both have passed the "remaining" check above
+                    # against a stale read before either had written anything.
+                    # If this overshoots, roll the whole thing back instead of
+                    # silently over-cutting the coil.
+                    if coil.quantity is not None and coil.weight_used() > coil.quantity:
+                        raise _CoilOverCommitted
                     job = ProductionJob.objects.create(
                         part=part, product_type=pt, job_no='PENDING',
                         order=from_order,
@@ -222,6 +239,11 @@ def coil_parts(request, coil_pk):
                     if from_order and from_order.status == 'confirmed':
                         from_order.status = 'in_production'
                         from_order.save(update_fields=['status'])
+            except _CoilOverCommitted:
+                error = (
+                    "This coil's remaining weight changed just now — likely someone else "
+                    "cutting from it at the same time. Reload the page and try again."
+                )
             except (InvalidOperation, ValidationError, ValueError):
                 error = "Check that length and cut date are valid."
             else:
