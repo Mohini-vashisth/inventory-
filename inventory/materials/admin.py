@@ -6,7 +6,59 @@ from decimal import Decimal
 
 from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
-from .models import Material, CoilPart, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
+from .models import GateEntry, GateEntryLot, Material, CoilPart, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
+
+
+class GateEntryLotInline(admin.TabularInline):
+    model = GateEntryLot
+    extra = 0
+    readonly_fields = ['vendor', 'grade', 'size', 'no_of_coils']
+
+    def has_add_permission(self, request, obj=None):
+        return False  # lots are added via the employee portal, one at a time
+
+
+@admin.register(GateEntry)
+class GateEntryAdmin(admin.ModelAdmin):
+    list_display = [
+        'id', 'date', 'vehicle_no', 'company', 'bill_no', 'invoice_no',
+        'total_weight', 'no_of_coils', 'weight_per_coil', 'coils_registered', 'status_badge',
+    ]
+    list_filter = ['company']
+    search_fields = ['vehicle_no', 'company', 'bill_no', 'invoice_no']
+    ordering = ['-created_at']
+    inlines = [GateEntryLotInline]
+
+    def status_badge(self, obj):
+        if obj.is_complete():
+            bg, text, label = '#dcfce7', '#166534', 'Complete'
+        else:
+            bg, text, label = '#fef3c7', '#92400e', f'{obj.coils_remaining()} left'
+        return format_html(
+            '<span style="background:{};color:{};padding:2px 10px;'
+            'border-radius:999px;font-size:12px;font-weight:600;">{}</span>',
+            bg, text, label,
+        )
+    status_badge.short_description = 'Status'
+
+
+@admin.register(GateEntryLot)
+class GateEntryLotAdmin(admin.ModelAdmin):
+    list_display = ['id', 'gate_entry', 'vendor', 'grade', 'size', 'no_of_coils', 'coils_registered', 'status_badge']
+    list_filter = ['grade', 'size']
+    search_fields = ['gate_entry__vehicle_no', 'gate_entry__company', 'vendor']
+
+    def status_badge(self, obj):
+        if obj.is_complete():
+            bg, text, label = '#dcfce7', '#166534', 'Complete'
+        else:
+            bg, text, label = '#fef3c7', '#92400e', f'{obj.coils_remaining()} left'
+        return format_html(
+            '<span style="background:{};color:{};padding:2px 10px;'
+            'border-radius:999px;font-size:12px;font-weight:600;">{}</span>',
+            bg, text, label,
+        )
+    status_badge.short_description = 'Status'
 
 
 @admin.register(GradeOption)
@@ -294,11 +346,11 @@ class ArchivedFilter(admin.SimpleListFilter):
 class MaterialAdmin(admin.ModelAdmin):
     list_display = [
         'formatted_coil', 'date', 'grade', 'size',
-        'company', 'vendor', 'quantity', 'heat_no',
+        'company', 'vendor', 'quantity', 'invoice_weight', 'heat_no', 'lot',
         'parts_count', 'weight_remaining', 'status_badge', 'archived_badge',
     ]
     list_filter   = ['grade', 'size', 'company', UsedStatusFilter, ArchivedFilter]
-    search_fields = ['coil_no', 'heat_no', 'vendor', 'company']
+    search_fields = ['coil_no', 'heat_no', 'vendor', 'company', 'lot__gate_entry__vehicle_no']
     ordering = ['-coil_no']
     actions = ['archive_coils', 'unarchive_coils']
 
@@ -306,7 +358,7 @@ class MaterialAdmin(admin.ModelAdmin):
         return super().get_queryset(request).annotate(
             _weight_used=Coalesce(Sum('parts__weight'), Value(Decimal('0')), output_field=DecimalField())
                          + F('legacy_used_weight'),
-        ).prefetch_related('parts')
+        ).select_related('lot__gate_entry').prefetch_related('parts')
 
     def parts_count(self, obj):
         return obj.parts.count()

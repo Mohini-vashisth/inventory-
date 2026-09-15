@@ -3,10 +3,92 @@ from decimal import Decimal
 
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils import timezone
+
+
+class GateEntry(models.Model):
+    """One truck's delivery, logged from its invoice before any coil is
+    individually registered. A single truck can carry a mixed load — a
+    handful of coils at one grade/size, a few more at another — so the
+    per-grade/size breakdown lives on GateEntryLot, not here. total_weight
+    is the invoice figure for the *entire* delivery, used only to compute a
+    rough average weight per coil across every lot."""
+    date = models.DateField(default=timezone.now)
+    company = models.CharField(max_length=100, null=True, blank=True)
+    vehicle_no = models.CharField(max_length=20, null=True, blank=True)
+    bill_no = models.CharField(max_length=30, null=True, blank=True)
+    invoice_no = models.CharField(max_length=30, null=True, blank=True)
+    total_weight = models.DecimalField(max_digits=10, decimal_places=3)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def no_of_coils(self):
+        return self.lots.aggregate(total=models.Sum('no_of_coils'))['total'] or 0
+
+    def weight_per_coil(self):
+        """Fixed invoice weight per coil — total_weight split evenly across
+        every lot's coils. A rough average only: real coils vary, more so
+        when a delivery mixes multiple grades/sizes across lots. Each coil's
+        real weight is entered separately when it's actually registered."""
+        n = self.no_of_coils()
+        if not n:
+            return Decimal('0')
+        # total_weight may still be a plain int/float in memory (e.g. right
+        # after .create(), before a DB round-trip coerces it to Decimal) —
+        # str() first avoids both AttributeError and float-binary imprecision.
+        return (Decimal(str(self.total_weight)) / n).quantize(Decimal('0.001'))
+
+    def coils_registered(self):
+        return sum(lot.coils_registered() for lot in self.lots.all())
+
+    def coils_remaining(self):
+        return max(self.no_of_coils() - self.coils_registered(), 0)
+
+    def is_complete(self):
+        return self.lots.exists() and self.coils_remaining() <= 0
+
+    def __str__(self):
+        return f"Gate Entry #{self.pk} — {self.vehicle_no or 'no vehicle no.'}"
+
+
+class GateEntryLot(models.Model):
+    """One grade/size batch within a gate entry — e.g. 'lot 1: 3 coils of
+    EN8D 1.2mm from Vendor A', 'lot 2: 2 coils of SAE1008 6mm from Vendor B',
+    both delivered on the same truck. Vendor lives here, not on GateEntry —
+    a single truck can carry material sourced from more than one vendor."""
+    gate_entry = models.ForeignKey(GateEntry, on_delete=models.CASCADE, related_name='lots')
+    vendor = models.CharField(max_length=50, null=True, blank=True)
+    grade = models.CharField(max_length=10, null=True, blank=True)
+    size = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    no_of_coils = models.PositiveIntegerField()
+
+    def coils_registered(self):
+        return self.coils.count()
+
+    def coils_remaining(self):
+        return max(self.no_of_coils - self.coils_registered(), 0)
+
+    def is_complete(self):
+        return self.coils_remaining() <= 0
+
+    def __str__(self):
+        return f"{self.gate_entry} — {self.grade}, {self.size} mm ({self.no_of_coils} coils)"
 
 
 class Material(models.Model):
     coil_no = models.AutoField(primary_key=True)
+    lot = models.ForeignKey(
+        GateEntryLot, on_delete=models.PROTECT, null=True, blank=True, related_name='coils',
+        help_text="The gate entry lot (grade/size batch within a truck delivery) this coil "
+                  "was physically part of. Null for coils that predate gate entries "
+                  "(imported/historical data).",
+    )
+    invoice_weight = models.DecimalField(
+        max_digits=10, decimal_places=3, null=True, blank=True,
+        help_text="Fixed per-coil weight from the gate entry's invoice (total_weight ÷ "
+                  "total coils across all lots) — a rough average, not a measurement. "
+                  "`quantity` below is the actual measured weight and is what all usage "
+                  "is computed from.",
+    )
     date = models.DateField("receipt date", null=True, blank=True)
     grade = models.CharField(max_length=10, null=True, blank=True)
     size = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)

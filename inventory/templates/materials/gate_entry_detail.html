@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gate Entry #{{ gate_entry.pk }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(135deg, #4e73df, #1cc88a);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .page { max-width: 640px; margin: 0 auto; }
+
+    .back-link {
+      color: rgba(255,255,255,0.8); text-decoration: none;
+      font-size: 0.9rem; display: inline-block; margin-bottom: 1.25rem;
+    }
+    .back-link:hover { color: white; }
+
+    h1 { color: white; font-size: 1.5rem; margin-bottom: 0.35rem; }
+    .subtitle { color: rgba(255,255,255,0.8); font-size: 0.9rem; margin-bottom: 1.5rem; }
+
+    .gate-entry-card {
+      background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
+      border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1.5rem;
+      color: white; font-size: 0.9rem;
+      display: flex; gap: 1.25rem; flex-wrap: wrap;
+    }
+    .gate-entry-card strong { font-weight: 700; }
+
+    .lot-card {
+      background: white; border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 0.75rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .lot-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+    }
+
+    .lot-link {
+      display: flex; align-items: center; justify-content: space-between;
+      text-decoration: none; color: inherit;
+    }
+
+    .lot-left { flex: 1; }
+    .lot-title { font-weight: 700; font-size: 1rem; color: #333; margin-bottom: 0.2rem; }
+    .lot-meta { font-size: 0.82rem; color: #666; }
+
+    .remove-lot-form { margin-top: 0.5rem; }
+    .btn-remove-saved-lot {
+      background: none; border: none; color: #dc2626;
+      font-size: 0.8rem; font-weight: 600; cursor: pointer; padding: 0;
+    }
+    .btn-remove-saved-lot:hover { text-decoration: underline; }
+
+    .lot-right { text-align: right; margin-left: 1rem; flex-shrink: 0; }
+    .remaining-label { font-size: 0.7rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.04em; }
+    .remaining-count { font-size: 0.92rem; font-weight: 600; color: #333; }
+
+    .badge-complete {
+      display: inline-block; padding: 0.2rem 0.6rem;
+      border-radius: 999px; font-size: 0.72rem; font-weight: 600;
+      background: #dcfce7; color: #166534;
+    }
+
+    .add-lot {
+      display: block;
+      background: rgba(255,255,255,0.15);
+      border: 1px dashed rgba(255,255,255,0.5);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin-top: 0.5rem;
+      color: white;
+      text-decoration: none;
+      font-weight: 600;
+      text-align: center;
+      transition: background 0.15s;
+    }
+    .add-lot:hover { background: rgba(255,255,255,0.25); }
+
+    .empty {
+      background: rgba(255,255,255,0.15); border-radius: 12px;
+      padding: 1.5rem; text-align: center;
+      color: rgba(255,255,255,0.85); font-size: 0.9rem;
+      margin-bottom: 1rem;
+    }
+
+    .arrow { font-size: 1.2rem; color: #4e73df; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <a href="{% url 'select_gate_entry' %}" class="back-link">← Back to gate entries</a>
+  <h1>Gate Entry #{{ gate_entry.pk }}</h1>
+  <p class="subtitle">Add a lot for each grade/size in this delivery, then register its coils</p>
+
+  <div class="gate-entry-card">
+    <span>{{ gate_entry.vehicle_no|default:"no vehicle no." }}</span>
+    <span>{{ gate_entry.company|default:"—" }}</span>
+    {% if gate_entry.bill_no %}<span>Bill {{ gate_entry.bill_no }}</span>{% endif %}
+    {% if gate_entry.invoice_no %}<span>Invoice {{ gate_entry.invoice_no }}</span>{% endif %}
+    <span>⚖️ {{ gate_entry.total_weight }} kg total</span>
+  </div>
+
+  {% for lot in lots %}
+  <div class="lot-card">
+    {% if lot.is_complete %}
+    <div class="lot-link" style="cursor:default;">
+      <div class="lot-left">
+        <div class="lot-title">{{ lot.grade }}, {{ lot.size }} mm</div>
+        <div class="lot-meta">{{ lot.vendor|default:"—" }} · {{ lot.no_of_coils }} coil(s)</div>
+      </div>
+      <div class="lot-right">
+        <span class="badge-complete">Complete</span>
+      </div>
+    </div>
+    {% else %}
+    <a href="{% url 'material_form' lot.pk %}" class="lot-link">
+      <div class="lot-left">
+        <div class="lot-title">{{ lot.grade }}, {{ lot.size }} mm</div>
+        <div class="lot-meta">{{ lot.vendor|default:"—" }} · {{ lot.no_of_coils }} coil(s)</div>
+      </div>
+      <div class="lot-right">
+        <div class="remaining-label">Coils left</div>
+        <div class="remaining-count">{{ lot.registered }} of {{ lot.no_of_coils }} done</div>
+      </div>
+      <div class="arrow" style="margin-left:1rem;">›</div>
+    </a>
+    {% if lot.registered == 0 %}
+    <form method="POST" action="{% url 'gate_entry_lot_delete' lot.pk %}" class="remove-lot-form"
+          onsubmit="return confirm('Remove this lot? This can only be undone by adding it again.');">
+      {% csrf_token %}
+      <button type="submit" class="btn-remove-saved-lot">✕ Remove (added by mistake)</button>
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+  {% empty %}
+  <p class="empty">No lots added yet — add one below to start registering coils.</p>
+  {% endfor %}
+
+  <a href="{% url 'gate_entry_lot_form' gate_entry.pk %}" class="add-lot">+ Add {% if lots %}Another {% endif %}Lot</a>
+
+</div>
+</body>
+</html>
