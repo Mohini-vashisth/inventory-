@@ -161,8 +161,12 @@
       </div>
 
       <div class="form-group">
-        <label>Heat No</label>
-        <input type="text" name="heat_no" value="{{ post.heat_no|default:'' }}" placeholder="e.g. H24071" required>
+        <label>Size</label>
+        <input type="hidden" name="size" id="size-val" value="{{ post.size|default:'' }}">
+        <button type="button" class="picker-btn" onclick="openPicker('size-picker')">
+          <span id="size-display" class="{% if post.size %}val{% else %}placeholder{% endif %}">{% if post.size %}{{ post.size }} mm{% else %}Tap to select size{% endif %}</span>
+          <span class="arrow">›</span>
+        </button>
       </div>
 
       <div class="form-group">
@@ -175,12 +179,8 @@
       </div>
 
       <div class="form-group">
-        <label>Size</label>
-        <input type="hidden" name="size" id="size-val" value="{{ post.size|default:'' }}">
-        <button type="button" class="picker-btn" onclick="openPicker('size-picker')">
-          <span id="size-display" class="{% if post.size %}val{% else %}placeholder{% endif %}">{% if post.size %}{{ post.size }} mm{% else %}Tap to select size{% endif %}</span>
-          <span class="arrow">›</span>
-        </button>
+        <label>Heat No</label>
+        <input type="text" name="heat_no" value="{{ post.heat_no|default:'' }}" placeholder="e.g. H24071" required>
       </div>
 
       <div class="form-group">
@@ -278,12 +278,12 @@
 
   // Validate grade and size are selected before submit
   document.getElementById('coil-form').addEventListener('submit', function(e) {
-    if (!document.getElementById('grade-val').value) {
-      e.preventDefault();
-      openPicker('grade-picker');
-    } else if (!document.getElementById('size-val').value) {
+    if (!document.getElementById('size-val').value) {
       e.preventDefault();
       openPicker('size-picker');
+    } else if (!document.getElementById('grade-val').value) {
+      e.preventDefault();
+      openPicker('grade-picker');
     }
   });
 </script>
