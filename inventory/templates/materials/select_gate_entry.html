@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>New Coil Entry</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(135deg, #4e73df, #1cc88a);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .page { max-width: 760px; margin: 0 auto; }
+
+    h1 { color: white; font-size: 1.5rem; margin-bottom: 0.35rem; }
+    .subtitle { color: rgba(255,255,255,0.8); font-size: 0.9rem; margin-bottom: 2rem; }
+
+    .new-gate-entry {
+      display: block;
+      background: rgba(255,255,255,0.15);
+      border: 1px dashed rgba(255,255,255,0.5);
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
+      color: white;
+      text-decoration: none;
+      font-weight: 600;
+      text-align: center;
+      transition: background 0.15s;
+    }
+    .new-gate-entry:hover { background: rgba(255,255,255,0.25); }
+
+    .entry-card {
+      background: white; border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 0.75rem;
+      display: flex; align-items: center; justify-content: space-between;
+      text-decoration: none; color: inherit;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .entry-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.18);
+    }
+
+    .entry-left { flex: 1; }
+    .entry-no { font-size: 0.75rem; color: #aaa; font-family: monospace; margin-bottom: 0.2rem; }
+    .entry-company { font-weight: 700; font-size: 1rem; color: #333; margin-bottom: 0.25rem; }
+    .entry-meta { font-size: 0.82rem; color: #666; display: flex; gap: 1rem; flex-wrap: wrap; }
+    .entry-meta span { display: flex; align-items: center; gap: 0.25rem; }
+
+    .entry-right { text-align: right; margin-left: 1rem; flex-shrink: 0; }
+    .remaining-label { font-size: 0.7rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.04em; }
+    .remaining-count { font-size: 0.92rem; font-weight: 600; color: #333; }
+
+    .empty {
+      background: rgba(255,255,255,0.15); border-radius: 12px;
+      padding: 1.5rem; text-align: center;
+      color: rgba(255,255,255,0.85); font-size: 0.9rem;
+    }
+
+    .back-link {
+      display: inline-block; margin-top: 2rem;
+      color: rgba(255,255,255,0.7); font-size: 0.9rem; text-decoration: none;
+    }
+    .back-link:hover { color: white; }
+
+    .arrow { font-size: 1.2rem; color: #4e73df; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <h1>New Coil Entry</h1>
+  <p class="subtitle">Pick the lot this coil belongs to, or log a new delivery</p>
+
+  <a href="{% url 'gate_entry_form' %}" class="new-gate-entry">+ Log a New Gate Entry</a>
+
+  {% for row in lots %}
+  <a href="{% url 'material_form' row.lot.pk %}" class="entry-card">
+    <div class="entry-left">
+      <div class="entry-no">Gate Entry #{{ row.lot.gate_entry.pk }} — {{ row.lot.gate_entry.vehicle_no|default:"no vehicle no." }}</div>
+      <div class="entry-company">{{ row.lot.gate_entry.company|default:"—" }}</div>
+      <div class="entry-meta">
+        <span>📐 {{ row.lot.grade }}</span>
+        <span>📏 {{ row.lot.size }} mm</span>
+        {% if row.lot.vendor %}<span>🏭 {{ row.lot.vendor }}</span>{% endif %}
+        <span>⚖️ {{ row.lot.gate_entry.weight_per_coil }} kg / coil</span>
+      </div>
+    </div>
+    <div class="entry-right">
+      <div class="remaining-label">Coils left</div>
+      <div class="remaining-count">{{ row.remaining }} of {{ row.lot.no_of_coils }}</div>
+    </div>
+    <div class="arrow" style="margin-left:1rem;">›</div>
+  </a>
+  {% empty %}
+  <p class="empty">No lot has coils left to register — log a new gate entry above.</p>
+  {% endfor %}
+
+  <a href="{% url 'employee' %}" class="back-link">← Back</a>
+</div>
+</body>
+</html>

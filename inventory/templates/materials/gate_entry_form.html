@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gate Entry</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: linear-gradient(135deg, #4e73df, #1cc88a);
+    min-height: 100vh;
+    padding: 2rem 1rem;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+  }
+
+  .page { width: 100%; max-width: 480px; }
+
+  .back-link {
+    color: rgba(255,255,255,0.8); text-decoration: none;
+    font-size: 0.9rem; display: inline-block; margin-bottom: 1.25rem;
+  }
+  .back-link:hover { color: white; }
+
+  h1 { color: white; font-size: 1.5rem; margin-bottom: 0.3rem; }
+  .subtitle { color: rgba(255,255,255,0.75); font-size: 0.88rem; margin-bottom: 1.75rem; }
+
+  .card {
+    background: white; border-radius: 16px;
+    padding: 1.75rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  }
+
+  .form-group { margin-bottom: 1.1rem; }
+
+  label {
+    display: block;
+    font-size: 0.72rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    color: #666; margin-bottom: 0.35rem;
+  }
+
+  input[type="text"], input[type="number"], input[type="date"] {
+    width: 100%; padding: 0.6rem 0.85rem;
+    border: 1px solid #ddd; border-radius: 8px;
+    font-size: 16px; color: #333;
+  }
+  input:focus { outline: none; border-color: #4e73df; }
+
+  /* Picker trigger */
+  .picker-btn {
+    width: 100%; padding: 0.6rem 0.85rem;
+    border: 1px solid #ddd; border-radius: 8px;
+    font-size: 16px; background: white;
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; text-align: left;
+    transition: border-color 0.15s;
+  }
+  .picker-btn:hover { border-color: #4e73df; }
+  .picker-btn .val { color: #333; font-weight: 600; }
+  .picker-btn .placeholder { color: #aaa; }
+  .picker-btn .arrow { color: #4e73df; font-size: 1rem; }
+
+  .btn-submit {
+    width: 100%; padding: 0.8rem;
+    background: #4e73df; color: white;
+    border: none; border-radius: 8px;
+    font-size: 1rem; font-weight: 600; cursor: pointer;
+    margin-top: 1.25rem;
+  }
+  .btn-submit:hover { background: #3a5ec0; }
+
+  .error-msg {
+    background: #fee2e2; color: #991b1b;
+    padding: 0.6rem 0.9rem; border-radius: 8px;
+    font-size: 0.87rem; margin-bottom: 1rem;
+  }
+
+  /* ── Lots ── */
+  .lots-heading {
+    font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.05em; color: #666; margin: 1.5rem 0 0.75rem;
+  }
+
+  .lot-row {
+    border: 1px solid #e5e7eb; border-radius: 10px;
+    margin-bottom: 0.75rem; overflow: hidden;
+  }
+
+  .lot-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.7rem 1rem; background: #f9fafb; cursor: pointer;
+  }
+  .lot-title { font-weight: 700; font-size: 0.9rem; color: #333; }
+  .lot-summary { font-weight: 400; font-size: 0.8rem; color: #888; margin-left: 0.4rem; }
+  .lot-chevron { color: #4e73df; font-size: 0.9rem; transition: transform 0.15s; }
+  .lot-row.collapsed .lot-chevron { transform: rotate(-90deg); }
+  .lot-row.collapsed .lot-body { display: none; }
+
+  .lot-body { padding: 1rem; }
+
+  .add-lot-row {
+    display: flex; justify-content: flex-end; margin-bottom: 0.5rem;
+  }
+  .btn-add-lot {
+    background: #eef2ff; color: #4e73df;
+    border: 1px dashed #4e73df; border-radius: 8px;
+    padding: 0.55rem 1.1rem; font-size: 0.88rem; font-weight: 600;
+    cursor: pointer;
+  }
+  .btn-add-lot:hover { background: #e0e7ff; }
+
+  .btn-remove-lot {
+    display: block;
+    background: none; color: #dc2626;
+    border: none; padding: 0.4rem 0; margin-top: 0.25rem;
+    font-size: 0.82rem; font-weight: 600; cursor: pointer;
+    text-align: left;
+  }
+  .btn-remove-lot:hover { text-decoration: underline; }
+
+  /* ── Full-screen picker overlay ── */
+  .picker-overlay {
+    display: none;
+    position: fixed; inset: 0; z-index: 999;
+    background: linear-gradient(135deg, #4e73df, #1cc88a);
+    overflow-y: auto; padding: 2rem 1rem;
+  }
+  .picker-overlay.open { display: block; }
+
+  .picker-inner { max-width: 480px; margin: 0 auto; }
+
+  .picker-back {
+    background: rgba(255,255,255,0.2); border: none;
+    color: white; font-size: 0.9rem; padding: 0.5rem 1rem;
+    border-radius: 8px; cursor: pointer; margin-bottom: 1.25rem;
+    display: inline-block;
+  }
+  .picker-back:hover { background: rgba(255,255,255,0.3); }
+
+  .picker-title {
+    color: white; font-size: 1.4rem; font-weight: 700;
+    margin-bottom: 0.3rem;
+  }
+  .picker-subtitle {
+    color: rgba(255,255,255,0.75); font-size: 0.85rem; margin-bottom: 1.75rem;
+  }
+
+  .picker-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.85rem;
+  }
+
+  .picker-option {
+    background: white; border: none; border-radius: 12px;
+    padding: 1.5rem 0.5rem;
+    font-size: 1.1rem; font-weight: 700; color: #333;
+    cursor: pointer; text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .picker-option:hover, .picker-option:active {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+    color: #4e73df;
+  }
+  .picker-option small {
+    display: block; font-size: 0.72rem;
+    font-weight: 400; color: #888; margin-top: 0.2rem;
+  }
+
+  .picker-empty {
+    background: rgba(255,255,255,0.15); border-radius: 12px;
+    padding: 2rem; text-align: center;
+    color: rgba(255,255,255,0.8); font-size: 0.95rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <a href="{% url 'employee' %}" class="back-link">← Back to portal</a>
+  <h1>Gate Entry</h1>
+  <p class="subtitle">Log this truck's delivery from its invoice, then one or more lots below</p>
+
+  <div class="card">
+    {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+    <form method="POST" id="gate-entry-form">
+      {% csrf_token %}
+      {{ lot_formset.management_form }}
+
+      <div class="form-group">
+        <label>Date</label>
+        <input type="date" name="date" id="date-input" value="{{ post.date|default:'' }}" required>
+      </div>
+
+      <div class="form-group">
+        <label>Vehicle No.</label>
+        <input type="text" name="vehicle_no" value="{{ post.vehicle_no|default:'' }}" placeholder="e.g. AP16TA1234">
+      </div>
+
+      <div class="form-group">
+        <label>Company</label>
+        <input type="text" name="company" value="{{ post.company|default:'' }}" placeholder="e.g. Tata Steel" required>
+      </div>
+
+      <div class="form-group">
+        <label>Bill No.</label>
+        <input type="text" name="bill_no" value="{{ post.bill_no|default:'' }}" placeholder="e.g. BL-2026-0042">
+      </div>
+
+      <div class="form-group">
+        <label>Invoice No.</label>
+        <input type="text" name="invoice_no" value="{{ post.invoice_no|default:'' }}" placeholder="e.g. INV-2026-0042">
+      </div>
+
+      <div class="form-group">
+        <label>Total Weight (kg)</label>
+        <input type="number" name="total_weight" step="0.001" value="{{ post.total_weight|default:'' }}" placeholder="e.g. 2500.000" required>
+      </div>
+
+      <div class="lots-heading">Lots</div>
+      <div id="lots-container">
+        {% for lot_form in lot_formset %}
+        <div class="lot-row" data-index="{{ forloop.counter0 }}">
+          <div class="lot-header" onclick="toggleLot(this)">
+            <span><span class="lot-title">Lot {{ forloop.counter }}</span><span class="lot-summary"></span></span>
+            <span class="lot-chevron">▾</span>
+          </div>
+          <div class="lot-body">
+            <div class="form-group">
+              <label>Size</label>
+              <input type="hidden" name="lot-{{ forloop.counter0 }}-size" class="size-val" value="{{ lot_form.size.value|default:'' }}">
+              <button type="button" class="picker-btn size-btn" onclick="openPicker('size', {{ forloop.counter0 }})">
+                <span class="size-display {% if lot_form.size.value %}val{% else %}placeholder{% endif %}">{% if lot_form.size.value %}{{ lot_form.size.value }} mm{% else %}Tap to select size{% endif %}</span>
+                <span class="arrow">›</span>
+              </button>
+            </div>
+            <div class="form-group">
+              <label>Grade</label>
+              <input type="hidden" name="lot-{{ forloop.counter0 }}-grade" class="grade-val" value="{{ lot_form.grade.value|default:'' }}">
+              <button type="button" class="picker-btn grade-btn" onclick="openPicker('grade', {{ forloop.counter0 }})">
+                <span class="grade-display {% if lot_form.grade.value %}val{% else %}placeholder{% endif %}">{{ lot_form.grade.value|default:"Tap to select grade" }}</span>
+                <span class="arrow">›</span>
+              </button>
+            </div>
+            <div class="form-group">
+              <label>Vendor</label>
+              <input type="text" name="lot-{{ forloop.counter0 }}-vendor" class="vendor-input" value="{{ lot_form.vendor.value|default:'' }}" placeholder="e.g. ABC Traders">
+            </div>
+            <div class="form-group">
+              <label>No. of Coils</label>
+              <input type="number" name="lot-{{ forloop.counter0 }}-no_of_coils" class="coils-input" step="1" min="1" value="{{ lot_form.no_of_coils.value|default:'' }}" placeholder="e.g. 3">
+            </div>
+            <button type="button" class="btn-remove-lot" onclick="removeLot(this)">✕ Remove This Lot</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="add-lot-row">
+        <button type="button" class="btn-add-lot" id="add-lot-btn">+ Add Lot</button>
+      </div>
+
+      <button type="submit" class="btn-submit">Save Gate Entry →</button>
+    </form>
+  </div>
+</div>
+
+<!-- ── Grade picker overlay ── -->
+<div id="grade-picker" class="picker-overlay">
+  <div class="picker-inner">
+    <button class="picker-back" onclick="closePicker('grade-picker')">← Back</button>
+    <div class="picker-title">Select Grade</div>
+    <p class="picker-subtitle">Tap the grade of this lot</p>
+    <div class="picker-grid">
+      {% for g in grades %}
+      <button type="button" class="picker-option" onclick="selectGrade('{{ g.name }}')">
+        {{ g.name }}
+      </button>
+      {% empty %}
+      <div class="picker-empty" style="grid-column:1/-1;">
+        No grades configured yet.<br>Ask admin to add grades in the admin panel.
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- ── Size picker overlay ── -->
+<div id="size-picker" class="picker-overlay">
+  <div class="picker-inner">
+    <button class="picker-back" onclick="closePicker('size-picker')">← Back</button>
+    <div class="picker-title">Select Size</div>
+    <p class="picker-subtitle">Tap the diameter / thickness of this lot</p>
+    <div class="picker-grid">
+      {% for s in sizes %}
+      <button type="button" class="picker-option" onclick="selectSize('{{ s.value }}')">
+        {{ s.value }}
+        <small>mm</small>
+      </button>
+      {% empty %}
+      <div class="picker-empty" style="grid-column:1/-1;">
+        No sizes configured yet.<br>Ask admin to add sizes in the admin panel.
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<script>
+  var dateInput = document.getElementById('date-input');
+  if (!dateInput.value) {
+    dateInput.value = new Date().toISOString().split('T')[0];
+  }
+
+  var activeLotIndex = null;
+
+  function openPicker(kind, index) {
+    activeLotIndex = index;
+    document.getElementById(kind + '-picker').classList.add('open');
+    window.scrollTo(0, 0);
+  }
+
+  function closePicker(id) {
+    document.getElementById(id).classList.remove('open');
+  }
+
+  function rowByIndex(index) {
+    return document.querySelector('.lot-row[data-index="' + index + '"]');
+  }
+
+  function updateSummary(row) {
+    var grade = row.querySelector('.grade-val').value;
+    var size = row.querySelector('.size-val').value;
+    var summary = row.querySelector('.lot-summary');
+    summary.textContent = (grade || size) ? ('— ' + (grade || '?') + ', ' + (size || '?') + ' mm') : '';
+  }
+
+  function selectGrade(val) {
+    var row = rowByIndex(activeLotIndex);
+    row.querySelector('.grade-val').value = val;
+    var display = row.querySelector('.grade-display');
+    display.textContent = val;
+    display.className = 'grade-display val';
+    updateSummary(row);
+    closePicker('grade-picker');
+  }
+
+  function selectSize(val) {
+    var row = rowByIndex(activeLotIndex);
+    row.querySelector('.size-val').value = val;
+    var display = row.querySelector('.size-display');
+    display.textContent = val + ' mm';
+    display.className = 'size-display val';
+    updateSummary(row);
+    closePicker('size-picker');
+  }
+
+  function toggleLot(header) {
+    header.closest('.lot-row').classList.toggle('collapsed');
+  }
+
+  function collapseAllLots() {
+    document.querySelectorAll('.lot-row').forEach(function (row) {
+      row.classList.add('collapsed');
+    });
+  }
+
+  // Renumbers every lot row's field names/data-index/title to stay
+  // sequential (0, 1, 2, ...) — Django's formset requires contiguous
+  // indices matching TOTAL_FORMS, so removing a middle row means every
+  // row after it has to shift down by one.
+  function reindexLots() {
+    var rows = document.querySelectorAll('.lot-row');
+    rows.forEach(function (row, i) {
+      row.setAttribute('data-index', i);
+      row.querySelector('.lot-title').textContent = 'Lot ' + (i + 1);
+      row.querySelectorAll('[name]').forEach(function (el) {
+        el.name = el.name.replace(/^lot-\d+-/, 'lot-' + i + '-');
+      });
+      var sizeBtn = row.querySelector('.size-btn');
+      if (sizeBtn) sizeBtn.setAttribute('onclick', "openPicker('size', " + i + ")");
+      var gradeBtn = row.querySelector('.grade-btn');
+      if (gradeBtn) gradeBtn.setAttribute('onclick', "openPicker('grade', " + i + ")");
+    });
+    document.getElementById('id_lot-TOTAL_FORMS').value = rows.length;
+    updateRemoveButtonsVisibility();
+  }
+
+  // At least one lot is required, so hide "Remove" while it's the only one.
+  function updateRemoveButtonsVisibility() {
+    var show = document.querySelectorAll('.lot-row').length > 1;
+    document.querySelectorAll('.btn-remove-lot').forEach(function (btn) {
+      btn.style.display = show ? '' : 'none';
+    });
+  }
+
+  function removeLot(btn) {
+    if (document.querySelectorAll('.lot-row').length <= 1) return;
+    btn.closest('.lot-row').remove();
+    reindexLots();
+  }
+
+  updateRemoveButtonsVisibility();
+
+  document.getElementById('add-lot-btn').addEventListener('click', function () {
+    var totalInput = document.getElementById('id_lot-TOTAL_FORMS');
+    var index = parseInt(totalInput.value, 10);
+
+    collapseAllLots();
+
+    var row = document.createElement('div');
+    row.className = 'lot-row';
+    row.setAttribute('data-index', index);
+    row.innerHTML =
+      '<div class="lot-header" onclick="toggleLot(this)">' +
+        '<span><span class="lot-title">Lot ' + (index + 1) + '</span><span class="lot-summary"></span></span>' +
+        '<span class="lot-chevron">▾</span>' +
+      '</div>' +
+      '<div class="lot-body">' +
+        '<div class="form-group">' +
+          '<label>Size</label>' +
+          '<input type="hidden" name="lot-' + index + '-size" class="size-val" value="">' +
+          '<button type="button" class="picker-btn size-btn" onclick="openPicker(\'size\', ' + index + ')">' +
+            '<span class="size-display placeholder">Tap to select size</span><span class="arrow">›</span>' +
+          '</button>' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label>Grade</label>' +
+          '<input type="hidden" name="lot-' + index + '-grade" class="grade-val" value="">' +
+          '<button type="button" class="picker-btn grade-btn" onclick="openPicker(\'grade\', ' + index + ')">' +
+            '<span class="grade-display placeholder">Tap to select grade</span><span class="arrow">›</span>' +
+          '</button>' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label>Vendor</label>' +
+          '<input type="text" name="lot-' + index + '-vendor" class="vendor-input" placeholder="e.g. ABC Traders">' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label>No. of Coils</label>' +
+          '<input type="number" name="lot-' + index + '-no_of_coils" class="coils-input" step="1" min="1" placeholder="e.g. 3">' +
+        '</div>' +
+        '<button type="button" class="btn-remove-lot" onclick="removeLot(this)">✕ Remove This Lot</button>' +
+      '</div>';
+
+    document.getElementById('lots-container').appendChild(row);
+    totalInput.value = index + 1;
+    updateRemoveButtonsVisibility();
+  });
+
+  // Validate every lot row has a grade and size selected before submit
+  document.getElementById('gate-entry-form').addEventListener('submit', function (e) {
+    var rows = document.querySelectorAll('.lot-row');
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var index = row.getAttribute('data-index');
+      if (!row.querySelector('.size-val').value) {
+        e.preventDefault();
+        row.classList.remove('collapsed');
+        openPicker('size', index);
+        return;
+      }
+      if (!row.querySelector('.grade-val').value) {
+        e.preventDefault();
+        row.classList.remove('collapsed');
+        openPicker('grade', index);
+        return;
+      }
+    }
+  });
+</script>
+
+</body>
+</html>

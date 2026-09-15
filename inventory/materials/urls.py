@@ -3,7 +3,12 @@ from . import views
 
 urlpatterns = [
     path("", views.home, name="home"),
-    path("material-form/", views.material_form, name="material_form"),
+    path("gate-entry/", views.gate_entry_form, name="gate_entry_form"),
+    path("gate-entry/select/", views.select_gate_entry, name="select_gate_entry"),
+    path("gate-entry/<int:gate_entry_pk>/", views.gate_entry_detail, name="gate_entry_detail"),
+    path("gate-entry/<int:gate_entry_pk>/add-lot/", views.gate_entry_lot_form, name="gate_entry_lot_form"),
+    path("gate-entry/lot/<int:lot_pk>/delete/", views.gate_entry_lot_delete, name="gate_entry_lot_delete"),
+    path("gate-entry/lot/<int:lot_pk>/coil/", views.material_form, name="material_form"),
     path("admin-login/", views.admin_login, name="admin_login"),
     path("employee/", views.employee_landing, name="employee"),
     path("employee-login/", views.employee_login, name="employee_login"),
