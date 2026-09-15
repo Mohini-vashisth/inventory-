@@ -31,6 +31,7 @@ python3 manage.py migrate
 | `DJANGO_DEBUG` | `True`/`False`. Defaults to `True` (local dev only) — **must be `False`** on any real deployment |
 | `DJANGO_SECRET_KEY` | Django secret key. Falls back to an insecure dev-only value if unset, but **raises `ImproperlyConfigured` at startup if `DJANGO_DEBUG=False` and this isn't set** — a misconfigured prod deploy can't silently boot on the known dev key |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated hostnames/IPs Django will answer to. Required once `DJANGO_DEBUG=False` |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | Comma-separated, full origin with scheme (e.g. `https://quote.mattadrawing.com`). Only needed for a hostname reached through a reverse proxy rather than directly — see the Cloudflare Tunnel section below |
 | `EMPLOYEE_PIN` | Shared PIN for employee portal (default: `1234`) |
 | `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USE_TLS` | SMTP config |
 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | SMTP credentials — Gmail needs an App Password, not the account password |
@@ -63,6 +64,20 @@ Decided 2026-09-07. The whole app — code and `db.sqlite3` together — runs on
 **For the owner's remote access**: install [Tailscale](https://tailscale.com) on the plant machine and on the owner's devices (free tier: up to 6 users, unlimited devices). This puts the owner's phone/laptop virtually on the plant's LAN — they reach the exact same app and database as someone on-site, from anywhere, without exposing anything to the open internet. Once set up, add the plant machine's Tailscale hostname (looks like `<machine-name>.<tailnet-name>.ts.net`) to `DJANGO_ALLOWED_HOSTS` in `.env` alongside its LAN IP.
 
 If this ever moves to the cloud instead, the deployment steps above (WhiteNoise, gunicorn, `.env`) carry over unchanged — the only new work would be picking a host and, if the platform doesn't offer real persistent disk, migrating off SQLite to Postgres.
+
+### Public quote form: Cloudflare Tunnel, scoped to `/quote/*` only
+
+Decided 2026-09-14. The customer-facing quote form (`/quote/<token>/`) needs to be reachable from outside — by people who aren't on Tailscale — without exposing the rest of the app (admin, employee portal, API) to the public internet.
+
+Rejected approaches:
+- **Exposing the whole app publicly** — the employee portal (PIN-only) and admin login would then be open to credential-stuffing/brute-force from anywhere, not just the plant network.
+- **Migrating `mattadrawing.com`'s DNS to Cloudflare** — the domain's DNS is managed by the hosting provider behind GoDaddy (nameservers `ns1/ns2.md-19.webhostbox.net`, a cPanel host), and that same account also serves the company's live website and email. Moving the whole zone risked breaking both over one mistyped record. Cloudflare's dashboard also no longer allows adding a bare subdomain as its own zone (root-domain-only now), which would have needed this anyway.
+
+What's actually in place: a **Cloudflare Tunnel** (`cloudflared`, tunnel name `matta-quote-tunnel`) runs as a Windows service on the plant PC (installed via the token command from the Cloudflare Zero Trust dashboard → Networks → Tunnels). It has one published application route: hostname `quote.mattadrawing.com`, **path `^/quote`**, forwarding to `http://localhost:8000` — anything on that hostname outside `/quote/*` hits Cloudflare's automatic catch-all and 404s before ever reaching Django. This means only the quote form is reachable from that subdomain; the rest of the app's URLs simply aren't routed.
+
+DNS: a single CNAME record was added in cPanel — `quote` → `<tunnel-id>.cfargotunnel.com` — **without** moving `mattadrawing.com`'s nameservers to Cloudflare at all. `cfargotunnel.com` is Cloudflare's own domain, so this CNAME works from any DNS provider; the tunnel and its routing are entirely independent of who's authoritative for the rest of the zone. The main website and email records were never touched.
+
+Two settings this depends on (`inventory/settings.py`): `DJANGO_CSRF_TRUSTED_ORIGINS` must include `https://quote.mattadrawing.com` (Cloudflare terminates HTTPS at its edge; without this, the quote form's POST fails CSRF checks), and `SECURE_PROXY_SSL_HEADER` is set to trust Cloudflare's `X-Forwarded-Proto` header so Django knows the original request was HTTPS — this is additive and doesn't affect direct Tailscale access, which never sends that header.
 
 ### Why `db.sqlite3` isn't tracked in git
 
