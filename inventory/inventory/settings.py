@@ -31,6 +31,22 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if os.environ.get('DJANGO_ALLOWED_HOSTS') else []
 
+# Origins allowed to submit cross-site POSTs (e.g. https://quote.mattadrawing.com,
+# fronted by Cloudflare Tunnel) — required for the CSRF check to pass on any
+# hostname reached through a reverse proxy rather than directly.
+CSRF_TRUSTED_ORIGINS = (
+    os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',')
+    if os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS') else []
+)
+
+# Cloudflare Tunnel terminates HTTPS at Cloudflare's edge and forwards plain
+# HTTP to this app locally, adding X-Forwarded-Proto to say what the original
+# request actually was. Without this, Django treats every such request as
+# insecure HTTP, which breaks CSRF/secure-cookie checks for anything reached
+# through the tunnel. Harmless for direct Tailscale access, which never sets
+# this header — request.is_secure() there is unaffected.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
 
 # Application definition
 
