@@ -5,7 +5,7 @@ from django.core.mail import send_mail
 from django.conf import settings
 from django.urls import reverse
 from django.db import transaction
-from django.db.models import DecimalField, F, Sum, Value
+from django.db.models import Count, DecimalField, F, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -16,8 +16,8 @@ import io
 import base64
 from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
-from .models import Material, CoilPart, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
-from .forms import MaterialForm, OrderForm
+from .models import GateEntry, GateEntryLot, Material, CoilPart, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
+from .forms import GateEntryForm, GateEntryLotForm, GateEntryLotFormSet, MaterialForm, OrderForm
 
 
 class _CoilOverCommitted(Exception):
@@ -26,6 +26,14 @@ class _CoilOverCommitted(Exception):
     catches two concurrent cuts on the same coil that both passed the
     earlier read-based check against a stale "remaining" value before
     either had written anything."""
+
+
+class _GateEntryOverCommitted(Exception):
+    """Raised inside material_form's atomic block when, after actually
+    writing a new coil, the gate entry now has more registered coils than
+    invoiced — catches two concurrent registrations against the same gate
+    entry's last remaining slot that both passed the earlier read-based
+    check before either had written anything."""
 
 
 def _safe_next(request, next_url, default):
@@ -84,18 +92,160 @@ def home(request):
     return render(request, "home.html")
 
 
-def material_form(request):
+def _first_formset_error(formset):
+    if formset.non_form_errors():
+        return formset.non_form_errors()[0]
+    for form in formset:
+        for errors in form.errors.values():
+            return errors[0]
+    return "Check the lot details below."
+
+
+def gate_entry_form(request):
+    """Log a truck's delivery in one submission: the truck's own details
+    (company/vehicle/total weight) plus one or more lots — vendor/grade/
+    size/coil-count, since a single truck can carry a mixed load sourced
+    from more than one vendor. Saving creates the GateEntry and every lot
+    atomically, then lands on the gate entry's detail page to start
+    registering coils. gate_entry_lot_form (a single extra lot) is the
+    follow-up path for a delivery that turns out to have more lots than
+    were known about at logging time."""
     guard = _employee_required(request)
     if guard: return guard
     error = None
     if request.method == "POST":
-        form = MaterialForm(request.POST)
-        if form.is_valid():
-            coil = form.save()
-            return redirect('coil_tag', pk=coil.coil_no)
-        error = _first_form_error(form)
+        entry_form = GateEntryForm(request.POST)
+        lot_formset = GateEntryLotFormSet(request.POST, prefix='lot')
+        if entry_form.is_valid() and lot_formset.is_valid():
+            with transaction.atomic():
+                gate_entry = entry_form.save()
+                for lot_data in lot_formset.cleaned_data:
+                    GateEntryLot.objects.create(gate_entry=gate_entry, **lot_data)
+            return redirect('gate_entry_detail', gate_entry_pk=gate_entry.pk)
+        error = _first_form_error(entry_form) if not entry_form.is_valid() else _first_formset_error(lot_formset)
     else:
-        form = MaterialForm()
+        entry_form = GateEntryForm()
+        lot_formset = GateEntryLotFormSet(prefix='lot')
+
+    return render(request, "materials/gate_entry_form.html", {
+        "lot_formset": lot_formset,
+        "empty_lot_form": lot_formset.empty_form,
+        "grades": GradeOption.objects.all(),
+        "sizes": SizeOption.objects.all(),
+        "error": error,
+        "post": request.POST if error else {},
+    })
+
+
+def gate_entry_lot_form(request, gate_entry_pk):
+    """Add one more lot to an already-logged gate entry — for a delivery
+    that turns out to have another grade/size beyond what was entered on
+    the main gate entry page. Lands on the gate entry's detail page."""
+    guard = _employee_required(request)
+    if guard: return guard
+    gate_entry = get_object_or_404(GateEntry, pk=gate_entry_pk)
+    error = None
+    if request.method == "POST":
+        form = GateEntryLotForm(request.POST)
+        if form.is_valid():
+            GateEntryLot.objects.create(gate_entry=gate_entry, **form.cleaned_data)
+            return redirect('gate_entry_detail', gate_entry_pk=gate_entry.pk)
+        error = _first_form_error(form)
+
+    return render(request, "materials/gate_entry_lot_form.html", {
+        "gate_entry": gate_entry,
+        "grades": GradeOption.objects.all(),
+        "sizes": SizeOption.objects.all(),
+        "error": error,
+        "post": request.POST if error else {},
+    })
+
+
+def gate_entry_detail(request, gate_entry_pk):
+    """Shows the lots logged so far for this gate entry, with a link into
+    coil registration for each lot that still has room, and a way to add
+    another lot for the rest of a mixed-grade/size delivery."""
+    guard = _employee_required(request)
+    if guard: return guard
+    gate_entry = get_object_or_404(GateEntry, pk=gate_entry_pk)
+    lots = gate_entry.lots.annotate(registered=Count('coils')).order_by('id')
+
+    return render(request, "materials/gate_entry_detail.html", {
+        "gate_entry": gate_entry,
+        "lots": lots,
+    })
+
+
+def gate_entry_lot_delete(request, lot_pk):
+    """Remove a lot added by mistake — only while it has no coils registered
+    against it yet. (Material.lot uses on_delete=PROTECT, so this would fail
+    loudly rather than orphan real coils even without the check below.)"""
+    guard = _employee_required(request)
+    if guard: return guard
+    lot = get_object_or_404(GateEntryLot, pk=lot_pk)
+    gate_entry_pk = lot.gate_entry_id
+    if request.method == "POST" and lot.coils_registered() == 0:
+        lot.delete()
+    return redirect('gate_entry_detail', gate_entry_pk=gate_entry_pk)
+
+
+def select_gate_entry(request):
+    guard = _employee_required(request)
+    if guard: return guard
+    lots = []
+    for lot in (GateEntryLot.objects
+                .select_related('gate_entry')
+                .annotate(registered=Count('coils'))
+                .order_by('-gate_entry__created_at', 'id')):
+        remaining = lot.no_of_coils - lot.registered
+        if remaining > 0:
+            lots.append({'lot': lot, 'remaining': remaining, 'registered': lot.registered})
+
+    return render(request, "materials/select_gate_entry.html", {"lots": lots})
+
+
+def material_form(request, lot_pk):
+    guard = _employee_required(request)
+    if guard: return guard
+    lot = get_object_or_404(GateEntryLot.objects.select_related('gate_entry'), pk=lot_pk)
+    gate_entry = lot.gate_entry
+    complete = lot.is_complete()
+
+    error = None
+    if request.method == "POST":
+        if complete:
+            error = "This lot's coils have already been registered."
+        else:
+            # Company is locked to the gate entry, vendor/grade/size to the
+            # lot — none of this is taken from the submitted form at all, the
+            # same way coil_parts locks product type from an order, so a
+            # tampered/stale hidden field can't submit different values.
+            data = request.POST.copy()
+            data['company'] = gate_entry.company
+            data['vendor'] = lot.vendor
+            data['grade'] = lot.grade
+            data['size'] = lot.size
+            form = MaterialForm(data)
+            if form.is_valid():
+                try:
+                    with transaction.atomic():
+                        coil = form.save(commit=False)
+                        coil.lot = lot
+                        coil.invoice_weight = gate_entry.weight_per_coil()
+                        coil.save()
+                        # Two employees registering the same lot's last
+                        # remaining slot at nearly the same moment could both
+                        # pass the `complete` check above against a stale read
+                        # before either had written anything — re-check after
+                        # writing and roll back rather than overshoot the count.
+                        if lot.coils_registered() > lot.no_of_coils:
+                            raise _GateEntryOverCommitted
+                except _GateEntryOverCommitted:
+                    error = "This lot's coils have already been registered — reload and check with the office."
+                else:
+                    return redirect('coil_tag', pk=coil.coil_no)
+            else:
+                error = _first_form_error(form)
 
     last_material = Material.objects.order_by('-coil_no').first()
     next_coil = (last_material.coil_no + 1) if last_material else 1
@@ -103,9 +253,9 @@ def material_form(request):
 
     return render(request, "materials/material_form.html", {
         "coil_no": formatted_coil,
-        "form": form,
-        "grades": GradeOption.objects.all(),
-        "sizes": SizeOption.objects.all(),
+        "gate_entry": gate_entry,
+        "lot": lot,
+        "complete": complete,
         "error": error,
         "post": request.POST if error else {},
     })
@@ -129,6 +279,7 @@ def coil_tag(request, pk):
     return render(request, 'materials/coil_tag.html', {
         'coil': coil,
         'qr_b64': qr_b64,
+        'lot': coil.lot,
     })
 
 
