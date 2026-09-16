@@ -16,16 +16,16 @@ import io
 import base64
 from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
-from .models import GateEntry, GateEntryLot, Material, CoilPart, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
+from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
 from .forms import GateEntryForm, GateEntryLotForm, GateEntryLotFormSet, MaterialForm, OrderForm
 
 
 class _CoilOverCommitted(Exception):
-    """Raised inside coil_parts's atomic block when, after actually writing
-    a new part, the coil's total used weight now exceeds its quantity —
-    catches two concurrent cuts on the same coil that both passed the
-    earlier read-based check against a stale "remaining" value before
-    either had written anything."""
+    """Raised inside pick_coil_for_order's atomic block when, after actually
+    writing a new pick, the coil's total used weight now exceeds its
+    quantity — catches two concurrent picks on the same coil that both
+    passed the earlier read-based check against a stale "remaining" value
+    before either had written anything."""
 
 
 class _GateEntryOverCommitted(Exception):
@@ -200,6 +200,41 @@ def gate_entry_detail(request, gate_entry_pk):
     })
 
 
+def gate_entry_edit(request, gate_entry_pk):
+    """Fix a mistake in a gate entry's top-level details (date, vendor,
+    vehicle no., invoice no., total weight) after it's already been saved —
+    unlike a lot or a registered coil, nothing about the gate entry itself
+    is locked once coils exist against it, since these fields are just
+    paper/reference details, not something coil registration depends on
+    being immutable."""
+    guard = _employee_required(request)
+    if guard: return guard
+    gate_entry = get_object_or_404(GateEntry, pk=gate_entry_pk)
+
+    error = None
+    if request.method == "POST":
+        form = GateEntryForm(request.POST, instance=gate_entry)
+        if form.is_valid():
+            form.save()
+            return redirect('gate_entry_detail', gate_entry_pk=gate_entry.pk)
+        error = _first_form_error(form)
+        values = request.POST
+    else:
+        values = {
+            'date': gate_entry.date.isoformat() if gate_entry.date else '',
+            'vendor': gate_entry.vendor or '',
+            'vehicle_no': gate_entry.vehicle_no or '',
+            'invoice_no': gate_entry.invoice_no or '',
+            'total_weight': gate_entry.total_weight if gate_entry.total_weight is not None else '',
+        }
+
+    return render(request, "materials/gate_entry_edit.html", {
+        "gate_entry": gate_entry,
+        "error": error,
+        "post": values,
+    })
+
+
 def gate_entry_lot_delete(request, lot_pk):
     """Remove a lot added by mistake — only while it has no coils registered
     against it yet. (Material.lot uses on_delete=PROTECT, so this would fail
@@ -323,122 +358,7 @@ def admin_login(request):
     return render(request, "materials/admin_login.html", {"next": next_url})
 
 
-# ── Coil parts ──────────────────────────────────────────────
-
-def coil_parts(request, coil_pk):
-    guard = _employee_required(request)
-    if guard: return guard
-    coil = get_object_or_404(Material, pk=coil_pk)
-    parts = coil.parts.prefetch_related('jobs__product_type').order_by('created_at')
-    product_types = ProductType.objects.all()
-
-    # Optional: coming from order-first flow
-    from_order_pk = request.GET.get('from_order') or request.POST.get('from_order')
-    from_order = _safe_get(Order.objects.select_related('product_type', 'customer'), from_order_pk)
-
-    total_used = float(coil.weight_used())
-    coil_weight = float(coil.quantity or 0)
-    remaining = coil_weight - total_used
-    exhausted = coil_weight > 0 and remaining <= 0
-    archived = coil.is_archived()
-
-    if request.method == 'POST':
-        if exhausted or archived:
-            return redirect('coil_parts', coil_pk=coil.pk)
-
-        suffix = request.POST.get('suffix', '').strip().upper()
-        raw_weight = request.POST.get('weight') or None
-        raw_length = request.POST.get('length') or None
-        raw_cut_date = request.POST.get('cut_date') or None
-        # If coming from order flow, product type is fixed; otherwise use form selection
-        product_type_id = (
-            from_order.product_type.pk if from_order and from_order.product_type
-            else request.POST.get('product_type')
-        )
-        pt = _safe_get(ProductType.objects, product_type_id)
-
-        weight_value, weight_invalid = None, False
-        if raw_weight:
-            try:
-                weight_value = Decimal(raw_weight)
-            except InvalidOperation:
-                weight_invalid = True
-
-        error = None
-
-        if not suffix:
-            error = "Part suffix cannot be empty."
-        elif weight_invalid:
-            error = "Weight must be a number."
-        elif CoilPart.objects.filter(part_no=f"{coil.formatted_coil()}-{suffix}").exists():
-            error = f"A part with suffix '{suffix}' already exists for this coil."
-        elif weight_value is not None and weight_value > Decimal(str(remaining)):
-            error = (
-                f"Part weight ({weight_value:.3f} kg) exceeds the remaining coil weight "
-                f"({remaining:.3f} kg). Reduce the weight or split into smaller parts."
-            )
-        elif pt is None:
-            error = "Please select a valid product type."
-        else:
-            try:
-                with transaction.atomic():
-                    part = CoilPart.objects.create(
-                        coil=coil,
-                        part_no=f"{coil.formatted_coil()}-{suffix}",
-                        weight=weight_value,
-                        length=raw_length,
-                        cut_date=raw_cut_date,
-                        notes=request.POST.get('notes', ''),
-                    )
-                    # Re-check against the coil's actual total now that this part
-                    # is written (visible within this same transaction) — two
-                    # tablets cutting from the same coil at nearly the same
-                    # moment could both have passed the "remaining" check above
-                    # against a stale read before either had written anything.
-                    # If this overshoots, roll the whole thing back instead of
-                    # silently over-cutting the coil.
-                    if coil.quantity is not None and coil.weight_used() > coil.quantity:
-                        raise _CoilOverCommitted
-                    job = ProductionJob.objects.create(
-                        part=part, product_type=pt, job_no='PENDING',
-                        order=from_order,
-                    )
-                    job.job_no = f"JOB-{job.pk:04d}"
-                    job.save(update_fields=['job_no'])
-                    for step in pt.steps.all():
-                        StepLog.objects.create(
-                            job=job, step=step, status='pending',
-                            updated_by=request.user if request.user.is_authenticated else None,
-                        )
-                    # Mark order as in production when first part is cut for it
-                    if from_order and from_order.status == 'confirmed':
-                        from_order.status = 'in_production'
-                        from_order.save(update_fields=['status'])
-            except _CoilOverCommitted:
-                error = (
-                    "This coil's remaining weight changed just now — likely someone else "
-                    "cutting from it at the same time. Reload the page and try again."
-                )
-            except (InvalidOperation, ValidationError, ValueError):
-                error = "Check that length and cut date are valid."
-            else:
-                return redirect('coil_parts', coil_pk=coil.pk)
-
-        return render(request, 'materials/coil_parts.html', {
-            'coil': coil, 'parts': parts, 'product_types': product_types,
-            'total_used': total_used, 'remaining': remaining,
-            'exhausted': exhausted, 'archived': archived, 'error': error,
-            'from_order': from_order,
-        })
-
-    return render(request, 'materials/coil_parts.html', {
-        'coil': coil, 'parts': parts, 'product_types': product_types,
-        'total_used': total_used, 'remaining': remaining, 'exhausted': exhausted,
-        'archived': archived, 'from_order': from_order,
-    })
-
-
-# ── Order-first part creation flow ───────────────────────────
+# ── Order-first coil picking flow ─────────────────────────────
 
 def select_order(request):
     guard = _employee_required(request)
@@ -457,7 +377,40 @@ def select_order(request):
     })
 
 
+def _coil_matches_order_specs(coil, order):
+    """True if this coil's grade/size is allowed as raw material for the
+    order's product type — same rule select_coil_for_order's browse list
+    filters by, reused here so a scanned coil gets the same check."""
+    if not order.product_type:
+        return True
+    specs = list(order.product_type.allowed_specs.all())
+    if not specs:
+        return True
+    for spec in specs:
+        grade_matches = not spec.grade or (coil.grade or '').lower() == spec.grade.lower()
+        size_matches = not spec.size or coil.size == spec.size
+        if grade_matches and size_matches:
+            return True
+    return False
+
+
+def _parse_coil_no(raw):
+    """Accepts either the formatted tag text ("COIL0007") or a bare number,
+    tolerant of surrounding whitespace/case — matches whatever a barcode
+    scanner (which just types the QR's text into the input) sends."""
+    raw = (raw or '').strip().upper()
+    if raw.startswith('COIL'):
+        raw = raw[4:]
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
 def select_coil_for_order(request, order_pk):
+    """The order's picking hub: shows how much raw material has been picked
+    so far against how much the order needs, lists eligible coils to browse,
+    and accepts a scanned/typed coil number to jump straight into picking it."""
     guard = _employee_required(request)
     if guard: return guard
     order = get_object_or_404(
@@ -465,8 +418,23 @@ def select_coil_for_order(request, order_pk):
         pk=order_pk,
     )
 
+    scan_error = None
+    if request.method == 'POST':
+        coil_no = _parse_coil_no(request.POST.get('coil_no'))
+        coil = _safe_get(Material.objects, coil_no) if coil_no is not None else None
+        if coil is None:
+            scan_error = "Coil not found. Check the number and try again."
+        elif coil.is_archived():
+            scan_error = f"{coil.formatted_coil()} is archived and can't be picked."
+        elif not _coil_matches_order_specs(coil, order):
+            scan_error = f"{coil.formatted_coil()} doesn't match this order's allowed grade/size."
+        elif coil.weight_remaining() <= 0:
+            scan_error = f"{coil.formatted_coil()} has no weight remaining."
+        else:
+            return redirect('pick_coil_for_order', order_pk=order.pk, coil_pk=coil.pk)
+
     coils_qs = Material.objects.filter(archived_at__isnull=True).annotate(
-        _weight_used=Coalesce(Sum('parts__weight'), Value(Decimal('0')), output_field=DecimalField())
+        _weight_used=Coalesce(Sum('order_picks__weight_allocated'), Value(Decimal('0')), output_field=DecimalField())
                      + F('legacy_used_weight'),
     )
 
@@ -500,9 +468,120 @@ def select_coil_for_order(request, order_pk):
                 'pct_used': int((used / total * 100)) if total > 0 else 0,
             })
 
+    picks = order.coil_picks.select_related('coil').order_by('-picked_at')
+    picked_output = order.picked_output_weight()
+    required_output = order.quantity or Decimal('0')
+
     return render(request, 'materials/select_coil_for_order.html', {
         'order': order,
         'coils': coils,
+        'picks': picks,
+        'picked_output': picked_output,
+        'required_output': required_output,
+        'pct_fulfilled': int(min(picked_output / required_output * 100, 100)) if required_output > 0 else 0,
+        'fully_picked': order.is_fully_picked(),
+        'scan_error': scan_error,
+    })
+
+
+def pick_coil_for_order(request, order_pk, coil_pk):
+    """Confirm-and-allocate screen for one coil against one order — mirrors
+    material_form's single-entity-confirm pattern. Product type comes from
+    the order, never resubmitted, so a tampered/stale form can't override it."""
+    guard = _employee_required(request)
+    if guard: return guard
+    order = get_object_or_404(Order.objects.select_related('product_type', 'customer'), pk=order_pk)
+    coil = get_object_or_404(Material, pk=coil_pk)
+
+    coil_total = coil.quantity or Decimal('0')
+    coil_remaining = coil_total - coil.weight_used()
+    exhausted = coil_total > 0 and coil_remaining <= 0
+    archived = coil.is_archived()
+    matches_specs = _coil_matches_order_specs(coil, order)
+    fully_picked = order.is_fully_picked()
+    blocked = exhausted or archived or not matches_specs or fully_picked or order.product_type is None
+
+    # Suggest a weight capped at both what's left on the coil and what the
+    # order still needs (in this coil's raw-material terms), so an employee
+    # isn't nudged into over-allocating by default.
+    ratio = Decimal('1')
+    if order.product_type:
+        for spec in order.product_type.allowed_specs.all():
+            grade_matches = not spec.grade or spec.grade.lower() == (coil.grade or '').lower()
+            size_matches = not spec.size or spec.size == coil.size
+            if grade_matches and size_matches:
+                ratio = spec.raw_material_ratio
+                break
+    order_remaining_raw = max(order.quantity - order.picked_output_weight(), Decimal('0')) * ratio
+    suggested_weight = max(min(coil_remaining, order_remaining_raw), Decimal('0'))
+
+    error = None
+    if request.method == 'POST':
+        if blocked:
+            return redirect('select_coil_for_order', order_pk=order.pk)
+
+        raw_weight = request.POST.get('weight_allocated')
+        weight_value, weight_invalid = None, False
+        if raw_weight:
+            try:
+                weight_value = Decimal(raw_weight)
+            except InvalidOperation:
+                weight_invalid = True
+
+        if weight_invalid or not weight_value or weight_value <= 0:
+            error = "Enter a valid weight to allocate."
+        elif weight_value > coil_remaining:
+            error = (
+                f"Weight ({weight_value:.3f} kg) exceeds the remaining coil weight "
+                f"({coil_remaining:.3f} kg)."
+            )
+        else:
+            pt = order.product_type
+            try:
+                with transaction.atomic():
+                    pick = OrderCoilPick.objects.create(
+                        order=order, coil=coil, weight_allocated=weight_value,
+                    )
+                    # Re-check against the coil's actual total now that this
+                    # pick is written (visible within this same transaction)
+                    # — two tablets picking the same coil at nearly the same
+                    # moment could both have passed the "remaining" check
+                    # above against a stale read before either had written
+                    # anything. If this overshoots, roll back rather than
+                    # silently over-allocate the coil.
+                    if coil.quantity is not None and coil.weight_used() > coil.quantity:
+                        raise _CoilOverCommitted
+                    job = ProductionJob.objects.create(
+                        pick=pick, product_type=pt, order=order, job_no='PENDING',
+                    )
+                    job.job_no = f"JOB-{job.pk:04d}"
+                    job.save(update_fields=['job_no'])
+                    for step in pt.steps.all():
+                        StepLog.objects.create(
+                            job=job, step=step, status='pending',
+                            updated_by=request.user if request.user.is_authenticated else None,
+                        )
+                    # Mark order as in production when its first coil is picked
+                    if order.status == 'confirmed':
+                        order.status = 'in_production'
+                        order.save(update_fields=['status'])
+            except _CoilOverCommitted:
+                error = (
+                    "This coil's remaining weight changed just now — likely someone else "
+                    "picking it at the same time. Reload the page and try again."
+                )
+            except (InvalidOperation, ValidationError, ValueError):
+                error = "Check the entered weight."
+            else:
+                return redirect('select_coil_for_order', order_pk=order.pk)
+
+    return render(request, 'materials/pick_coil_for_order.html', {
+        'order': order, 'coil': coil,
+        'coil_total': coil_total, 'coil_remaining': coil_remaining,
+        'suggested_weight': suggested_weight,
+        'exhausted': exhausted, 'archived': archived,
+        'matches_specs': matches_specs, 'fully_picked': fully_picked,
+        'blocked': blocked, 'error': error,
     })
 
 
@@ -512,7 +591,7 @@ def job_detail(request, pk):
     guard = _employee_required(request)
     if guard: return guard
     job = get_object_or_404(
-        ProductionJob.objects.select_related('part__coil', 'product_type')
+        ProductionJob.objects.select_related('pick__coil', 'product_type')
                              .prefetch_related('step_logs', 'product_type__steps'),
         pk=pk,
     )
@@ -565,7 +644,7 @@ def production_board(request):
               .filter(status='in_production')
               .select_related('customer', 'product_type')
               .prefetch_related(
-                  'jobs__part__coil',
+                  'jobs__pick__coil',
                   'jobs__product_type__steps',
                   'jobs__step_logs__step',
               )
@@ -605,7 +684,7 @@ def production_board(request):
                 'current_status': current_status,
             })
 
-        weight_cut = sum(float(jd['job'].part.weight or 0) for jd in jobs_data)
+        weight_cut = sum(float(jd['job'].pick.weight_allocated or 0) for jd in jobs_data)
         weight_needed = float(order.quantity or 0)
         board.append({
             'order': order,
@@ -631,10 +710,10 @@ def order_dashboard(request):
 
     orders = (Order.objects
               .select_related('customer', 'product_type')
-              .annotate(weight_cut=Sum('jobs__part__weight'))
+              .annotate(weight_cut=Sum('coil_picks__weight_allocated'))
               .order_by('-created_at'))
     customers = Customer.objects.order_by('name')
-    product_types = ProductType.objects.order_by('name')
+    product_types = ProductType.objects.order_by('item_code')
     product_type_data = {
         str(pt.pk): {'grade': pt.grade, 'size': str(pt.size) if pt.size else ''}
         for pt in product_types
@@ -698,11 +777,11 @@ def order_confirm(request, pk):
     if order.status != 'pending':
         return redirect('order_dashboard')
     if not order.product_type_id:
-        messages.error(request, f"ORD-{order.pk:04d} cannot be confirmed without a product type. Edit the order to assign one.")
+        messages.error(request, f"ORD-{order.order_no:04d} cannot be confirmed without a product type. Edit the order to assign one.")
         return redirect('order_dashboard')
     order.status = 'confirmed'
     order.save(update_fields=['status'])
-    messages.success(request, f"ORD-{order.pk:04d} confirmed.")
+    messages.success(request, f"ORD-{order.order_no:04d} confirmed.")
     return redirect('order_dashboard')
 
 
@@ -715,7 +794,7 @@ def order_dispatch(request, pk):
     if order.status == 'in_production':
         order.status = 'completed'
         order.save(update_fields=['status'])
-        messages.success(request, f"ORD-{order.pk:04d} marked as dispatched.")
+        messages.success(request, f"ORD-{order.order_no:04d} marked as dispatched.")
     return redirect('order_dashboard')
 
 
@@ -734,7 +813,7 @@ def order_reject(request, pk):
 
 def quote_form(request, token):
     customer = get_object_or_404(Customer, quote_token=token)
-    product_types = ProductType.objects.order_by('name')
+    product_types = ProductType.objects.order_by('item_code')
     product_type_data = {
         str(pt.pk): {'grade': pt.grade, 'size': str(pt.size) if pt.size else ''}
         for pt in product_types

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Edit Gate Entry</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: linear-gradient(135deg, #4e73df, #1cc88a);
+    min-height: 100vh;
+    padding: 2rem 1rem;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+  }
+
+  .page { width: 100%; max-width: 480px; }
+
+  .back-link {
+    color: rgba(255,255,255,0.8); text-decoration: none;
+    font-size: 0.9rem; display: inline-block; margin-bottom: 1.25rem;
+  }
+  .back-link:hover { color: white; }
+
+  h1 { color: white; font-size: 1.5rem; margin-bottom: 0.3rem; }
+  .subtitle { color: rgba(255,255,255,0.75); font-size: 0.88rem; margin-bottom: 1.75rem; }
+
+  .card {
+    background: white; border-radius: 16px;
+    padding: 1.75rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  }
+
+  .form-group { margin-bottom: 1.1rem; }
+
+  /* Autocomplete */
+  .autocomplete-wrapper { position: relative; }
+  .autocomplete-list {
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: white; border: 1px solid #ddd; border-top: none;
+    border-radius: 0 0 8px 8px; z-index: 100;
+    max-height: 200px; overflow-y: auto; display: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+  .autocomplete-list.open { display: block; }
+  .autocomplete-item { padding: 0.55rem 0.75rem; cursor: pointer; font-size: 0.9rem; }
+  .autocomplete-item:hover, .autocomplete-item.active { background: #eff2ff; color: #4e73df; }
+
+  label {
+    display: block;
+    font-size: 0.72rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    color: #666; margin-bottom: 0.35rem;
+  }
+
+  input[type="text"], input[type="number"], input[type="date"] {
+    width: 100%; padding: 0.6rem 0.85rem;
+    border: 1px solid #ddd; border-radius: 8px;
+    font-size: 16px; color: #333;
+  }
+  input:focus { outline: none; border-color: #4e73df; }
+
+  .btn-submit {
+    width: 100%; padding: 0.8rem;
+    background: #4e73df; color: white;
+    border: none; border-radius: 8px;
+    font-size: 1rem; font-weight: 600; cursor: pointer;
+    margin-top: 0.5rem;
+  }
+  .btn-submit:hover { background: #3a5ec0; }
+
+  .error-msg {
+    background: #fee2e2; color: #991b1b;
+    padding: 0.6rem 0.9rem; border-radius: 8px;
+    font-size: 0.87rem; margin-bottom: 1rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <a href="{% url 'gate_entry_detail' gate_entry.pk %}" class="back-link">← Back to gate entry</a>
+  <h1>Edit Gate Entry #{{ gate_entry.pk }}</h1>
+  <p class="subtitle">Fix a mistake in the delivery's top-level details</p>
+
+  <div class="card">
+    {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+    <form method="POST">
+      {% csrf_token %}
+
+      <div class="form-group">
+        <label>Date</label>
+        <input type="date" name="date" id="date-input" value="{{ post.date|default:'' }}" required>
+      </div>
+
+      <div class="form-group">
+        <label>Vehicle No.</label>
+        <input type="text" name="vehicle_no" id="vehicle-no-input" value="{{ post.vehicle_no|default:'' }}" placeholder="e.g. AP16TA1234">
+      </div>
+
+      <div class="form-group">
+        <label>Vendor</label>
+        <div class="autocomplete-wrapper">
+          <input type="text" name="vendor" id="vendor-input" value="{{ post.vendor|default:'' }}" placeholder="e.g. ABC Traders" autocomplete="off" required>
+          <div class="autocomplete-list" data-field-autocomplete="vendor"></div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Invoice No.</label>
+        <input type="text" name="invoice_no" value="{{ post.invoice_no|default:'' }}" placeholder="e.g. INV-2026-0042">
+      </div>
+
+      <div class="form-group">
+        <label>Total Weight (kg)</label>
+        <input type="number" name="total_weight" step="0.001" value="{{ post.total_weight|default:'' }}" placeholder="e.g. 2500.000" required>
+      </div>
+
+      <button type="submit" class="btn-submit">Save Changes →</button>
+    </form>
+  </div>
+</div>
+
+<script>
+  // Vehicle No. — always uppercase, letters/digits only (see gate_entry_form.html for why no fixed layout is enforced).
+  function formatVehicleNo(raw) {
+    return raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+  var vehicleNoInput = document.getElementById('vehicle-no-input');
+  vehicleNoInput.value = formatVehicleNo(vehicleNoInput.value);
+  vehicleNoInput.addEventListener('input', function () {
+    var cursorWasAtEnd = this.selectionEnd === this.value.length;
+    this.value = formatVehicleNo(this.value);
+    if (cursorWasAtEnd) {
+      this.setSelectionRange(this.value.length, this.value.length);
+    }
+  });
+
+  var autocompleteUrl = "{% url 'material_field_autocomplete' %}";
+
+  // Autosuggest for vendor, drawn from values already used in Material —
+  // same pattern as gate_entry_form.html.
+  function attachAutocomplete(input) {
+    var wrapper = input.closest('.autocomplete-wrapper');
+    var list = wrapper.querySelector('.autocomplete-list');
+    var field = list.getAttribute('data-field-autocomplete');
+    var activeIndex = -1, currentItems = [];
+
+    input.addEventListener('input', function () {
+      var q = this.value.trim();
+      if (q.length < 1) { close_(); return; }
+      fetch(autocompleteUrl + '?field=' + field + '&q=' + encodeURIComponent(q))
+        .then(function (r) { return r.json(); })
+        .then(function (items) {
+          currentItems = items; activeIndex = -1;
+          if (!items.length) { close_(); return; }
+          list.innerHTML = items.map(function (it, i) {
+            var div = document.createElement('div');
+            div.className = 'autocomplete-item';
+            div.setAttribute('data-i', i);
+            div.textContent = it;
+            return div.outerHTML;
+          }).join('');
+          list.classList.add('open');
+          list.querySelectorAll('.autocomplete-item').forEach(function (el) {
+            el.addEventListener('mousedown', function (e) { e.preventDefault(); pick(parseInt(this.dataset.i, 10)); });
+          });
+        });
+    });
+
+    input.addEventListener('keydown', function (e) {
+      var els = list.querySelectorAll('.autocomplete-item');
+      if (!els.length) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex = Math.min(activeIndex + 1, els.length - 1); hi(els); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); activeIndex = Math.max(activeIndex - 1, 0); hi(els); }
+      else if (e.key === 'Enter' && activeIndex >= 0) { e.preventDefault(); pick(activeIndex); }
+      else if (e.key === 'Escape') close_();
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!input.contains(e.target) && !list.contains(e.target)) close_();
+    });
+
+    function pick(i) {
+      input.value = currentItems[i];
+      close_();
+    }
+    function hi(els) { els.forEach(function (el, i) { el.classList.toggle('active', i === activeIndex); }); }
+    function close_() { list.classList.remove('open'); list.innerHTML = ''; activeIndex = -1; currentItems = []; }
+  }
+
+  attachAutocomplete(document.getElementById('vendor-input'));
+</script>
+
+</body>
+</html>

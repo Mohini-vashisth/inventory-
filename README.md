@@ -1,16 +1,16 @@
 # Inventory & Manufacturing System
 
-A Django app for a steel coil manufacturing business, covering the full workflow: raw material receipt → coil registration → order management → part cutting → step-by-step production tracking → dispatch.
+A Django app for a steel coil manufacturing business, covering the full workflow: raw material receipt → coil registration → order management → coil picking → step-by-step production tracking → dispatch.
 
 ---
 
 ## Features
 
-- **Gate Entry** — log a truck's delivery from its invoice (vendor, vehicle no., bill/invoice no., total weight) as one or more brand/grade/size lots, before any coil is individually registered
+- **Gate Entry** — log a truck's delivery from its invoice (vendor, vehicle no., invoice no., total weight) as one or more brand/grade/size lots, before any coil is individually registered
 - **New Coil Entry** — register each coil against an open gate entry lot; prints a QR tag automatically. Company/vendor/grade/size are locked from the gate entry/lot, capped at the lot's coil count
-- **Part tracking** — log pieces cut from a coil, with weight, length, and an all-or-nothing atomic write (never a part with no job)
-- **Order-first production** — customers submit requirements via a unique quote-form link; admin confirms an order, employees can then only cut parts matching that order's allowed grade/size specs
-- **Production jobs & step tracking** — a cut part is assigned a product type with ordered manufacturing steps; employees tick off each step with a full audit trail (`StepLog`)
+- **Coil picking** — fulfil an order by scanning/picking coils as raw material (weight need not be the coil's full remaining weight), with an all-or-nothing atomic write (never a pick with no job)
+- **Order-first production** — customers submit requirements via a unique quote-form link; admin confirms an order, employees can then only pick coils matching that order's allowed grade/size specs
+- **Production jobs & step tracking** — each picked coil is assigned a product type with ordered manufacturing steps; employees tick off each step with a full audit trail (`StepLog`)
 - **Admin dashboard** — Django admin (themed with Jazzmin) with progress bars, status badges, used/unused coil filters, and bulk actions (archive coils, mark jobs on hold, etc.)
 - **Read-only REST API** — `orders`, `coils`, `jobs`, `product-types` under `/api/`, staff-only
 - **Two access paths** — a PIN-based employee portal (tablet-friendly) and a Django-auth admin/staff area, both reachable from the home screen
@@ -36,7 +36,7 @@ inventory-/
 ├── inventory/                       # Django project
 │   ├── inventory/                   # settings.py, urls.py, wsgi.py, asgi.py
 │   ├── materials/                   # the one Django app
-│   │   ├── models.py                # GateEntry, GateEntryLot, Material, CoilPart,
+│   │   ├── models.py                # GateEntry, GateEntryLot, Material, OrderCoilPick,
 │   │   │                            # ProductType, ProcessStep, ProductionJob, StepLog,
 │   │   │                            # Customer, Order, GradeOption, SizeOption
 │   │   ├── views.py
@@ -63,24 +63,24 @@ inventory-/
 GateEntry (one truck's delivery)
   └── GateEntryLot (one brand/grade/size batch within it)
         └── Material (a registered coil)
-              └── CoilPart (a cut piece)
+              └── OrderCoilPick (a coil picked against an order)
                     └── ProductionJob (linked to a ProductType + Order)
                           ├── ProductType → ProcessStep (ordered steps)
                           └── StepLog (status update per step, full history)
 
-Customer → Order (quote/requirement) → ProductionJob
+Customer → Order (quote/requirement) → OrderCoilPick → ProductionJob
 ```
 
 | Model | Purpose |
 |-------|---------|
-| `GateEntry` | A truck delivery — vendor, vehicle no., bill/invoice no., total weight |
+| `GateEntry` | A truck delivery — vendor, vehicle no., invoice no., total weight |
 | `GateEntryLot` | One brand/grade/size/coil-count batch within a gate entry |
 | `Material` | A registered coil — grade, size, company, heat no., quantity |
-| `CoilPart` | A piece cut from a coil — weight, length, cut date |
+| `OrderCoilPick` | A coil (or part of one) allocated to an order's raw-material requirement |
 | `GradeOption` / `SizeOption` | Admin-managed valid grade/size options for the tap-to-pick pickers |
-| `ProductType` | A product definition with preset grade/size and its ordered manufacturing steps |
+| `ProductType` | A product definition (item code, preset grade/size) with its ordered manufacturing steps |
 | `ProcessStep` | A named step belonging to a product type |
-| `ProductionJob` | Links a cut part to a product type + order, holds overall status |
+| `ProductionJob` | Links a picked coil to a product type + order, holds overall status |
 | `StepLog` | Every step status change ever made — append-only audit trail |
 | `Customer` | A company with a unique, single-use quote-form link |
 | `Order` | A customer's requirement — product type, quantity, delivery date, status |
@@ -151,7 +151,7 @@ Visit `http://127.0.0.1:8000/`.
 
 1. **Gate Entry** — log a truck's delivery and its lots in one page
 2. **New Coil Entry** — pick an open lot, register its coils, tags print automatically
-3. **Create New Part** — pick an order → pick a matching coil → log a cut piece → a production job is created
+3. **Pick Coils for Order** — pick an order → scan/select matching coils until its raw-material requirement is met → a production job is created per picked coil
 4. **Update Progress** — pick an active job, tick off manufacturing steps
 
 ### Admin/staff flow (`/admin-login/` → `/orders/` or `/admin/`)
@@ -184,8 +184,9 @@ CI (`.github/workflows/tests.yml`) runs `manage.py check`, a migration-check, an
 | `/gate-entry/select/` | `select_gate_entry` | Pick an open lot to register a coil against |
 | `/gate-entry/lot/<pk>/coil/` | `material_form` | Register a coil, prints its QR tag |
 | `/coil/<pk>/tag/` | `coil_tag` | Printable coil tag |
-| `/coil/<pk>/parts/` | `coil_parts` | Parts cut from a coil |
-| `/select-order/` | `select_order` | Pick an order to cut a part for |
+| `/select-order/` | `select_order` | Pick an order to pick coils for |
+| `/order/<pk>/select-coil/` | `select_coil_for_order` | Order's picking hub — progress, scan, browse coils |
+| `/order/<pk>/pick-coil/<coil_pk>/` | `pick_coil_for_order` | Confirm allocating a coil to the order |
 | `/production-board/` | `production_board` | All in-production jobs |
 | `/job/<pk>/` | `job_detail` | Step-by-step progress updater |
 | `/orders/` | `order_dashboard` | Staff order pipeline |
