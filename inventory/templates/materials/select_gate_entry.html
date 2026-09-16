@@ -84,11 +84,11 @@
   <a href="{% url 'material_form' row.lot.pk %}" class="entry-card">
     <div class="entry-left">
       <div class="entry-no">Gate Entry #{{ row.lot.gate_entry.pk }} — {{ row.lot.gate_entry.vehicle_no|default:"no vehicle no." }}</div>
-      <div class="entry-company">{{ row.lot.gate_entry.company|default:"—" }}</div>
+      <div class="entry-company">{{ row.lot.gate_entry.vendor|default:"—" }}</div>
       <div class="entry-meta">
         <span>📐 {{ row.lot.grade }}</span>
         <span>📏 {{ row.lot.size }} mm</span>
-        {% if row.lot.vendor %}<span>🏭 {{ row.lot.vendor }}</span>{% endif %}
+        {% if row.lot.company %}<span>🏭 {{ row.lot.company }}</span>{% endif %}
         <span>⚖️ {{ row.lot.gate_entry.weight_per_coil }} kg / coil</span>
       </div>
     </div>

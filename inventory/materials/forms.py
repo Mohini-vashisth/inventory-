@@ -6,15 +6,22 @@ from .models import GateEntry, GateEntryLot, Material, GradeOption, SizeOption, 
 class GateEntryForm(forms.ModelForm):
     class Meta:
         model = GateEntry
-        fields = ['date', 'company', 'vehicle_no', 'bill_no', 'invoice_no', 'total_weight']
+        fields = ['date', 'vendor', 'vehicle_no', 'bill_no', 'invoice_no', 'total_weight']
+
+    def clean_vehicle_no(self):
+        """The form already forces uppercase and the standard plate layout
+        as the employee types — this is just a safety net for anything
+        submitted without JS (a direct API call, JS disabled, etc.)."""
+        vehicle_no = self.cleaned_data['vehicle_no']
+        return vehicle_no.upper() if vehicle_no else vehicle_no
 
 
 class GateEntryLotForm(forms.Form):
-    """A single lot row — vendor/grade/size/no_of_coils. Used both as a
+    """A single lot row — company/grade/size/no_of_coils. Used both as a
     standalone form (adding one more lot to an existing gate entry) and,
     via GateEntryLotFormSet, as a repeatable row on the gate entry creation
-    page so a mixed-grade/size truck can be logged in one submission."""
-    vendor = forms.CharField(max_length=50, required=False)
+    page so a mixed-brand/grade/size truck can be logged in one submission."""
+    company = forms.CharField(max_length=100, required=False)
     grade = forms.CharField(max_length=10)
     size = forms.DecimalField(max_digits=10, decimal_places=3)
     no_of_coils = forms.IntegerField(min_value=1)

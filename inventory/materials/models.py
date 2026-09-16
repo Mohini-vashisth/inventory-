@@ -8,13 +8,14 @@ from django.utils import timezone
 
 class GateEntry(models.Model):
     """One truck's delivery, logged from its invoice before any coil is
-    individually registered. A single truck can carry a mixed load — a
-    handful of coils at one grade/size, a few more at another — so the
-    per-grade/size breakdown lives on GateEntryLot, not here. total_weight
-    is the invoice figure for the *entire* delivery, used only to compute a
-    rough average weight per coil across every lot."""
+    individually registered. `vendor` is the raw-material supplier who
+    delivered the truck — one per delivery. A single truck can carry a
+    mixed load of different coil brands though, so `company` (the brand of
+    the coil, e.g. the mill) lives on GateEntryLot instead, not here.
+    total_weight is the invoice figure for the *entire* delivery, used only
+    to compute a rough average weight per coil across every lot."""
     date = models.DateField(default=timezone.now)
-    company = models.CharField(max_length=100, null=True, blank=True)
+    vendor = models.CharField(max_length=50, null=True, blank=True)
     vehicle_no = models.CharField(max_length=20, null=True, blank=True)
     bill_no = models.CharField(max_length=30, null=True, blank=True)
     invoice_no = models.CharField(max_length=30, null=True, blank=True)
@@ -51,12 +52,13 @@ class GateEntry(models.Model):
 
 
 class GateEntryLot(models.Model):
-    """One grade/size batch within a gate entry — e.g. 'lot 1: 3 coils of
-    EN8D 1.2mm from Vendor A', 'lot 2: 2 coils of SAE1008 6mm from Vendor B',
-    both delivered on the same truck. Vendor lives here, not on GateEntry —
-    a single truck can carry material sourced from more than one vendor."""
+    """One brand/grade/size batch within a gate entry — e.g. 'lot 1: 3 coils
+    of Tata Steel EN8D 1.2mm', 'lot 2: 2 coils of JSW SAE1008 6mm', both
+    delivered on the same truck by the same vendor (see GateEntry.vendor).
+    `company` (the coil's brand/mill) lives here rather than on GateEntry —
+    a single delivery can carry more than one brand."""
     gate_entry = models.ForeignKey(GateEntry, on_delete=models.CASCADE, related_name='lots')
-    vendor = models.CharField(max_length=50, null=True, blank=True)
+    company = models.CharField(max_length=100, null=True, blank=True)
     grade = models.CharField(max_length=10, null=True, blank=True)
     size = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     no_of_coils = models.PositiveIntegerField()
