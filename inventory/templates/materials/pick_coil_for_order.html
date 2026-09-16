@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pick Coil for Order</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: linear-gradient(135deg, #4e73df, #1cc88a);
+    min-height: 100vh;
+    padding: 2rem 1rem;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+  }
+
+  .page { width: 100%; max-width: 480px; }
+
+  .back-link {
+    color: rgba(255,255,255,0.8); text-decoration: none;
+    font-size: 0.9rem; display: inline-block; margin-bottom: 1.25rem;
+  }
+  .back-link:hover { color: white; }
+
+  h1 { color: white; font-size: 1.5rem; margin-bottom: 0.3rem; }
+  .subtitle { color: rgba(255,255,255,0.75); font-size: 0.88rem; margin-bottom: 1.25rem; }
+
+  .banner {
+    background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 10px; padding: 0.75rem 1.1rem; margin-bottom: 1.25rem;
+    color: white; font-size: 0.88rem;
+    display: flex; gap: 1.25rem; flex-wrap: wrap;
+  }
+  .banner strong { font-weight: 700; }
+
+  .card {
+    background: white; border-radius: 16px;
+    padding: 1.75rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  }
+
+  .form-group { margin-bottom: 1.1rem; }
+
+  label {
+    display: block;
+    font-size: 0.72rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    color: #666; margin-bottom: 0.35rem;
+  }
+
+  input[type="number"] {
+    width: 100%; padding: 0.6rem 0.85rem;
+    border: 1px solid #ddd; border-radius: 8px;
+    font-size: 16px; color: #333;
+  }
+  input:focus { outline: none; border-color: #4e73df; }
+  input[readonly] { background: #f8f9fb; color: #888; }
+
+  .btn-submit {
+    width: 100%; padding: 0.8rem;
+    background: #4e73df; color: white;
+    border: none; border-radius: 8px;
+    font-size: 1rem; font-weight: 600; cursor: pointer;
+    margin-top: 0.5rem;
+  }
+  .btn-submit:hover { background: #3a5ec0; }
+
+  .error-msg {
+    background: #fee2e2; color: #991b1b;
+    padding: 0.6rem 0.9rem; border-radius: 8px;
+    font-size: 0.87rem; margin-bottom: 1rem;
+  }
+
+  .blocked-banner {
+    background: #fee2e2; border: 1px solid #fca5a5; border-radius: 12px;
+    padding: 1rem 1.5rem; margin-bottom: 1.25rem;
+    color: #991b1b; font-weight: 600; text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <a href="{% url 'select_coil_for_order' order.pk %}" class="back-link">← Back to order</a>
+  <h1>Pick Coil</h1>
+  <p class="subtitle">Allocate {{ coil.formatted_coil }} to ORD-{{ order.order_no|stringformat:"04d" }}</p>
+
+  <div class="banner">
+    <span><strong>{{ order.customer.name }}</strong> — {{ order.product_type.item_code|default:"no product type" }}</span>
+    <span>{{ coil.grade|default:"—" }}, {{ coil.size|default:"—" }} mm</span>
+    <span>⚖️ {{ coil_remaining|floatformat:1 }} / {{ coil_total|floatformat:1 }} kg left on coil</span>
+  </div>
+
+  {% if blocked %}
+  <div class="blocked-banner">
+    {% if archived %}
+      🗄️ This coil is archived and can't be picked.
+    {% elif exhausted %}
+      🗄️ This coil has no weight remaining.
+    {% elif not matches_specs %}
+      ⚠️ This coil's grade/size doesn't match this order's allowed raw material.
+    {% elif fully_picked %}
+      ✅ This order's raw material requirement has already been fully picked.
+    {% elif not order.product_type %}
+      ⚠️ This order has no product type set — ask admin to configure one first.
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="card" {% if blocked %}style="opacity:0.5; pointer-events:none;"{% endif %}>
+    {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+    <form method="POST">
+      {% csrf_token %}
+
+      <div class="form-group">
+        <label>Weight to Allocate (kg)</label>
+        <input type="number" name="weight_allocated" step="0.001"
+               value="{{ suggested_weight|floatformat:3 }}"
+               max="{{ coil_remaining|floatformat:3 }}"
+               {% if not blocked %}required{% endif %}>
+      </div>
+
+      <button type="submit" class="btn-submit">Confirm Pick →</button>
+    </form>
+  </div>
+</div>
+
+</body>
+</html>

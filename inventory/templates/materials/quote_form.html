@@ -97,7 +97,7 @@
             <option value="">— select if known —</option>
             {% for pt in product_types %}
             <option value="{{ pt.pk }}" {% if post.product_type == pt.pk|stringformat:"s" %}selected{% endif %}>
-              {{ pt.name }}
+              {{ pt.item_code }}
             </option>
             {% endfor %}
           </select>

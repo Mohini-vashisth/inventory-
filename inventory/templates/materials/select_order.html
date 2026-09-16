@@ -77,8 +77,8 @@
 <body>
 <div class="page">
 
-  <h1>Create New Part</h1>
-  <p class="subtitle">Select the order you are cutting this part for</p>
+  <h1>Pick Coils for Order</h1>
+  <p class="subtitle">Select the order you are picking raw material for</p>
 
   <!-- In Production -->
   <div class="section-title">
@@ -87,12 +87,12 @@
   {% for order in in_progress %}
   <a href="{% url 'select_coil_for_order' order.pk %}" class="order-card">
     <div class="order-left">
-      <div class="order-no">ORD-{{ order.pk|stringformat:"04d" }}</div>
+      <div class="order-no">ORD-{{ order.order_no|stringformat:"04d" }}</div>
       <div class="order-company">{{ order.customer.name }}</div>
       <div class="order-meta">
         {% if order.grade %}<span>📐 {{ order.grade }}</span>{% endif %}
         {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
-        {% if order.product_type %}<span>🔧 {{ order.product_type.name }}</span>{% endif %}
+        {% if order.product_type %}<span>🔧 {{ order.product_type.item_code }}</span>{% endif %}
       </div>
       {% if not order.product_type %}
       <div class="no-product-type">⚠ No product type set — admin needs to assign one</div>
@@ -118,12 +118,12 @@
   {% for order in not_started %}
   <a href="{% url 'select_coil_for_order' order.pk %}" class="order-card">
     <div class="order-left">
-      <div class="order-no">ORD-{{ order.pk|stringformat:"04d" }}</div>
+      <div class="order-no">ORD-{{ order.order_no|stringformat:"04d" }}</div>
       <div class="order-company">{{ order.customer.name }}</div>
       <div class="order-meta">
         {% if order.grade %}<span>📐 {{ order.grade }}</span>{% endif %}
         {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
-        {% if order.product_type %}<span>🔧 {{ order.product_type.name }}</span>{% endif %}
+        {% if order.product_type %}<span>🔧 {{ order.product_type.item_code }}</span>{% endif %}
       </div>
       {% if not order.product_type %}
       <div class="no-product-type">⚠ No product type set — admin needs to assign one</div>

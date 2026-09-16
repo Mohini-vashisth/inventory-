@@ -225,11 +225,6 @@
       </div>
 
       <div class="form-group">
-        <label>Bill No.</label>
-        <input type="text" name="bill_no" value="{{ post.bill_no|default:'' }}" placeholder="e.g. BL-2026-0042">
-      </div>
-
-      <div class="form-group">
         <label>Invoice No.</label>
         <input type="text" name="invoice_no" value="{{ post.invoice_no|default:'' }}" placeholder="e.g. INV-2026-0042">
       </div>
@@ -337,26 +332,13 @@
     dateInput.value = new Date().toISOString().split('T')[0];
   }
 
-  // Vehicle No. — always uppercase, and forced into the standard Indian
-  // plate layout as you type: 2 letters, 2 numbers, 2 letters, 4 numbers
-  // (e.g. AP16TA1234). A typed character that doesn't fit the next slot's
-  // type (letter vs. number) is dropped rather than accepted out of order,
-  // so a stray keystroke can't shift everything after it.
-  var VEHICLE_NO_PATTERN = ['L', 'L', 'N', 'N', 'L', 'L', 'N', 'N', 'N', 'N'];
+  // Vehicle No. — always uppercase, letters/digits only. Indian plates vary
+  // too much in segment length (RTO code can be 1-4 digits, series 1-4
+  // letters, etc.) to force a fixed slot-by-slot layout — that rejected
+  // valid real plates, so this only normalizes case/characters and leaves
+  // the actual layout up to the employee.
   function formatVehicleNo(raw) {
-    raw = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    var result = '';
-    var slot = 0;
-    for (var i = 0; i < raw.length && slot < VEHICLE_NO_PATTERN.length; i++) {
-      var ch = raw[i];
-      var wantsLetter = VEHICLE_NO_PATTERN[slot] === 'L';
-      var isLetter = /[A-Z]/.test(ch);
-      if (wantsLetter === isLetter) {
-        result += ch;
-        slot++;
-      }
-    }
-    return result;
+    return raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
   }
   var vehicleNoInput = document.getElementById('vehicle-no-input');
   vehicleNoInput.value = formatVehicleNo(vehicleNoInput.value);

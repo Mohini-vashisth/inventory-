@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
-from .models import GateEntry, GateEntryLot, Material, CoilPart, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
+from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
 
 
 class GateEntryLotInline(admin.TabularInline):
@@ -21,11 +21,11 @@ class GateEntryLotInline(admin.TabularInline):
 @admin.register(GateEntry)
 class GateEntryAdmin(admin.ModelAdmin):
     list_display = [
-        'id', 'date', 'vehicle_no', 'vendor', 'bill_no', 'invoice_no',
+        'id', 'date', 'vehicle_no', 'vendor', 'invoice_no',
         'total_weight', 'no_of_coils', 'weight_per_coil', 'coils_registered', 'status_badge',
     ]
     list_filter = ['vendor']
-    search_fields = ['vehicle_no', 'vendor', 'bill_no', 'invoice_no']
+    search_fields = ['vehicle_no', 'vendor', 'invoice_no']
     ordering = ['-created_at']
     inlines = [GateEntryLotInline]
 
@@ -84,7 +84,7 @@ class ProcessStepInline(admin.TabularInline):
 class AllowedCoilSpecInline(admin.TabularInline):
     model = AllowedCoilSpec
     extra = 2
-    fields = ['grade', 'size', 'notes']
+    fields = ['grade', 'size', 'raw_material_ratio', 'notes']
     verbose_name = "Allowed Coil Spec"
     verbose_name_plural = "Allowed Coil Specs (leave empty to allow all coils)"
 
@@ -94,8 +94,8 @@ class AllowedCoilSpecInline(admin.TabularInline):
 @admin.register(ProductType)
 class ProductTypeAdmin(admin.ModelAdmin):
     inlines = [ProcessStepInline, AllowedCoilSpecInline]
-    list_display = ['name', 'grade', 'size', 'step_count', 'allowed_spec_summary']
-    fields = ['name', 'grade', 'size', 'description']
+    list_display = ['item_code', 'grade', 'size', 'step_count', 'allowed_spec_summary']
+    fields = ['item_code', 'grade', 'size', 'description']
 
     def step_count(self, obj):
         return obj.steps.count()
@@ -109,13 +109,15 @@ class ProductTypeAdmin(admin.ModelAdmin):
     allowed_spec_summary.short_description = 'Allowed Coils'
 
 
-# ── CoilPart ─────────────────────────────────────────────────
+# ── OrderCoilPick ────────────────────────────────────────────
 
-@admin.register(CoilPart)
-class CoilPartAdmin(admin.ModelAdmin):
-    list_display = ['part_no', 'coil', 'weight', 'length', 'cut_date', 'job_count']
-    list_filter = ['cut_date']
-    search_fields = ['part_no', 'coil__coil_no']
+@admin.register(OrderCoilPick)
+class OrderCoilPickAdmin(admin.ModelAdmin):
+    """Created only through the employee coil-picking flow — this is a
+    read view of that history, not a manual-entry screen."""
+    list_display = ['coil', 'order', 'weight_allocated', 'picked_at', 'job_count']
+    list_filter = ['picked_at']
+    search_fields = ['coil__coil_no', 'order__customer__name']
 
     def job_count(self, obj):
         return obj.jobs.count()
@@ -143,14 +145,14 @@ class ProductionJobAdmin(admin.ModelAdmin):
     list_display = [
         'job_no',
         'coil_link',
-        'part_link',
+        'order',
         'product_type',
         'progress_bar',
         'status_badge',
         'created_at',
     ]
     list_filter  = ['status', 'product_type', 'created_at']
-    search_fields = ['job_no', 'part__part_no', 'part__coil__coil_no']
+    search_fields = ['job_no', 'pick__coil__coil_no']
     readonly_fields = ['job_no', 'progress_bar', 'status_badge', 'created_at', 'updated_at']
     inlines = [StepLogInline]
 
@@ -170,15 +172,10 @@ class ProductionJobAdmin(admin.ModelAdmin):
         queryset.update(status='on_hold')
     mark_on_hold.short_description = 'Mark selected jobs as on hold'
     def coil_link(self, obj):
-        coil = obj.part.coil
+        coil = obj.pick.coil
         url = reverse('admin:materials_material_change', args=[coil.pk])
         return format_html('<a href="{}">{}</a>', url, coil.formatted_coil())
     coil_link.short_description = 'Coil'
-
-    def part_link(self, obj):
-        url = reverse('admin:materials_coilpart_change', args=[obj.part.pk])
-        return format_html('<a href="{}">{}</a>', url, obj.part.part_no)
-    part_link.short_description = 'Part'
 
     def progress_bar(self, obj):
         steps = list(obj.product_type.steps.all())  # uses prefetch
@@ -252,7 +249,7 @@ class ProductionJobAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ('Job info', {
-            'fields': ('job_no', 'part', 'product_type', 'created_at', 'updated_at')
+            'fields': ('job_no', 'pick', 'order', 'product_type', 'created_at', 'updated_at')
         }),
         ('Status', {
             'fields': ('status', 'progress_bar', 'notes')
@@ -347,7 +344,7 @@ class MaterialAdmin(admin.ModelAdmin):
     list_display = [
         'formatted_coil', 'date', 'grade', 'size',
         'company', 'vendor', 'quantity', 'invoice_weight', 'heat_no', 'lot',
-        'parts_count', 'weight_remaining', 'status_badge', 'archived_badge',
+        'picks_count', 'weight_remaining', 'status_badge', 'archived_badge',
     ]
     list_filter   = ['grade', 'size', 'company', UsedStatusFilter, ArchivedFilter]
     search_fields = ['coil_no', 'heat_no', 'vendor', 'company', 'lot__gate_entry__vehicle_no']
@@ -356,13 +353,13 @@ class MaterialAdmin(admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).annotate(
-            _weight_used=Coalesce(Sum('parts__weight'), Value(Decimal('0')), output_field=DecimalField())
+            _weight_used=Coalesce(Sum('order_picks__weight_allocated'), Value(Decimal('0')), output_field=DecimalField())
                          + F('legacy_used_weight'),
-        ).select_related('lot__gate_entry').prefetch_related('parts')
+        ).select_related('lot__gate_entry').prefetch_related('order_picks')
 
-    def parts_count(self, obj):
-        return obj.parts.count()
-    parts_count.short_description = 'Parts'
+    def picks_count(self, obj):
+        return obj.order_picks.count()
+    picks_count.short_description = 'Picks'
 
     def weight_remaining(self, obj):
         if not obj.quantity:
@@ -431,7 +428,7 @@ class CustomerAdmin(admin.ModelAdmin):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display  = ['order_no', 'customer', 'grade', 'quantity', 'delivery_form', 'frequency', 'delivery_date', 'status_badge', 'created_at']
+    list_display  = ['order_number', 'customer', 'grade', 'quantity', 'delivery_form', 'frequency', 'delivery_date', 'status_badge', 'created_at']
     list_filter   = ['status', 'delivery_form', 'frequency', 'customer']
     search_fields = ['customer__name', 'grade', 'mill_make']
     ordering      = ['-created_at']
@@ -447,9 +444,9 @@ class OrderAdmin(admin.ModelAdmin):
         }),
     )
 
-    def order_no(self, obj):
-        return f'ORD-{obj.pk:04d}'
-    order_no.short_description = 'Order #'
+    def order_number(self, obj):
+        return f'ORD-{obj.order_no:04d}'
+    order_number.short_description = 'Order #'
 
     def status_badge(self, obj):
         colors = {

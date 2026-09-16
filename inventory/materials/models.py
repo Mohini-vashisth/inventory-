@@ -3,6 +3,8 @@ from decimal import Decimal
 
 from django.db import models
 from django.contrib.auth.models import User
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.utils import timezone
 
 
@@ -17,7 +19,6 @@ class GateEntry(models.Model):
     date = models.DateField(default=timezone.now)
     vendor = models.CharField(max_length=50, null=True, blank=True)
     vehicle_no = models.CharField(max_length=20, null=True, blank=True)
-    bill_no = models.CharField(max_length=30, null=True, blank=True)
     invoice_no = models.CharField(max_length=30, null=True, blank=True)
     total_weight = models.DecimalField(max_digits=10, decimal_places=3)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -110,20 +111,21 @@ class Material(models.Model):
         return f"COIL{self.coil_no:04d}"
 
     def weight_used(self):
-        """Total weight used: parts cut via the app, plus legacy_used_weight for
-        usage that happened before this coil was tracked in the app. Single
-        source of truth — admin, the REST API, and the part-cutting form all
-        call this rather than each computing their own aggregate.
+        """Total weight used: weight allocated to orders via picks, plus
+        legacy_used_weight for usage that happened before this coil was
+        tracked in the app. Single source of truth — admin, the REST API,
+        and the coil-picking flow all call this rather than each computing
+        their own aggregate.
 
-        If the caller prefetched `parts` (e.g. .prefetch_related('parts') on a
+        If the caller prefetched `order_picks` (e.g. .prefetch_related on a
         list), sum over the already-fetched rows instead of issuing a fresh
         aggregate query per coil — .aggregate() always hits the DB, bypassing
         the prefetch cache, which turned every coil list into an N+1."""
-        if 'parts' in getattr(self, '_prefetched_objects_cache', {}):
-            parts_total = sum((p.weight or Decimal('0') for p in self.parts.all()), Decimal('0'))
+        if 'order_picks' in getattr(self, '_prefetched_objects_cache', {}):
+            picks_total = sum((p.weight_allocated or Decimal('0') for p in self.order_picks.all()), Decimal('0'))
         else:
-            parts_total = self.parts.aggregate(total=models.Sum('weight'))['total'] or Decimal('0')
-        return parts_total + self.legacy_used_weight
+            picks_total = self.order_picks.aggregate(total=models.Sum('weight_allocated'))['total'] or Decimal('0')
+        return picks_total + self.legacy_used_weight
 
     def weight_remaining(self):
         if not self.quantity:
@@ -141,20 +143,6 @@ class Material(models.Model):
 
     def __str__(self):
         return self.formatted_coil()
-
-
-class CoilPart(models.Model):
-    """One physical piece cut from a coil."""
-    coil = models.ForeignKey(Material, on_delete=models.CASCADE, related_name='parts')
-    part_no = models.CharField(max_length=20, unique=True)  # e.g. COIL0001-A
-    weight = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
-    length = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
-    cut_date = models.DateField(null=True, blank=True)
-    notes = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return self.part_no
 
 
 class GradeOption(models.Model):
@@ -179,7 +167,7 @@ class ProductType(models.Model):
     A grade/size combination identifies exactly one product type — the two
     can't be reused across different product types.
     """
-    name        = models.CharField(max_length=100)
+    item_code   = models.CharField(max_length=100, verbose_name="Item Code")
     grade       = models.CharField(max_length=20, blank=True, verbose_name="Grade")
     size        = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Size (mm)")
     description = models.TextField(blank=True)
@@ -188,7 +176,7 @@ class ProductType(models.Model):
         unique_together = ['grade', 'size']
 
     def __str__(self):
-        return self.name
+        return self.item_code
 
 
 class AllowedCoilSpec(models.Model):
@@ -196,13 +184,21 @@ class AllowedCoilSpec(models.Model):
     product_type = models.ForeignKey(ProductType, on_delete=models.CASCADE, related_name='allowed_specs')
     grade = models.CharField(max_length=10, blank=True, verbose_name="Grade")
     size  = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Size (mm)")
+    raw_material_ratio = models.DecimalField(
+        max_digits=6, decimal_places=3, default=Decimal('1.000'),
+        verbose_name="Raw material ratio",
+        help_text="kg of this raw material needed to produce 1 kg of finished "
+                  "product (e.g. 1.100 = 10% wastage). Used to convert an "
+                  "order's required quantity into how much of this raw "
+                  "material needs to be picked.",
+    )
     notes = models.CharField(max_length=100, blank=True)
 
     def __str__(self):
         parts = []
         if self.grade: parts.append(self.grade)
         if self.size:  parts.append(f"{self.size} mm")
-        return f"{self.product_type.name} — {' / '.join(parts) or 'Any'}"
+        return f"{self.product_type.item_code} — {' / '.join(parts) or 'Any'}"
 
 
 class ProcessStep(models.Model):
@@ -216,11 +212,42 @@ class ProcessStep(models.Model):
         unique_together = ['product_type', 'order']
 
     def __str__(self):
-        return f"{self.product_type.name} — Step {self.order}: {self.name}"
+        return f"{self.product_type.item_code} — Step {self.order}: {self.name}"
+
+
+class OrderCoilPick(models.Model):
+    """One coil scanned/picked against an order's raw-material requirement.
+    A coil isn't necessarily fully consumed by one order — weight_allocated
+    can be less than the coil's full remaining weight, leaving the rest
+    available for other orders, the same way coil weight tracking already
+    works. Material.weight_used() sums these the same way it used to sum
+    cut-part weights."""
+    order = models.ForeignKey('Order', on_delete=models.CASCADE, related_name='coil_picks')
+    coil = models.ForeignKey(Material, on_delete=models.PROTECT, related_name='order_picks')
+    weight_allocated = models.DecimalField(max_digits=10, decimal_places=3)
+    picked_at = models.DateTimeField(auto_now_add=True)
+
+    def output_equivalent(self):
+        """weight_allocated converted into finished-product terms, using the
+        raw_material_ratio of whichever AllowedCoilSpec matches this coil's
+        grade/size under the order's product type. Falls back to 1:1 if no
+        spec matches (e.g. the product type has no specs configured)."""
+        ratio = Decimal('1')
+        if self.order.product_type:
+            for spec in self.order.product_type.allowed_specs.all():
+                grade_matches = not spec.grade or spec.grade.lower() == (self.coil.grade or '').lower()
+                size_matches = not spec.size or spec.size == self.coil.size
+                if grade_matches and size_matches:
+                    ratio = spec.raw_material_ratio
+                    break
+        return self.weight_allocated / ratio
+
+    def __str__(self):
+        return f"{self.coil.formatted_coil()} → {self.order}"
 
 
 class ProductionJob(models.Model):
-    """Links a coil part to a product type and tracks overall status."""
+    """Links a picked coil to a product type and tracks overall status."""
     STATUS_CHOICES = [
         ('pending',     'Pending'),
         ('in_progress', 'In Progress'),
@@ -228,9 +255,9 @@ class ProductionJob(models.Model):
         ('completed',   'Completed'),
     ]
 
-    part         = models.ForeignKey(CoilPart, on_delete=models.CASCADE, related_name='jobs')
+    pick         = models.ForeignKey(OrderCoilPick, on_delete=models.CASCADE, related_name='jobs')
     product_type = models.ForeignKey(ProductType, on_delete=models.PROTECT)
-    order        = models.ForeignKey('Order', on_delete=models.SET_NULL, null=True, blank=True, related_name='jobs')
+    order        = models.ForeignKey('Order', on_delete=models.CASCADE, related_name='jobs')
     job_no       = models.CharField(max_length=30, unique=True)   # e.g. JOB-0001
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -325,6 +352,13 @@ class Order(models.Model):
         ('as_required','As Required'),
     ]
 
+    order_no = models.PositiveIntegerField(
+        unique=True, editable=False, null=True,
+        help_text="Displayed as ORD-####. Assigned sequentially on creation and "
+                  "kept gap-free — deleting an order renumbers every order after "
+                  "it down by one (see the post_delete receiver below), unlike "
+                  "coil_no/job_no which are never reused.",
+    )
     customer              = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='orders')
     product_type          = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Type")
     # 1. Drawing / dimensions
@@ -352,5 +386,37 @@ class Order(models.Model):
     status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
     created_at    = models.DateTimeField(auto_now_add=True)
 
+    def save(self, *args, **kwargs):
+        if self.order_no is None:
+            max_no = Order.objects.aggregate(models.Max('order_no'))['order_no__max'] or 0
+            self.order_no = max_no + 1
+        super().save(*args, **kwargs)
+
     def __str__(self):
-        return f"ORD-{self.pk:04d} | {self.customer.name}"
+        return f"ORD-{self.order_no:04d} | {self.customer.name}"
+
+    def picked_output_weight(self):
+        """Sum of every coil pick's output_equivalent() — how much of this
+        order's required quantity has been covered so far."""
+        return sum((pick.output_equivalent() for pick in self.coil_picks.all()), Decimal('0'))
+
+    def is_fully_picked(self):
+        return self.picked_output_weight() >= self.quantity
+
+
+@receiver(post_delete, sender=Order)
+def _close_order_number_gap(sender, instance, **kwargs):
+    """Deleting an order (a mistaken entry, test data, etc.) must not leave a
+    permanent hole in the numbering — unlike coil_no/job_no, which are never
+    reused because they may already be on a physical tag, an order number is
+    just an internal reference nobody prints ahead of time. Renumbers every
+    remaining order sequentially from 1, so gaps never persist.
+
+    Processing in ascending order_no and assigning targets 1, 2, 3... is safe
+    against the unique constraint: each target slot was either the original
+    gap or was just vacated by the previous row in this same loop, so it's
+    always free by the time it's claimed. Runs once per deleted row even in a
+    bulk delete — redundant but harmless at this app's order volumes."""
+    for i, order in enumerate(Order.objects.order_by('order_no'), start=1):
+        if order.order_no != i:
+            Order.objects.filter(pk=order.pk).update(order_no=i)

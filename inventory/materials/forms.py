@@ -6,12 +6,12 @@ from .models import GateEntry, GateEntryLot, Material, GradeOption, SizeOption, 
 class GateEntryForm(forms.ModelForm):
     class Meta:
         model = GateEntry
-        fields = ['date', 'vendor', 'vehicle_no', 'bill_no', 'invoice_no', 'total_weight']
+        fields = ['date', 'vendor', 'vehicle_no', 'invoice_no', 'total_weight']
 
     def clean_vehicle_no(self):
-        """The form already forces uppercase and the standard plate layout
-        as the employee types — this is just a safety net for anything
-        submitted without JS (a direct API call, JS disabled, etc.)."""
+        """The form already forces uppercase as the employee types — this is
+        just a safety net for anything submitted without JS (a direct API
+        call, JS disabled, etc.)."""
         vehicle_no = self.cleaned_data['vehicle_no']
         return vehicle_no.upper() if vehicle_no else vehicle_no
 

@@ -16,8 +16,8 @@ from rest_framework.test import APIClient
 
 from .forms import MaterialForm
 from .models import (
-    AllowedCoilSpec, CoilPart, Customer, GateEntry, GateEntryLot, GradeOption, Material, Order,
-    ProcessStep, ProductionJob, ProductType, SizeOption, StepLog,
+    AllowedCoilSpec, Customer, GateEntry, GateEntryLot, GradeOption, Material, Order,
+    OrderCoilPick, ProcessStep, ProductionJob, ProductType, SizeOption, StepLog,
 )
 
 
@@ -175,7 +175,7 @@ class OrderApiTests(TestCase):
         self.client = APIClient()
         self.staff = User.objects.create_user('api_staff', password='pw', is_staff=True)
         self.customer = Customer.objects.create(name='Acme Corp')
-        self.product_type = ProductType.objects.create(name='Bar', grade='EN8D', size='1.200')
+        self.product_type = ProductType.objects.create(item_code='Bar', grade='EN8D', size='1.200')
         self.order = Order.objects.create(
             customer=self.customer, product_type=self.product_type,
             quantity=250, status='in_production',
@@ -214,13 +214,13 @@ class OrderApiTests(TestCase):
         """weight_cut used to run a fresh aggregate per order (N+1) — the
         viewset now annotates it on the queryset instead. Query count for the
         list endpoint should stay flat as the number of orders grows."""
-        job_product_type = ProductType.objects.create(name='Jobbed', grade='EN8D', size='2.5')
+        job_product_type = ProductType.objects.create(item_code='Jobbed', grade='EN8D', size='2.5')
         for i in range(5):
             order = Order.objects.create(customer=self.customer, quantity=10, status='pending')
             coil = Material.objects.create(quantity=50)
-            part = CoilPart.objects.create(coil=coil, part_no=f'QCOUNT-{i}', weight=20)
+            pick = OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=20)
             ProductionJob.objects.create(
-                part=part, product_type=job_product_type, job_no=f'QJOB-{i}', order=order,
+                pick=pick, product_type=job_product_type, job_no=f'QJOB-{i}', order=order,
             )
         self.client.force_authenticate(user=self.staff)
 
@@ -236,9 +236,11 @@ class CoilApiTests(TestCase):
         self.staff = User.objects.create_user('api_staff2', password='pw', is_staff=True)
 
     def test_remaining_filter_excludes_exhausted_coils_and_keeps_untouched_ones(self):
+        customer = Customer.objects.create(name='Coil Api Co')
+        order = Order.objects.create(customer=customer, quantity=100)
         untouched = Material.objects.create(quantity=500, grade='EN8D', size='1.2')
         exhausted = Material.objects.create(quantity=100, grade='EN8D', size='1.2')
-        CoilPart.objects.create(coil=exhausted, part_no='EX-A', weight=100)
+        OrderCoilPick.objects.create(order=order, coil=exhausted, weight_allocated=100)
 
         self.client.force_authenticate(user=self.staff)
         response = self.client.get('/api/coils/?remaining=true')
@@ -249,15 +251,17 @@ class CoilApiTests(TestCase):
 
     def test_weight_used_does_not_grow_query_count_with_more_coils(self):
         """weight_used()/weight_remaining() used to run a fresh aggregate per
-        coil (N+1) even though the viewset prefetches parts — .aggregate()
-        bypasses the prefetch cache. weight_used() now sums over the
-        prefetched rows instead, so query count stays flat as coils grow."""
+        coil (N+1) even though the viewset prefetches order_picks —
+        .aggregate() bypasses the prefetch cache. weight_used() now sums over
+        the prefetched rows instead, so query count stays flat as coils grow."""
+        customer = Customer.objects.create(name='Coil Api Co 2')
+        order = Order.objects.create(customer=customer, quantity=100)
         for i in range(5):
             coil = Material.objects.create(quantity=100, heat_no=f'QCOUNT{i}')
-            CoilPart.objects.create(coil=coil, part_no=f'QCOUNT-{i}-A', weight=30)
+            OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=30)
         self.client.force_authenticate(user=self.staff)
 
-        with self.assertNumQueries(3):  # pagination count + the list query + one prefetch of all parts
+        with self.assertNumQueries(3):  # pagination count + the list query + one prefetch of all picks
             response = self.client.get('/api/coils/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.data['results']), 5)
@@ -267,15 +271,15 @@ class ProductTypeAndJobApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.staff = User.objects.create_user('api_staff3', password='pw', is_staff=True)
-        self.product_type = ProductType.objects.create(name='API Bar', grade='EN8D', size='1.200')
+        self.product_type = ProductType.objects.create(item_code='API Bar', grade='EN8D', size='1.200')
         ProcessStep.objects.create(product_type=self.product_type, name='Cutting', order=1)
         coil = Material.objects.create(quantity=500)
         self.order = Order.objects.create(
             customer=Customer.objects.create(name='API Job Co'), quantity=100, status='in_production',
         )
-        self.part = CoilPart.objects.create(coil=coil, part_no='APIJOB-A', weight=50)
+        self.pick = OrderCoilPick.objects.create(order=self.order, coil=coil, weight_allocated=50)
         self.job = ProductionJob.objects.create(
-            part=self.part, product_type=self.product_type, job_no='API-JOB-0001',
+            pick=self.pick, product_type=self.product_type, job_no='API-JOB-0001',
             order=self.order, status='in_progress',
         )
 
@@ -287,9 +291,10 @@ class ProductTypeAndJobApiTests(TestCase):
         self.assertEqual(row['steps'][0]['name'], 'Cutting')
 
     def test_job_status_filter(self):
-        other_job_part = CoilPart.objects.create(coil=self.part.coil, part_no='APIJOB-B', weight=50)
+        other_pick = OrderCoilPick.objects.create(order=self.order, coil=self.pick.coil, weight_allocated=50)
         other = ProductionJob.objects.create(
-            part=other_job_part, product_type=self.product_type, job_no='API-JOB-0002', status='completed',
+            pick=other_pick, product_type=self.product_type, job_no='API-JOB-0002',
+            order=self.order, status='completed',
         )
         self.client.force_authenticate(user=self.staff)
         response = self.client.get('/api/jobs/?status=completed')
@@ -300,24 +305,28 @@ class ProductTypeAndJobApiTests(TestCase):
         other_order = Order.objects.create(
             customer=self.order.customer, quantity=10, status='in_production',
         )
-        other_job_part = CoilPart.objects.create(coil=self.part.coil, part_no='APIJOB-C', weight=50)
+        other_pick = OrderCoilPick.objects.create(order=other_order, coil=self.pick.coil, weight_allocated=50)
         ProductionJob.objects.create(
-            part=other_job_part, product_type=self.product_type, job_no='API-JOB-0003', order=other_order,
+            pick=other_pick, product_type=self.product_type, job_no='API-JOB-0003', order=other_order,
         )
         self.client.force_authenticate(user=self.staff)
         response = self.client.get(f'/api/jobs/?order={self.order.pk}')
         ids = [row['id'] for row in response.data['results']]
         self.assertEqual(ids, [self.job.pk])
 
-    def test_job_serializer_includes_coil_and_part_info(self):
+    def test_job_serializer_includes_coil_and_weight_info(self):
         self.client.force_authenticate(user=self.staff)
         response = self.client.get(f'/api/jobs/{self.job.pk}/')
-        self.assertEqual(response.data['part_no'], 'APIJOB-A')
-        self.assertEqual(response.data['coil_no'], self.part.coil.formatted_coil())
+        self.assertEqual(response.data['coil_no'], self.pick.coil.formatted_coil())
+        self.assertEqual(Decimal(response.data['weight_allocated']), Decimal('50.000'))
 
 
 class MaterialUsedStatusTests(TestCase):
-    """A coil is 'used' once every kg of it has been cut into parts."""
+    """A coil is 'used' once every kg of it has been picked for orders."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(name='Used Status Co')
+        self.order = Order.objects.create(customer=self.customer, quantity=1000)
 
     def test_untouched_coil_is_unused(self):
         coil = Material.objects.create(quantity=500)
@@ -327,40 +336,40 @@ class MaterialUsedStatusTests(TestCase):
 
     def test_partially_cut_coil_is_still_unused(self):
         coil = Material.objects.create(quantity=500)
-        CoilPart.objects.create(coil=coil, part_no='PARTIAL-A', weight=200)
+        OrderCoilPick.objects.create(order=self.order, coil=coil, weight_allocated=200)
         self.assertFalse(coil.is_used_up())
         self.assertEqual(coil.weight_remaining(), 300)
 
     def test_fully_cut_coil_is_used(self):
         coil = Material.objects.create(quantity=500)
-        CoilPart.objects.create(coil=coil, part_no='FULL-A', weight=300)
-        CoilPart.objects.create(coil=coil, part_no='FULL-B', weight=200)
+        OrderCoilPick.objects.create(order=self.order, coil=coil, weight_allocated=300)
+        OrderCoilPick.objects.create(order=self.order, coil=coil, weight_allocated=200)
         self.assertTrue(coil.is_used_up())
         self.assertEqual(coil.weight_remaining(), 0)
 
     def test_legacy_used_weight_counts_toward_usage(self):
         """Usage recorded before this coil was tracked in the app (imported
         from the spreadsheet's ISSUED QTY columns) counts the same as weight
-        cut through the app."""
+        picked through the app."""
         coil = Material.objects.create(quantity=500, legacy_used_weight=200)
         self.assertEqual(coil.weight_used(), 200)
         self.assertEqual(coil.weight_remaining(), 300)
         self.assertFalse(coil.is_used_up())
 
-        CoilPart.objects.create(coil=coil, part_no='LEGACY-A', weight=300)
+        OrderCoilPick.objects.create(order=self.order, coil=coil, weight_allocated=300)
         self.assertEqual(coil.weight_used(), 500)
         self.assertTrue(coil.is_used_up())
 
     def test_coil_with_no_quantity_on_file_is_not_marked_used(self):
         """No quantity means unknown, not used — mirrors the existing
-        'exhausted' check elsewhere in the app (coil_parts view)."""
+        'exhausted' check elsewhere in the app (pick_coil_for_order view)."""
         coil = Material.objects.create(quantity=None)
         self.assertFalse(coil.is_used_up())
 
     def test_admin_list_shows_correct_status_badge(self):
         staff = User.objects.create_user('used_status_admin', password='pw', is_staff=True, is_superuser=True)
         used = Material.objects.create(quantity=100, heat_no='USEDH01')
-        CoilPart.objects.create(coil=used, part_no='BADGE-A', weight=100)
+        OrderCoilPick.objects.create(order=self.order, coil=used, weight_allocated=100)
         unused = Material.objects.create(quantity=100, heat_no='UNUSEDH1')
 
         self.client.force_login(staff)
@@ -385,7 +394,7 @@ class MaterialUsedStatusTests(TestCase):
     def test_admin_filter_by_used_status(self):
         staff = User.objects.create_user('used_status_admin2', password='pw', is_staff=True, is_superuser=True)
         used = Material.objects.create(quantity=100, heat_no='FILTUSED')
-        CoilPart.objects.create(coil=used, part_no='FILTER-A', weight=100)
+        OrderCoilPick.objects.create(order=self.order, coil=used, weight_allocated=100)
         unused = Material.objects.create(quantity=100, heat_no='FILTUNUSD')
 
         self.client.force_login(staff)
@@ -461,17 +470,21 @@ class MaterialArchivingTests(TestCase):
         self.assertIn(active.pk, coil_ids)
         self.assertEqual(len(coil_ids), 1)
 
-    def test_cannot_cut_a_part_from_an_archived_coil(self):
+    def test_cannot_pick_an_archived_coil(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         coil = Material.objects.create(quantity=500, archived_at=timezone.now())
-        product_type = ProductType.objects.create(name='Bar', grade='EN8D', size='1.200')
+        product_type = ProductType.objects.create(item_code='Bar', grade='EN8D', size='1.200')
+        customer = Customer.objects.create(name='Archive Pick Co')
+        order = Order.objects.create(
+            customer=customer, product_type=product_type, quantity=100, status='confirmed',
+        )
 
         response = self.client.post(
-            reverse('coil_parts', kwargs={'coil_pk': coil.pk}),
-            {'suffix': 'A', 'weight': '10', 'product_type': str(product_type.pk)},
+            reverse('pick_coil_for_order', kwargs={'order_pk': order.pk, 'coil_pk': coil.pk}),
+            {'weight_allocated': '10'},
         )
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(CoilPart.objects.filter(coil=coil).count(), 0)
+        self.assertEqual(OrderCoilPick.objects.filter(coil=coil).count(), 0)
 
     def test_api_excludes_archived_by_default(self):
         staff = User.objects.create_user('archive_api_staff', password='pw', is_staff=True)
@@ -495,14 +508,14 @@ class ProductTypeUniquenessTests(TestCase):
     """A grade/size combination identifies exactly one product type."""
 
     def test_duplicate_grade_and_size_rejected(self):
-        ProductType.objects.create(name='Bar A', grade='EN8D', size='1.200')
+        ProductType.objects.create(item_code='Bar A', grade='EN8D', size='1.200')
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
-                ProductType.objects.create(name='Bar B', grade='EN8D', size='1.200')
+                ProductType.objects.create(item_code='Bar B', grade='EN8D', size='1.200')
 
     def test_same_grade_different_size_allowed(self):
-        ProductType.objects.create(name='Bar A', grade='EN8D', size='1.200')
-        ProductType.objects.create(name='Bar B', grade='EN8D', size='1.500')
+        ProductType.objects.create(item_code='Bar A', grade='EN8D', size='1.200')
+        ProductType.objects.create(item_code='Bar B', grade='EN8D', size='1.500')
         self.assertEqual(ProductType.objects.filter(grade='EN8D').count(), 2)
 
 
@@ -858,13 +871,84 @@ class GateEntryDetailTests(TestCase):
         response = self.client.get(reverse('gate_entry_detail', args=[self.gate_entry.pk]))
         self.assertContains(response, "No lots added yet")
 
-    def test_bill_and_invoice_no_shown_when_present(self):
-        self.gate_entry.bill_no = 'BL-0042'
+    def test_invoice_no_shown_when_present(self):
         self.gate_entry.invoice_no = 'INV-0042'
         self.gate_entry.save()
         response = self.client.get(reverse('gate_entry_detail', args=[self.gate_entry.pk]))
-        self.assertContains(response, 'BL-0042')
         self.assertContains(response, 'INV-0042')
+
+    def test_edit_link_shown(self):
+        response = self.client.get(reverse('gate_entry_detail', args=[self.gate_entry.pk]))
+        self.assertContains(response, reverse('gate_entry_edit', args=[self.gate_entry.pk]))
+
+
+class GateEntryEditTests(TestCase):
+    """Fixing a mistake in a gate entry's top-level details after it's
+    already been saved — allowed regardless of whether coils have already
+    been registered against its lots, since these fields are just
+    paper/reference details."""
+
+    def setUp(self):
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.gate_entry = GateEntry.objects.create(
+            date='2026-07-01', vendor='ABC Traders', vehicle_no='AP16TA1234',
+            invoice_no='INV-0001', total_weight=1000,
+        )
+
+    def test_requires_employee_login(self):
+        self.client.post(reverse('employee_logout'))
+        response = self.client.get(reverse('gate_entry_edit', args=[self.gate_entry.pk]))
+        self.assertRedirects(
+            response,
+            f"{reverse('employee_login')}?next={reverse('gate_entry_edit', args=[self.gate_entry.pk])}",
+        )
+
+    def test_get_prefills_existing_values(self):
+        response = self.client.get(reverse('gate_entry_edit', args=[self.gate_entry.pk]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'ABC Traders')
+        self.assertContains(response, 'AP16TA1234')
+        self.assertContains(response, 'INV-0001')
+
+    def test_valid_edit_updates_and_redirects_to_detail(self):
+        response = self.client.post(
+            reverse('gate_entry_edit', args=[self.gate_entry.pk]),
+            {
+                'date': '2026-07-02', 'vendor': 'XYZ Traders', 'vehicle_no': 'ka1a1234',
+                'invoice_no': 'INV-0002', 'total_weight': '1500.000',
+            },
+        )
+        self.assertRedirects(response, reverse('gate_entry_detail', args=[self.gate_entry.pk]))
+        self.gate_entry.refresh_from_db()
+        self.assertEqual(self.gate_entry.vendor, 'XYZ Traders')
+        self.assertEqual(self.gate_entry.vehicle_no, 'KA1A1234')  # server-side uppercase safety net
+        self.assertEqual(self.gate_entry.invoice_no, 'INV-0002')
+        self.assertEqual(self.gate_entry.total_weight, Decimal('1500.000'))
+
+    def test_edit_allowed_even_after_coils_registered(self):
+        lot = GateEntryLot.objects.create(
+            gate_entry=self.gate_entry, company='Tata Steel', grade='EN8D', size='1.200', no_of_coils=1,
+        )
+        Material.objects.create(lot=lot, quantity=500)
+        response = self.client.post(
+            reverse('gate_entry_edit', args=[self.gate_entry.pk]),
+            {
+                'date': '2026-07-02', 'vendor': 'XYZ Traders', 'vehicle_no': 'AP16TA1234',
+                'invoice_no': 'INV-0002', 'total_weight': '1500.000',
+            },
+        )
+        self.assertRedirects(response, reverse('gate_entry_detail', args=[self.gate_entry.pk]))
+        self.gate_entry.refresh_from_db()
+        self.assertEqual(self.gate_entry.vendor, 'XYZ Traders')
+
+    def test_invalid_edit_shows_error_and_does_not_save(self):
+        response = self.client.post(
+            reverse('gate_entry_edit', args=[self.gate_entry.pk]),
+            {'date': '2026-07-02', 'vendor': 'XYZ Traders', 'total_weight': 'not-a-number'},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.gate_entry.refresh_from_db()
+        self.assertEqual(self.gate_entry.vendor, 'ABC Traders')  # unchanged
 
 
 class GateEntryLotDeleteTests(TestCase):
@@ -1041,8 +1125,8 @@ class EmployeeLoginRedirectTests(TestCase):
         self.assertEqual(response.url, reverse('select_gate_entry'))
 
 
-class CoilPartsCreationTests(TestCase):
-    """Creating a part must be all-or-nothing: never a CoilPart with no job."""
+class OrderCoilPickCreationTests(TestCase):
+    """Picking a coil must be all-or-nothing: never an OrderCoilPick with no job."""
 
     def setUp(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
@@ -1050,73 +1134,69 @@ class CoilPartsCreationTests(TestCase):
             date='2026-07-01', grade='EN8D', size='1.2',
             company='Tata Steel', vendor='ABC Traders', quantity=500, heat_no='H001',
         )
-        self.product_type = ProductType.objects.create(name='Bar 1.2mm', grade='EN8D', size='1.2')
+        self.product_type = ProductType.objects.create(item_code='Bar 1.2mm', grade='EN8D', size='1.2')
         ProcessStep.objects.create(product_type=self.product_type, name='Cutting', order=1)
         ProcessStep.objects.create(product_type=self.product_type, name='Heat treat', order=2)
-
-    def test_invalid_product_type_creates_nothing(self):
-        response = self.client.post(
-            reverse('coil_parts', kwargs={'coil_pk': self.coil.pk}),
-            {'suffix': 'A', 'weight': '10', 'product_type': '9999'},
+        self.customer = Customer.objects.create(name='Pick Test Co')
+        self.order = Order.objects.create(
+            customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed',
         )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(CoilPart.objects.filter(coil=self.coil).count(), 0)
 
-    def test_valid_product_type_creates_part_and_job(self):
+    def test_order_without_product_type_creates_nothing(self):
+        order = Order.objects.create(customer=self.customer, quantity=100, status='confirmed')
         response = self.client.post(
-            reverse('coil_parts', kwargs={'coil_pk': self.coil.pk}),
-            {'suffix': 'A', 'weight': '10', 'product_type': str(self.product_type.pk)},
+            reverse('pick_coil_for_order', kwargs={'order_pk': order.pk, 'coil_pk': self.coil.pk}),
+            {'weight_allocated': '10'},
         )
         self.assertEqual(response.status_code, 302)
-        part = CoilPart.objects.get(coil=self.coil)
-        job = ProductionJob.objects.get(part=part)
-        self.assertEqual(job.step_logs.count(), 2)
+        self.assertEqual(OrderCoilPick.objects.filter(coil=self.coil).count(), 0)
 
-    def test_empty_product_type_shows_error_instead_of_crashing(self):
-        """An unselected <select> submits product_type='' — must not raise ValueError."""
+    def test_valid_pick_creates_pick_and_job(self):
         response = self.client.post(
-            reverse('coil_parts', kwargs={'coil_pk': self.coil.pk}),
-            {'suffix': 'A', 'weight': '10', 'product_type': ''},
+            reverse('pick_coil_for_order', kwargs={'order_pk': self.order.pk, 'coil_pk': self.coil.pk}),
+            {'weight_allocated': '10'},
         )
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Please select a valid product type.")
-        self.assertEqual(CoilPart.objects.filter(coil=self.coil).count(), 0)
+        self.assertEqual(response.status_code, 302)
+        pick = OrderCoilPick.objects.get(coil=self.coil)
+        self.assertEqual(pick.weight_allocated, Decimal('10'))
+        job = ProductionJob.objects.get(pick=pick)
+        self.assertEqual(job.step_logs.count(), 2)
 
     def test_non_numeric_weight_shows_error_instead_of_crashing(self):
         response = self.client.post(
-            reverse('coil_parts', kwargs={'coil_pk': self.coil.pk}),
-            {'suffix': 'A', 'weight': 'not-a-number', 'product_type': str(self.product_type.pk)},
+            reverse('pick_coil_for_order', kwargs={'order_pk': self.order.pk, 'coil_pk': self.coil.pk}),
+            {'weight_allocated': 'not-a-number'},
         )
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Weight must be a number.")
-        self.assertEqual(CoilPart.objects.filter(coil=self.coil).count(), 0)
+        self.assertContains(response, "Enter a valid weight to allocate.")
+        self.assertEqual(OrderCoilPick.objects.filter(coil=self.coil).count(), 0)
 
     def test_weight_exceeding_remaining_shows_error_instead_of_crashing(self):
         response = self.client.post(
-            reverse('coil_parts', kwargs={'coil_pk': self.coil.pk}),
-            {'suffix': 'A', 'weight': '600', 'product_type': str(self.product_type.pk)},  # coil is 500kg
+            reverse('pick_coil_for_order', kwargs={'order_pk': self.order.pk, 'coil_pk': self.coil.pk}),
+            {'weight_allocated': '600'},  # coil is 500kg
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "exceeds the remaining coil weight")
-        self.assertEqual(CoilPart.objects.filter(coil=self.coil).count(), 0)
+        self.assertEqual(OrderCoilPick.objects.filter(coil=self.coil).count(), 0)
 
-    def test_concurrent_cut_overshooting_remaining_weight_rolls_back(self):
+    def test_concurrent_pick_overshooting_remaining_weight_rolls_back(self):
         """Two requests can both pass the initial "remaining" check against a
         stale read before either has written anything. weight_used() is called
-        again after the part is inserted — simulate a second, already-committed
-        cut showing up between those two calls and confirm the whole write
-        (part + job + step logs) rolls back instead of over-cutting the coil."""
+        again after the pick is inserted — simulate a second, already-committed
+        pick showing up between those two calls and confirm the whole write
+        (pick + job + step logs) rolls back instead of over-allocating the coil."""
         with patch.object(
             Material, 'weight_used',
             side_effect=[Decimal('50'), Decimal('600')],  # under, then over quantity=500
         ):
             response = self.client.post(
-                reverse('coil_parts', kwargs={'coil_pk': self.coil.pk}),
-                {'suffix': 'A', 'weight': '400', 'product_type': str(self.product_type.pk)},
+                reverse('pick_coil_for_order', kwargs={'order_pk': self.order.pk, 'coil_pk': self.coil.pk}),
+                {'weight_allocated': '400'},
             )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Reload the page and try again")
-        self.assertEqual(CoilPart.objects.filter(coil=self.coil).count(), 0)
+        self.assertEqual(OrderCoilPick.objects.filter(coil=self.coil).count(), 0)
         self.assertEqual(ProductionJob.objects.count(), 0)
 
 
@@ -1126,11 +1206,13 @@ class JobStepUnlockTests(TestCase):
     def setUp(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         coil = Material.objects.create(quantity=500)
-        part = CoilPart.objects.create(coil=coil, part_no='COIL0001-A', weight=10)
-        product_type = ProductType.objects.create(name='Bar 1.2mm')
+        customer = Customer.objects.create(name='Job Step Unlock Co')
+        order = Order.objects.create(customer=customer, quantity=10)
+        pick = OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=10)
+        product_type = ProductType.objects.create(item_code='Bar 1.2mm')
         self.step1 = ProcessStep.objects.create(product_type=product_type, name='Cutting', order=1)
         self.step2 = ProcessStep.objects.create(product_type=product_type, name='Heat treat', order=2)
-        self.job = ProductionJob.objects.create(part=part, product_type=product_type, job_no='JOB-0001')
+        self.job = ProductionJob.objects.create(pick=pick, product_type=product_type, job_no='JOB-0001', order=order)
 
     def test_cannot_complete_step2_before_step1(self):
         self.client.post(
@@ -1161,11 +1243,13 @@ class JobStatusRollupTests(TestCase):
 
     def setUp(self):
         coil = Material.objects.create(quantity=500)
-        part = CoilPart.objects.create(coil=coil, part_no='COIL0001-A', weight=10)
-        self.product_type = ProductType.objects.create(name='Bar 1.2mm')
+        customer = Customer.objects.create(name='Job Status Rollup Co')
+        order = Order.objects.create(customer=customer, quantity=10)
+        pick = OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=10)
+        self.product_type = ProductType.objects.create(item_code='Bar 1.2mm')
         self.step1 = ProcessStep.objects.create(product_type=self.product_type, name='Cutting', order=1)
         self.step2 = ProcessStep.objects.create(product_type=self.product_type, name='Heat treat', order=2)
-        self.job = ProductionJob.objects.create(part=part, product_type=self.product_type, job_no='JOB-0001')
+        self.job = ProductionJob.objects.create(pick=pick, product_type=self.product_type, job_no='JOB-0001', order=order)
 
     def test_no_logs_is_pending(self):
         self.job.recalculate_status()
@@ -1254,6 +1338,69 @@ class JobStatusRollupTests(TestCase):
         self.assertEqual(self.job.status, 'pending')  # back to no logs at all
 
 
+class OrderNumberingTests(TestCase):
+    """order_no is assigned sequentially and kept gap-free — deleting an
+    order renumbers every order after it down by one, unlike coil_no/job_no
+    which are never reused (see the post_delete receiver in models.py)."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(name='Numbering Test Co')
+
+    def test_order_no_assigned_sequentially(self):
+        first = Order.objects.create(customer=self.customer, quantity=10)
+        second = Order.objects.create(customer=self.customer, quantity=10)
+        third = Order.objects.create(customer=self.customer, quantity=10)
+        self.assertEqual([first.order_no, second.order_no, third.order_no], [1, 2, 3])
+
+    def test_deleting_middle_order_renumbers_later_ones_down(self):
+        first = Order.objects.create(customer=self.customer, quantity=10)
+        second = Order.objects.create(customer=self.customer, quantity=10)
+        third = Order.objects.create(customer=self.customer, quantity=10)
+
+        second.delete()
+
+        first.refresh_from_db()
+        third.refresh_from_db()
+        self.assertEqual(first.order_no, 1)
+        self.assertEqual(third.order_no, 2)  # was 3, shifted down to close the gap
+
+    def test_deleting_last_order_leaves_earlier_ones_unchanged(self):
+        first = Order.objects.create(customer=self.customer, quantity=10)
+        second = Order.objects.create(customer=self.customer, quantity=10)
+
+        second.delete()
+
+        first.refresh_from_db()
+        self.assertEqual(first.order_no, 1)
+
+    def test_next_order_after_a_delete_continues_from_the_compacted_sequence(self):
+        first = Order.objects.create(customer=self.customer, quantity=10)
+        second = Order.objects.create(customer=self.customer, quantity=10)
+        second.delete()
+
+        third = Order.objects.create(customer=self.customer, quantity=10)
+        self.assertEqual(third.order_no, 2)  # fills the slot vacated by the delete
+
+    def test_bulk_delete_still_compacts_correctly(self):
+        orders = [Order.objects.create(customer=self.customer, quantity=10) for _ in range(5)]
+        Order.objects.filter(pk__in=[orders[1].pk, orders[3].pk]).delete()  # delete #2 and #4
+
+        remaining_order_nos = sorted(
+            Order.objects.filter(pk__in=[o.pk for o in orders if o.pk not in (orders[1].pk, orders[3].pk)])
+            .values_list('order_no', flat=True)
+        )
+        self.assertEqual(remaining_order_nos, [1, 2, 3])
+
+    def test_str_shows_order_no_not_pk(self):
+        """A gap from an earlier delete means order_no and pk can diverge —
+        the display string must use order_no."""
+        first = Order.objects.create(customer=self.customer, quantity=10)
+        first.delete()
+        second = Order.objects.create(customer=self.customer, quantity=10)
+        self.assertNotEqual(second.pk, second.order_no)
+        self.assertIn(f'ORD-{second.order_no:04d}', str(second))
+
+
 class OrderWorkflowTests(TestCase):
     def setUp(self):
         self.staff = User.objects.create_user('staff', password='pw', is_staff=True)
@@ -1268,7 +1415,7 @@ class OrderWorkflowTests(TestCase):
 
     def test_confirm_dispatch_reject_ignore_get_requests(self):
         """A bare GET must never confirm/dispatch/reject an order (CSRF via link/image)."""
-        product_type = ProductType.objects.create(name='Bar', grade='EN8D', size='1.200')
+        product_type = ProductType.objects.create(item_code='Bar', grade='EN8D', size='1.200')
         order = Order.objects.create(
             customer=self.customer, quantity=100, status='pending', product_type=product_type,
         )
@@ -1412,14 +1559,14 @@ class EmployeePortalPageTests(TestCase):
 
     def test_production_board_shows_only_in_production_orders(self):
         customer = Customer.objects.create(name='Board Co')
-        product_type = ProductType.objects.create(name='Bar', grade='EN8D', size='1.200')
+        product_type = ProductType.objects.create(item_code='Bar', grade='EN8D', size='1.200')
         step = ProcessStep.objects.create(product_type=product_type, name='Cutting', order=1)
 
         in_prod_order = Order.objects.create(customer=customer, quantity=10, status='in_production')
         coil = Material.objects.create(quantity=500)
-        part = CoilPart.objects.create(coil=coil, part_no='BOARD-A', weight=10)
+        pick = OrderCoilPick.objects.create(order=in_prod_order, coil=coil, weight_allocated=10)
         ProductionJob.objects.create(
-            part=part, product_type=product_type, job_no='BOARD-JOB-1', order=in_prod_order,
+            pick=pick, product_type=product_type, job_no='BOARD-JOB-1', order=in_prod_order,
         )
         Order.objects.create(customer=customer, quantity=10, status='confirmed')  # not shown
 
@@ -1437,7 +1584,7 @@ class SelectCoilForOrderSpecFilterTests(TestCase):
     def setUp(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         self.customer = Customer.objects.create(name='Spec Test Co')
-        self.product_type = ProductType.objects.create(name='Spec Bar', grade='X', size='9.999')
+        self.product_type = ProductType.objects.create(item_code='Spec Bar', grade='X', size='9.999')
         AllowedCoilSpec.objects.create(product_type=self.product_type, grade='EN8D', size='1.200')
         self.order = Order.objects.create(
             customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed',
@@ -1451,6 +1598,140 @@ class SelectCoilForOrderSpecFilterTests(TestCase):
         coil_ids = [c['coil'].pk for c in response.context['coils']]
         self.assertEqual(coil_ids, [matching.pk])
         self.assertNotIn(non_matching.pk, coil_ids)
+
+
+class OrderCoilPickRatioTests(TestCase):
+    """A pick's output_equivalent() converts raw material weight into
+    finished-product terms via the matching AllowedCoilSpec's ratio, and
+    Order.picked_output_weight()/is_fully_picked() roll that up per order."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(name='Ratio Test Co')
+        self.product_type = ProductType.objects.create(item_code='Ratio Bar', grade='X', size='9.999')
+
+    def _coil(self, **kwargs):
+        """Freshly re-fetched so DecimalField values (size) come back as
+        Decimal rather than the raw string just assigned in memory —
+        matches how the real views always read coils (via a DB lookup)."""
+        coil = Material.objects.create(**kwargs)
+        return Material.objects.get(pk=coil.pk)
+
+    def test_output_equivalent_uses_matching_spec_ratio(self):
+        """1.100 ratio = 10% wastage: 110kg of raw material yields 100kg of output."""
+        AllowedCoilSpec.objects.create(
+            product_type=self.product_type, grade='EN8D', size='1.200',
+            raw_material_ratio=Decimal('1.100'),
+        )
+        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
+        coil = self._coil(quantity=500, grade='EN8D', size='1.200')
+        pick = OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=Decimal('110'))
+        self.assertEqual(pick.output_equivalent(), Decimal('100'))
+
+    def test_output_equivalent_falls_back_to_1to1_with_no_matching_spec(self):
+        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
+        coil = self._coil(quantity=500, grade='UNLISTED', size='9.000')
+        pick = OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=Decimal('50'))
+        self.assertEqual(pick.output_equivalent(), Decimal('50'))
+
+    def test_picked_output_weight_sums_across_picks_and_specs(self):
+        AllowedCoilSpec.objects.create(
+            product_type=self.product_type, grade='EN8D', size='1.200',
+            raw_material_ratio=Decimal('1.100'),
+        )
+        AllowedCoilSpec.objects.create(
+            product_type=self.product_type, grade='SAE1008', size='6.000',
+            raw_material_ratio=Decimal('1.000'),
+        )
+        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=150)
+        coil_a = self._coil(quantity=500, grade='EN8D', size='1.200')
+        coil_b = self._coil(quantity=500, grade='SAE1008', size='6.000')
+        OrderCoilPick.objects.create(order=order, coil=coil_a, weight_allocated=Decimal('110'))  # → 100 output
+        OrderCoilPick.objects.create(order=order, coil=coil_b, weight_allocated=Decimal('50'))   # → 50 output
+        self.assertEqual(order.picked_output_weight(), Decimal('150'))
+        self.assertTrue(order.is_fully_picked())
+
+    def test_not_fully_picked_until_requirement_met(self):
+        AllowedCoilSpec.objects.create(
+            product_type=self.product_type, grade='EN8D', size='1.200',
+            raw_material_ratio=Decimal('1.000'),
+        )
+        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
+        coil = self._coil(quantity=500, grade='EN8D', size='1.200')
+        OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=Decimal('40'))
+        self.assertFalse(order.is_fully_picked())
+
+
+class ScanCoilForOrderTests(TestCase):
+    """The picking hub accepts a scanned/typed coil number and either routes
+    to the pick-confirm screen or shows an inline error — the same checks
+    the browse list already filters coils by."""
+
+    def setUp(self):
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.customer = Customer.objects.create(name='Scan Test Co')
+        self.product_type = ProductType.objects.create(item_code='Scan Bar', grade='X', size='9.999')
+        AllowedCoilSpec.objects.create(product_type=self.product_type, grade='EN8D', size='1.200')
+        self.order = Order.objects.create(
+            customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed',
+        )
+
+    def test_scanning_formatted_tag_text_redirects_to_pick_screen(self):
+        coil = Material.objects.create(quantity=500, grade='EN8D', size='1.200')
+        response = self.client.post(
+            reverse('select_coil_for_order', kwargs={'order_pk': self.order.pk}),
+            {'coil_no': coil.formatted_coil()},
+        )
+        self.assertRedirects(
+            response, reverse('pick_coil_for_order', kwargs={'order_pk': self.order.pk, 'coil_pk': coil.pk}),
+        )
+
+    def test_scanning_bare_number_also_works(self):
+        coil = Material.objects.create(quantity=500, grade='EN8D', size='1.200')
+        response = self.client.post(
+            reverse('select_coil_for_order', kwargs={'order_pk': self.order.pk}),
+            {'coil_no': str(coil.pk)},
+        )
+        self.assertRedirects(
+            response, reverse('pick_coil_for_order', kwargs={'order_pk': self.order.pk, 'coil_pk': coil.pk}),
+        )
+
+    def test_unknown_coil_number_shows_error(self):
+        response = self.client.post(
+            reverse('select_coil_for_order', kwargs={'order_pk': self.order.pk}),
+            {'coil_no': 'COIL9999'},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Coil not found")
+
+    def test_mismatched_spec_coil_shows_error(self):
+        coil = Material.objects.create(quantity=500, grade='SAE1008', size='6.000')
+        response = self.client.post(
+            reverse('select_coil_for_order', kwargs={'order_pk': self.order.pk}),
+            {'coil_no': coil.formatted_coil()},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "doesn&#x27;t match")
+
+    def test_archived_coil_shows_error(self):
+        coil = Material.objects.create(
+            quantity=500, grade='EN8D', size='1.200', archived_at=timezone.now(),
+        )
+        response = self.client.post(
+            reverse('select_coil_for_order', kwargs={'order_pk': self.order.pk}),
+            {'coil_no': coil.formatted_coil()},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "archived")
+
+    def test_exhausted_coil_shows_error(self):
+        coil = Material.objects.create(quantity=100, grade='EN8D', size='1.200')
+        OrderCoilPick.objects.create(order=self.order, coil=coil, weight_allocated=100)
+        response = self.client.post(
+            reverse('select_coil_for_order', kwargs={'order_pk': self.order.pk}),
+            {'coil_no': coil.formatted_coil()},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "no weight remaining")
 
 
 class OrderDashboardTests(TestCase):

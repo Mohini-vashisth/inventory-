@@ -284,7 +284,7 @@
                 <option value="">— select product type —</option>
                 {% for pt in product_types %}
                 <option value="{{ pt.pk }}" {% if post.product_type == pt.pk|stringformat:"s" %}selected{% endif %}>
-                  {{ pt.name }}
+                  {{ pt.item_code }}
                 </option>
                 {% endfor %}
               </select>
@@ -410,11 +410,11 @@
       <tbody>
         {% for order in orders %}
         <tr>
-          <td class="muted" style="font-family:monospace;">ORD-{{ order.pk|stringformat:"04d" }}</td>
+          <td class="muted" style="font-family:monospace;">ORD-{{ order.order_no|stringformat:"04d" }}</td>
           <td style="font-weight:600;">{{ order.customer.name }}</td>
           <td>
             {% if order.product_type %}
-              <span style="font-size:0.82rem; font-weight:600; color:#4e73df;">{{ order.product_type.name }}</span>
+              <span style="font-size:0.82rem; font-weight:600; color:#4e73df;">{{ order.product_type.item_code }}</span>
             {% else %}
               <span style="color:#f59e0b; font-size:0.78rem;">⚠ Not set</span>
             {% endif %}
@@ -424,7 +424,7 @@
             {{ order.quantity }}
             {% if order.weight_cut %}
             <br><span style="font-size:0.75rem; color:{% if order.weight_cut >= order.quantity %}#166534{% else %}#f59e0b{% endif %};">
-              ✂ {{ order.weight_cut|floatformat:1 }} kg cut
+              📦 {{ order.weight_cut|floatformat:1 }} kg picked
             </span>
             {% endif %}
           </td>
@@ -467,14 +467,14 @@
               <div class="detail-item">
                 <strong>Weight Reconciliation</strong>
                 {% if order.weight_cut %}
-                  {{ order.weight_cut|floatformat:2 }} / {{ order.quantity }} kg cut
+                  {{ order.weight_cut|floatformat:2 }} / {{ order.quantity }} kg picked
                   {% if order.weight_cut >= order.quantity %}
                     <span style="color:#166534; font-weight:600;"> ✓ Fulfilled</span>
                   {% else %}
                     <span style="color:#f59e0b; font-weight:600;"> ⚠ {{ order.quantity|add:"-0"|floatformat:2 }} kg needed</span>
                   {% endif %}
                 {% else %}
-                  No parts cut yet
+                  No coils picked yet
                 {% endif %}
               </div>
               <div class="detail-item"><strong>Notes</strong>{{ order.notes|default:"—" }}</div>

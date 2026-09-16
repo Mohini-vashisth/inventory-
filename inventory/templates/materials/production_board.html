@@ -122,10 +122,10 @@
   <div class="order-card">
     <div class="order-header">
       <div class="order-meta">
-        <div class="order-no">ORD-{{ order.pk|stringformat:"04d" }}</div>
+        <div class="order-no">ORD-{{ order.order_no|stringformat:"04d" }}</div>
         <div class="order-company">{{ order.customer.name }}</div>
         <div class="order-tags">
-          {% if order.product_type %}<span>🔧 {{ order.product_type.name }}</span>{% endif %}
+          {% if order.product_type %}<span>🔧 {{ order.product_type.item_code }}</span>{% endif %}
           {% if order.grade %}<span>📐 {{ order.grade }}</span>{% endif %}
           {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
         </div>
@@ -148,7 +148,7 @@
     <table>
       <thead>
         <tr>
-          <th>Part</th>
+          <th>Coil</th>
           <th>Weight</th>
           <th>Progress</th>
           <th>Current Step</th>
@@ -158,8 +158,8 @@
       <tbody>
         {% for jd in item.jobs %}
         <tr>
-          <td><span class="part-no">{{ jd.job.part.part_no }}</span></td>
-          <td>{{ jd.job.part.weight|default:"—" }}{% if jd.job.part.weight %} kg{% endif %}</td>
+          <td><span class="part-no">{{ jd.job.pick.coil.formatted_coil }}</span></td>
+          <td>{{ jd.job.pick.weight_allocated|default:"—" }}{% if jd.job.pick.weight_allocated %} kg{% endif %}</td>
           <td>
             <div class="prog-wrap">
               <div class="prog-bg">
@@ -194,7 +194,7 @@
   {% empty %}
   <div class="empty-state">
     No orders are currently in production.<br>
-    <a href="{% url 'select_order' %}">Cut a part</a> to start one.
+    <a href="{% url 'select_order' %}">Pick a coil</a> to start one.
   </div>
   {% endfor %}
 
