@@ -32,6 +32,7 @@ python3 manage.py migrate
 | `DJANGO_SECRET_KEY` | Django secret key. Falls back to an insecure dev-only value if unset, but **raises `ImproperlyConfigured` at startup if `DJANGO_DEBUG=False` and this isn't set** — a misconfigured prod deploy can't silently boot on the known dev key |
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated hostnames/IPs Django will answer to. Required once `DJANGO_DEBUG=False` |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | Comma-separated, full origin with scheme (e.g. `https://quote.mattadrawing.com`). Only needed for a hostname reached through a reverse proxy rather than directly — see the Cloudflare Tunnel section below |
+| `PUBLIC_QUOTE_BASE_URL` | Full origin, no trailing slash (e.g. `https://quote.mattadrawing.com`). The link a quote-request email points to. Admins only ever reach this app over Tailscale, so leaving this unset would put that private address in an email sent to an external customer — see the Cloudflare Tunnel section below |
 | `EMPLOYEE_PIN` | Shared PIN for employee portal (default: `1234`) |
 | `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USE_TLS` | SMTP config |
 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | SMTP credentials — Gmail needs an App Password, not the account password |
@@ -77,7 +78,7 @@ What's actually in place: a **Cloudflare Tunnel** (`cloudflared`, tunnel name `m
 
 DNS: a single CNAME record was added in cPanel — `quote` → `<tunnel-id>.cfargotunnel.com` — **without** moving `mattadrawing.com`'s nameservers to Cloudflare at all. `cfargotunnel.com` is Cloudflare's own domain, so this CNAME works from any DNS provider; the tunnel and its routing are entirely independent of who's authoritative for the rest of the zone. The main website and email records were never touched.
 
-Two settings this depends on (`inventory/settings.py`): `DJANGO_CSRF_TRUSTED_ORIGINS` must include `https://quote.mattadrawing.com` (Cloudflare terminates HTTPS at its edge; without this, the quote form's POST fails CSRF checks), and `SECURE_PROXY_SSL_HEADER` is set to trust Cloudflare's `X-Forwarded-Proto` header so Django knows the original request was HTTPS — this is additive and doesn't affect direct Tailscale access, which never sends that header.
+Three settings this depends on (`inventory/settings.py`): `DJANGO_CSRF_TRUSTED_ORIGINS` must include `https://quote.mattadrawing.com` (Cloudflare terminates HTTPS at its edge; without this, the quote form's POST fails CSRF checks), `SECURE_PROXY_SSL_HEADER` is set to trust Cloudflare's `X-Forwarded-Proto` header so Django knows the original request was HTTPS (additive, doesn't affect direct Tailscale access, which never sends that header), and `PUBLIC_QUOTE_BASE_URL` fixes the link in quote-request emails (`materials/views.py::_dispatch_quote_email`) to always point at `https://quote.mattadrawing.com` regardless of which host the admin happened to be browsing on — without it, `request.build_absolute_uri()` would build the link from the admin's own (Tailscale-only) request host, producing an email link no external customer could ever open. Live-verified 2026-09-15: `quote.mattadrawing.com` reachable end to end (DNS → tunnel → app) from a real external device.
 
 ### Why `db.sqlite3` isn't tracked in git
 
