@@ -548,16 +548,16 @@ class GateEntryFormViewErrorDisplayTests(TestCase):
 
     def test_non_numeric_total_weight_shows_error_and_repopulates_fields(self):
         response = self.client.post(reverse('gate_entry_form'), {
-            'date': '2026-07-06', 'company': 'Tata Steel',
+            'date': '2026-07-06', 'vendor': 'ABC Traders',
             'vehicle_no': 'AP16TA1234', 'total_weight': 'not-a-number',
             'lot-TOTAL_FORMS': '1', 'lot-INITIAL_FORMS': '0',
             'lot-MIN_NUM_FORMS': '0', 'lot-MAX_NUM_FORMS': '1000',
-            'lot-0-vendor': 'ABC Traders', 'lot-0-grade': 'EN8D',
+            'lot-0-company': 'Tata Steel', 'lot-0-grade': 'EN8D',
             'lot-0-size': '1.200', 'lot-0-no_of_coils': '3',
         })
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Enter a number')
-        self.assertContains(response, 'Tata Steel')
+        self.assertContains(response, 'ABC Traders')
         self.assertEqual(GateEntry.objects.count(), 0)
 
 
@@ -571,7 +571,7 @@ class GateEntryLotFormViewErrorDisplayTests(TestCase):
         SizeOption.objects.get_or_create(value='1.200')
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         self.gate_entry = GateEntry.objects.create(
-            company='Tata Steel', vehicle_no='AP16TA1234', total_weight=2500,
+            vendor='ABC Traders', vehicle_no='AP16TA1234', total_weight=2500,
         )
 
     def test_invalid_grade_shows_error_and_repopulates_fields(self):
@@ -592,9 +592,9 @@ class MaterialFormViewErrorDisplayTests(TestCase):
         SizeOption.objects.get_or_create(value='1.200')
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         gate_entry = GateEntry.objects.create(
-            company='Tata Steel', vehicle_no='AP16TA1234', total_weight=2500,
+            vendor='ABC Traders', vehicle_no='AP16TA1234', total_weight=2500,
         )
-        self.lot = GateEntryLot.objects.create(gate_entry=gate_entry, vendor='ABC Traders', grade='EN8D', size='1.200', no_of_coils=5)
+        self.lot = GateEntryLot.objects.create(gate_entry=gate_entry, company='Tata Steel', grade='EN8D', size='1.200', no_of_coils=5)
 
     def test_non_numeric_quantity_shows_error_and_repopulates_fields(self):
         response = self.client.post(reverse('material_form', args=[self.lot.pk]), {
@@ -743,7 +743,7 @@ class GateEntryFormTests(TestCase):
 
     def _post_data(self, lots, **overrides):
         data = {
-            'date': '2026-07-06', 'company': 'Tata Steel',
+            'date': '2026-07-06', 'vendor': 'ABC Traders',
             'vehicle_no': 'AP16TA1234', 'total_weight': '2500.000',
             'lot-TOTAL_FORMS': str(len(lots)), 'lot-INITIAL_FORMS': '0',
             'lot-MIN_NUM_FORMS': '0', 'lot-MAX_NUM_FORMS': '1000',
@@ -756,36 +756,36 @@ class GateEntryFormTests(TestCase):
 
     def test_valid_submission_creates_gate_entry_and_lot_then_redirects_to_detail(self):
         data = self._post_data([
-            {'vendor': 'ABC Traders', 'grade': 'EN8D', 'size': '1.200', 'no_of_coils': '3'},
+            {'company': 'Tata Steel', 'grade': 'EN8D', 'size': '1.200', 'no_of_coils': '3'},
         ])
         response = self.client.post(reverse('gate_entry_form'), data)
         ge = GateEntry.objects.get()
         self.assertRedirects(response, reverse('gate_entry_detail', args=[ge.pk]))
-        self.assertEqual(ge.company, 'Tata Steel')
+        self.assertEqual(ge.vendor, 'ABC Traders')
         self.assertEqual(ge.total_weight, Decimal('2500.000'))
         lot = GateEntryLot.objects.get()
         self.assertEqual(lot.gate_entry, ge)
-        self.assertEqual(lot.vendor, 'ABC Traders')
+        self.assertEqual(lot.company, 'Tata Steel')
         self.assertEqual(lot.no_of_coils, 3)
 
     def test_multiple_lots_created_together(self):
         data = self._post_data([
-            {'vendor': 'ABC Traders', 'grade': 'EN8D', 'size': '1.200', 'no_of_coils': '3'},
-            {'vendor': 'XYZ Traders', 'grade': 'EN8D', 'size': '1.200', 'no_of_coils': '2'},
+            {'company': 'Tata Steel', 'grade': 'EN8D', 'size': '1.200', 'no_of_coils': '3'},
+            {'company': 'JSW', 'grade': 'EN8D', 'size': '1.200', 'no_of_coils': '2'},
         ])
         self.client.post(reverse('gate_entry_form'), data)
         ge = GateEntry.objects.get()
         self.assertEqual(GateEntryLot.objects.filter(gate_entry=ge).count(), 2)
         self.assertEqual(ge.no_of_coils(), 5)
-        vendors = set(GateEntryLot.objects.filter(gate_entry=ge).values_list('vendor', flat=True))
-        self.assertEqual(vendors, {'ABC Traders', 'XYZ Traders'})
+        companies = set(GateEntryLot.objects.filter(gate_entry=ge).values_list('company', flat=True))
+        self.assertEqual(companies, {'Tata Steel', 'JSW'})
 
     def test_invalid_lot_rolls_back_the_whole_submission(self):
         """All-or-nothing: an invalid second lot must not leave a gate entry
         or a valid first lot behind."""
         data = self._post_data([
-            {'vendor': 'ABC Traders', 'grade': 'EN8D', 'size': '1.200', 'no_of_coils': '3'},
-            {'vendor': 'XYZ', 'grade': 'MADE-UP', 'size': '1.200', 'no_of_coils': '2'},
+            {'company': 'Tata Steel', 'grade': 'EN8D', 'size': '1.200', 'no_of_coils': '3'},
+            {'company': 'JSW', 'grade': 'MADE-UP', 'size': '1.200', 'no_of_coils': '2'},
         ])
         response = self.client.post(reverse('gate_entry_form'), data)
         self.assertEqual(response.status_code, 200)
@@ -797,6 +797,18 @@ class GateEntryFormTests(TestCase):
         response = self.client.get(reverse('gate_entry_form'))
         self.assertRedirects(response, f"{reverse('employee_login')}?next={reverse('gate_entry_form')}")
 
+    def test_vehicle_no_is_uppercased_even_if_submitted_lowercase(self):
+        """The form's own JS already forces uppercase as the employee types —
+        this covers anything submitted without it (a direct API call, JS
+        disabled, etc.)."""
+        data = self._post_data(
+            [{'company': 'Tata Steel', 'grade': 'EN8D', 'size': '1.200', 'no_of_coils': '3'}],
+            vehicle_no='ap16ta1234',
+        )
+        self.client.post(reverse('gate_entry_form'), data)
+        ge = GateEntry.objects.get()
+        self.assertEqual(ge.vehicle_no, 'AP16TA1234')
+
 
 class GateEntryLotFormTests(TestCase):
     def setUp(self):
@@ -804,7 +816,7 @@ class GateEntryLotFormTests(TestCase):
         SizeOption.objects.get_or_create(value='1.200')
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         self.gate_entry = GateEntry.objects.create(
-            company='Tata Steel', vehicle_no='AP16TA1234', total_weight=2500,
+            vendor='ABC Traders', vehicle_no='AP16TA1234', total_weight=2500,
         )
 
     def test_valid_submission_creates_lot_and_redirects_to_gate_entry_detail(self):
@@ -832,11 +844,11 @@ class GateEntryDetailTests(TestCase):
     def setUp(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         self.gate_entry = GateEntry.objects.create(
-            company='Tata Steel', vehicle_no='AP16TA1234', total_weight=1000,
+            vendor='ABC Traders', vehicle_no='AP16TA1234', total_weight=1000,
         )
 
     def test_lists_lots_added_so_far(self):
-        lot = GateEntryLot.objects.create(gate_entry=self.gate_entry, vendor='ABC Traders', grade='EN8D', size='1.200', no_of_coils=3)
+        lot = GateEntryLot.objects.create(gate_entry=self.gate_entry, company='Tata Steel', grade='EN8D', size='1.200', no_of_coils=3)
         response = self.client.get(reverse('gate_entry_detail', args=[self.gate_entry.pk]))
         self.assertEqual(response.status_code, 200)
         self.assertEqual([row.pk for row in response.context['lots']], [lot.pk])
@@ -862,10 +874,10 @@ class GateEntryLotDeleteTests(TestCase):
     def setUp(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         self.gate_entry = GateEntry.objects.create(
-            company='Tata Steel', vehicle_no='AP16TA1234', total_weight=1000,
+            vendor='ABC Traders', vehicle_no='AP16TA1234', total_weight=1000,
         )
         self.lot = GateEntryLot.objects.create(
-            gate_entry=self.gate_entry, vendor='ABC Traders', grade='EN8D', size='1.200', no_of_coils=3,
+            gate_entry=self.gate_entry, company='Tata Steel', grade='EN8D', size='1.200', no_of_coils=3,
         )
 
     def test_empty_lot_is_removed_and_redirects_to_detail(self):
@@ -911,9 +923,9 @@ class SelectGateEntryTests(TestCase):
 
 
 class MaterialFormGateEntryTests(TestCase):
-    """New Coil Entry is always scoped to a lot: company/vendor come from
-    the gate entry and grade/size from the lot, all locked; invoice_weight
-    is computed from the gate entry; and the lot caps how many coils can be
+    """New Coil Entry is always scoped to a lot: vendor comes from the gate
+    entry, company/grade/size from the lot, all locked; invoice_weight is
+    computed from the gate entry; and the lot caps how many coils can be
     registered against it."""
 
     def setUp(self):
@@ -921,10 +933,10 @@ class MaterialFormGateEntryTests(TestCase):
         SizeOption.objects.get_or_create(value='1.200')
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         self.gate_entry = GateEntry.objects.create(
-            company='Tata Steel', vehicle_no='AP16TA1234', total_weight=1000,
+            vendor='ABC Traders', vehicle_no='AP16TA1234', total_weight=1000,
         )
         self.lot = GateEntryLot.objects.create(
-            gate_entry=self.gate_entry, vendor='ABC Traders', grade='EN8D', size='1.200', no_of_coils=2,
+            gate_entry=self.gate_entry, company='Tata Steel', grade='EN8D', size='1.200', no_of_coils=2,
         )
 
     def _post_coil(self, lot=None, **overrides):

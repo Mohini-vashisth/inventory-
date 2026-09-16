@@ -213,14 +213,14 @@
 
       <div class="form-group">
         <label>Vehicle No.</label>
-        <input type="text" name="vehicle_no" value="{{ post.vehicle_no|default:'' }}" placeholder="e.g. AP16TA1234">
+        <input type="text" name="vehicle_no" id="vehicle-no-input" value="{{ post.vehicle_no|default:'' }}" placeholder="e.g. AP16TA1234">
       </div>
 
       <div class="form-group">
-        <label>Company</label>
+        <label>Vendor</label>
         <div class="autocomplete-wrapper">
-          <input type="text" name="company" id="company-input" value="{{ post.company|default:'' }}" placeholder="e.g. Tata Steel" autocomplete="off" required>
-          <div class="autocomplete-list" data-field-autocomplete="company"></div>
+          <input type="text" name="vendor" id="vendor-input" value="{{ post.vendor|default:'' }}" placeholder="e.g. ABC Traders" autocomplete="off" required>
+          <div class="autocomplete-list" data-field-autocomplete="vendor"></div>
         </div>
       </div>
 
@@ -265,10 +265,10 @@
               </button>
             </div>
             <div class="form-group">
-              <label>Vendor</label>
+              <label>Company</label>
               <div class="autocomplete-wrapper">
-                <input type="text" name="lot-{{ forloop.counter0 }}-vendor" class="vendor-input" value="{{ lot_form.vendor.value|default:'' }}" placeholder="e.g. ABC Traders" autocomplete="off">
-                <div class="autocomplete-list" data-field-autocomplete="vendor"></div>
+                <input type="text" name="lot-{{ forloop.counter0 }}-company" class="company-input" value="{{ lot_form.company.value|default:'' }}" placeholder="e.g. Tata Steel" autocomplete="off">
+                <div class="autocomplete-list" data-field-autocomplete="company"></div>
               </div>
             </div>
             <div class="form-group">
@@ -337,6 +337,37 @@
     dateInput.value = new Date().toISOString().split('T')[0];
   }
 
+  // Vehicle No. — always uppercase, and forced into the standard Indian
+  // plate layout as you type: 2 letters, 2 numbers, 2 letters, 4 numbers
+  // (e.g. AP16TA1234). A typed character that doesn't fit the next slot's
+  // type (letter vs. number) is dropped rather than accepted out of order,
+  // so a stray keystroke can't shift everything after it.
+  var VEHICLE_NO_PATTERN = ['L', 'L', 'N', 'N', 'L', 'L', 'N', 'N', 'N', 'N'];
+  function formatVehicleNo(raw) {
+    raw = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    var result = '';
+    var slot = 0;
+    for (var i = 0; i < raw.length && slot < VEHICLE_NO_PATTERN.length; i++) {
+      var ch = raw[i];
+      var wantsLetter = VEHICLE_NO_PATTERN[slot] === 'L';
+      var isLetter = /[A-Z]/.test(ch);
+      if (wantsLetter === isLetter) {
+        result += ch;
+        slot++;
+      }
+    }
+    return result;
+  }
+  var vehicleNoInput = document.getElementById('vehicle-no-input');
+  vehicleNoInput.value = formatVehicleNo(vehicleNoInput.value);
+  vehicleNoInput.addEventListener('input', function () {
+    var cursorWasAtEnd = this.selectionEnd === this.value.length;
+    this.value = formatVehicleNo(this.value);
+    if (cursorWasAtEnd) {
+      this.setSelectionRange(this.value.length, this.value.length);
+    }
+  });
+
   var autocompleteUrl = "{% url 'material_field_autocomplete' %}";
 
   // Autosuggest for a free-text input, drawn from values already used in
@@ -392,8 +423,8 @@
     function close_() { list.classList.remove('open'); list.innerHTML = ''; activeIndex = -1; currentItems = []; }
   }
 
-  attachAutocomplete(document.getElementById('company-input'));
-  document.querySelectorAll('.vendor-input').forEach(attachAutocomplete);
+  attachAutocomplete(document.getElementById('vendor-input'));
+  document.querySelectorAll('.company-input').forEach(attachAutocomplete);
 
   var activeLotIndex = null;
 
@@ -515,10 +546,10 @@
           '</button>' +
         '</div>' +
         '<div class="form-group">' +
-          '<label>Vendor</label>' +
+          '<label>Company</label>' +
           '<div class="autocomplete-wrapper">' +
-            '<input type="text" name="lot-' + index + '-vendor" class="vendor-input" placeholder="e.g. ABC Traders" autocomplete="off">' +
-            '<div class="autocomplete-list" data-field-autocomplete="vendor"></div>' +
+            '<input type="text" name="lot-' + index + '-company" class="company-input" placeholder="e.g. Tata Steel" autocomplete="off">' +
+            '<div class="autocomplete-list" data-field-autocomplete="company"></div>' +
           '</div>' +
         '</div>' +
         '<div class="form-group">' +
@@ -529,7 +560,7 @@
       '</div>';
 
     document.getElementById('lots-container').appendChild(row);
-    attachAutocomplete(row.querySelector('.vendor-input'));
+    attachAutocomplete(row.querySelector('.company-input'));
     totalInput.value = index + 1;
     updateRemoveButtonsVisibility();
   });

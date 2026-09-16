@@ -12,7 +12,7 @@ from .models import GateEntry, GateEntryLot, Material, CoilPart, GradeOption, Si
 class GateEntryLotInline(admin.TabularInline):
     model = GateEntryLot
     extra = 0
-    readonly_fields = ['vendor', 'grade', 'size', 'no_of_coils']
+    readonly_fields = ['company', 'grade', 'size', 'no_of_coils']
 
     def has_add_permission(self, request, obj=None):
         return False  # lots are added via the employee portal, one at a time
@@ -21,11 +21,11 @@ class GateEntryLotInline(admin.TabularInline):
 @admin.register(GateEntry)
 class GateEntryAdmin(admin.ModelAdmin):
     list_display = [
-        'id', 'date', 'vehicle_no', 'company', 'bill_no', 'invoice_no',
+        'id', 'date', 'vehicle_no', 'vendor', 'bill_no', 'invoice_no',
         'total_weight', 'no_of_coils', 'weight_per_coil', 'coils_registered', 'status_badge',
     ]
-    list_filter = ['company']
-    search_fields = ['vehicle_no', 'company', 'bill_no', 'invoice_no']
+    list_filter = ['vendor']
+    search_fields = ['vehicle_no', 'vendor', 'bill_no', 'invoice_no']
     ordering = ['-created_at']
     inlines = [GateEntryLotInline]
 
@@ -44,9 +44,9 @@ class GateEntryAdmin(admin.ModelAdmin):
 
 @admin.register(GateEntryLot)
 class GateEntryLotAdmin(admin.ModelAdmin):
-    list_display = ['id', 'gate_entry', 'vendor', 'grade', 'size', 'no_of_coils', 'coils_registered', 'status_badge']
+    list_display = ['id', 'gate_entry', 'company', 'grade', 'size', 'no_of_coils', 'coils_registered', 'status_badge']
     list_filter = ['grade', 'size']
-    search_fields = ['gate_entry__vehicle_no', 'gate_entry__company', 'vendor']
+    search_fields = ['gate_entry__vehicle_no', 'gate_entry__vendor', 'company']
 
     def status_badge(self, obj):
         if obj.is_complete():

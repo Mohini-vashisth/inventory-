@@ -240,13 +240,13 @@ def material_form(request, lot_pk):
         if complete:
             error = "This lot's coils have already been registered."
         else:
-            # Company is locked to the gate entry, vendor/grade/size to the
+            # Vendor is locked to the gate entry, company/grade/size to the
             # lot — none of this is taken from the submitted form at all, the
             # same way coil_parts locks product type from an order, so a
             # tampered/stale hidden field can't submit different values.
             data = request.POST.copy()
-            data['company'] = gate_entry.company
-            data['vendor'] = lot.vendor
+            data['vendor'] = gate_entry.vendor
+            data['company'] = lot.company
             data['grade'] = lot.grade
             data['size'] = lot.size
             form = MaterialForm(data)
