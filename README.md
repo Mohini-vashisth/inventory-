@@ -1,27 +1,31 @@
-# Inventory Management System
+# Inventory & Manufacturing System
 
-A Django-based inventory tracking system for managing steel coils — from receipt to final product. Tracks coil entries, cut parts, production jobs, and manufacturing step progress.
+A Django app for a steel coil manufacturing business, covering the full workflow: raw material receipt → coil registration → order management → part cutting → step-by-step production tracking → dispatch.
 
 ---
 
 ## Features
 
-- **Coil entry** — register incoming coils with grade, size, vendor, heat number and quantity
-- **Auto-print tag** — after saving a coil, a printable tag with QR code opens automatically
-- **Part tracking** — log pieces cut from each coil with weight and length
-- **Production jobs** — assign a cut part to a product type and track it through manufacturing
-- **Step-by-step progress** — operators update each manufacturing step; full audit trail kept
-- **Admin dashboard** — Django admin with progress bars and status badges per job
-- **Role-based entry** — separate employee and admin portals from the home screen
+- **Gate Entry** — log a truck's delivery from its invoice (vendor, vehicle no., bill/invoice no., total weight) as one or more brand/grade/size lots, before any coil is individually registered
+- **New Coil Entry** — register each coil against an open gate entry lot; prints a QR tag automatically. Company/vendor/grade/size are locked from the gate entry/lot, capped at the lot's coil count
+- **Part tracking** — log pieces cut from a coil, with weight, length, and an all-or-nothing atomic write (never a part with no job)
+- **Order-first production** — customers submit requirements via a unique quote-form link; admin confirms an order, employees can then only cut parts matching that order's allowed grade/size specs
+- **Production jobs & step tracking** — a cut part is assigned a product type with ordered manufacturing steps; employees tick off each step with a full audit trail (`StepLog`)
+- **Admin dashboard** — Django admin (themed with Jazzmin) with progress bars, status badges, used/unused coil filters, and bulk actions (archive coils, mark jobs on hold, etc.)
+- **Read-only REST API** — `orders`, `coils`, `jobs`, `product-types` under `/api/`, staff-only
+- **Two access paths** — a PIN-based employee portal (tablet-friendly) and a Django-auth admin/staff area, both reachable from the home screen
+
+See `CLAUDE.md` for the full architecture reference, deployment setup, and decision history.
 
 ---
 
 ## Tech Stack
 
-- **Backend** — Python 3, Django
-- **Database** — SQLite (development)
-- **Frontend** — Plain HTML/CSS (no framework)
-- **Libraries** — `qrcode[pil]` for QR code generation
+- **Backend** — Python 3, Django 4.2, Django REST Framework
+- **Database** — SQLite
+- **Frontend** — Plain HTML/CSS/vanilla JS (no framework)
+- **Admin theme** — django-jazzmin
+- **Key libraries** — `qrcode`/`Pillow` (QR tags), `pandas`/`openpyxl` (spreadsheet import), `whitenoise` (static files), `gunicorn` (Mac/Linux) / `waitress` (Windows) as the production WSGI server
 
 ---
 
@@ -29,36 +33,26 @@ A Django-based inventory tracking system for managing steel coils — from recei
 
 ```
 inventory-/
-├── inventory/                  # Django project config
-│   ├── settings.py
-│   ├── urls.py
-│   └── wsgi.py
-├── materials/                  # Main app
-│   ├── models.py               # Material, CoilPart, ProductType, ProcessStep, ProductionJob, StepLog
-│   ├── views.py
-│   ├── urls.py
-│   ├── admin.py                # Custom admin with progress bars
-│   ├── forms.py
-│   ├── templatetags/
-│   │   └── dict_extras.py      # |get_item filter
-│   └── migrations/
-├── templates/
-│   ├── home.html               # Role selection (Employee / Admin)
-│   ├── index.html              # Coil entry form
-│   ├── admin_login.html
-│   └── materials/
-│       ├── employee_landing.html
-│       ├── coil_tag.html       # Printable tag with QR code
-│       ├── coil_parts.html     # Parts cut from a coil
-│       ├── create_job.html     # Assign part to product type
-│       ├── job_detail.html     # Operator step updater
-│       ├── tracking_dashboard.html
-│       ├── material_table.html
-│       └── admin_dashboard.html
-├── manage.py
+├── inventory/                       # Django project
+│   ├── inventory/                   # settings.py, urls.py, wsgi.py, asgi.py
+│   ├── materials/                   # the one Django app
+│   │   ├── models.py                # GateEntry, GateEntryLot, Material, CoilPart,
+│   │   │                            # ProductType, ProcessStep, ProductionJob, StepLog,
+│   │   │                            # Customer, Order, GradeOption, SizeOption
+│   │   ├── views.py
+│   │   ├── forms.py
+│   │   ├── admin.py
+│   │   ├── api.py / serializers.py  # REST API
+│   │   ├── management/commands/     # import_excel, backfill_options, backup_db, benchmark_queries
+│   │   ├── templatetags/
+│   │   ├── tests.py
+│   │   └── migrations/
+│   ├── templates/                   # home.html + templates/materials/*.html
+│   ├── manage.py
+│   └── .env.example
 ├── requirements.txt
-├── .gitignore
-└── README.md
+├── CLAUDE.md                        # full architecture & deployment reference
+└── .github/workflows/tests.yml      # CI: check, migration check, full test suite
 ```
 
 ---
@@ -66,21 +60,30 @@ inventory-/
 ## Data Model
 
 ```
-Material (coil)
-  └── CoilPart (cut piece)
-        └── ProductionJob (linked to a ProductType)
-              ├── ProductType → ProcessStep (ordered steps)
-              └── StepLog (status update per step, full history)
+GateEntry (one truck's delivery)
+  └── GateEntryLot (one brand/grade/size batch within it)
+        └── Material (a registered coil)
+              └── CoilPart (a cut piece)
+                    └── ProductionJob (linked to a ProductType + Order)
+                          ├── ProductType → ProcessStep (ordered steps)
+                          └── StepLog (status update per step, full history)
+
+Customer → Order (quote/requirement) → ProductionJob
 ```
 
 | Model | Purpose |
 |-------|---------|
-| `Material` | Incoming coil — grade, size, vendor, heat no. |
+| `GateEntry` | A truck delivery — vendor, vehicle no., bill/invoice no., total weight |
+| `GateEntryLot` | One brand/grade/size/coil-count batch within a gate entry |
+| `Material` | A registered coil — grade, size, company, heat no., quantity |
 | `CoilPart` | A piece cut from a coil — weight, length, cut date |
-| `ProductType` | Defines a product and its ordered manufacturing steps |
+| `GradeOption` / `SizeOption` | Admin-managed valid grade/size options for the tap-to-pick pickers |
+| `ProductType` | A product definition with preset grade/size and its ordered manufacturing steps |
 | `ProcessStep` | A named step belonging to a product type |
-| `ProductionJob` | Links a part to a product type, holds overall status |
-| `StepLog` | Every status change ever made — who, when, notes |
+| `ProductionJob` | Links a cut part to a product type + order, holds overall status |
+| `StepLog` | Every step status change ever made — append-only audit trail |
+| `Customer` | A company with a unique, single-use quote-form link |
+| `Order` | A customer's requirement — product type, quantity, delivery date, status |
 
 ---
 
@@ -96,68 +99,78 @@ cd inventory-
 ### 2. Create and activate a virtual environment
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate        # macOS / Linux
 .venv\Scripts\activate           # Windows
 ```
 
 ### 3. Install dependencies
 
-```bash
-pip install django qrcode[pil]
-```
-
-### 4. Apply migrations
+`requirements.txt` is at the repo root:
 
 ```bash
-python manage.py migrate
+pip install -r requirements.txt
 ```
 
-### 5. Create a superuser (for admin access)
+### 4. Configure environment variables
+
+The Django project itself lives in the `inventory/` subfolder — `cd` into it for everything from here on:
 
 ```bash
-python manage.py createsuperuser
+cd inventory
+cp .env.example .env
 ```
 
-### 6. Run the development server
+Local dev works with everything left blank except `EMPLOYEE_PIN` (defaults to `1234`). See `CLAUDE.md` for what each variable does and what's required in production.
+
+### 5. Apply migrations
 
 ```bash
-python manage.py runserver
+python3 manage.py migrate
 ```
 
-Visit `http://127.0.0.1:8000/` in your browser.
+### 6. Create a superuser (for admin access)
+
+```bash
+python3 manage.py createsuperuser
+```
+
+### 7. Run the development server
+
+```bash
+python3 manage.py runserver
+```
+
+Visit `http://127.0.0.1:8000/`.
 
 ---
 
 ## Usage
 
-### Employee flow
+### Employee flow (`/employee/`, PIN-protected)
 
-1. Go to `/` → click **Employee**
-2. Choose one of three actions:
-   - **New Coil Entry** — fill the form, save → tag auto-prints
-   - **Create New Part** — select a coil → log a cut piece → create a production job
-   - **Update Progress** — select an active job → update step statuses
+1. **Gate Entry** — log a truck's delivery and its lots in one page
+2. **New Coil Entry** — pick an open lot, register its coils, tags print automatically
+3. **Create New Part** — pick an order → pick a matching coil → log a cut piece → a production job is created
+4. **Update Progress** — pick an active job, tick off manufacturing steps
 
-### Admin flow
+### Admin/staff flow (`/admin-login/` → `/orders/` or `/admin/`)
 
-1. Go to `/` → click **Admin** → log in
-2. Visit `/admin/` to:
-   - Set up **Product Types** and their manufacturing steps
-   - View all **Production Jobs** with live progress bars
-   - See the full **Step Log** audit trail
-   - Bulk-update job statuses
+- Manage the orders pipeline: confirm, reject, or dispatch
+- Send/resend quote-form links to customers by email
+- Configure `ProductType`s, their `ProcessStep`s, and `AllowedCoilSpec`s
+- Manage `GradeOption`/`SizeOption` picker lists (or run `manage.py backfill_options` to seed them from existing data)
+- Full Django admin at `/admin/` for everything else
 
 ---
 
-## First-time admin setup
+## Running tests
 
-After running the server, go to `/admin/` and:
+```bash
+python3 manage.py test materials
+```
 
-1. Create a **Product Type** (e.g. `Bracket A`)
-2. Add **Process Steps** in order (e.g. `Blanking → Forming → Heat Treatment → QC`)
-
-Once a product type exists, employees can create jobs and track progress.
+CI (`.github/workflows/tests.yml`) runs `manage.py check`, a migration-check, and the full suite on every push/PR to `main`.
 
 ---
 
@@ -165,30 +178,27 @@ Once a product type exists, employees can create jobs and track progress.
 
 | URL | View | Description |
 |-----|------|-------------|
-| `/` | `home` | Role selection page |
+| `/` | `home` | Landing page |
 | `/employee/` | `employee_landing` | Employee portal |
-| `/material-form/` | `material_form` | New coil entry form |
-| `/materials-table/` | `material_table` | All coils list |
-| `/coil/<id>/tag/` | `coil_tag` | Printable coil tag |
-| `/coil/<id>/parts/` | `coil_parts` | Parts for a coil |
-| `/part/<id>/new-job/` | `create_job` | Create production job |
-| `/job/<id>/` | `job_detail` | Step-by-step progress updater |
-| `/tracking/` | `tracking_dashboard` | All jobs overview |
-| `/admin-login/` | `admin_login` | Admin login page |
+| `/gate-entry/` | `gate_entry_form` | Log a truck delivery + its lots |
+| `/gate-entry/select/` | `select_gate_entry` | Pick an open lot to register a coil against |
+| `/gate-entry/lot/<pk>/coil/` | `material_form` | Register a coil, prints its QR tag |
+| `/coil/<pk>/tag/` | `coil_tag` | Printable coil tag |
+| `/coil/<pk>/parts/` | `coil_parts` | Parts cut from a coil |
+| `/select-order/` | `select_order` | Pick an order to cut a part for |
+| `/production-board/` | `production_board` | All in-production jobs |
+| `/job/<pk>/` | `job_detail` | Step-by-step progress updater |
+| `/orders/` | `order_dashboard` | Staff order pipeline |
+| `/quote/<token>/` | `quote_form` | Customer-facing, single-use quote request form |
+| `/admin-login/` | `admin_login` | Staff login |
 | `/admin/` | Django admin | Full admin panel |
+| `/api/` | DRF router | Read-only `orders`/`coils`/`jobs`/`product-types` |
 
 ---
 
-## .gitignore
+## Deployment
 
-```
-db.sqlite3
-__pycache__/
-*.pyc
-.venv/
-*.log
-.DS_Store
-```
+This app runs on-site at the plant (not the cloud) so the database stays physically local, with Tailscale giving the owner remote access and a Cloudflare Tunnel exposing only the customer-facing quote form publicly. See `CLAUDE.md` for the full reasoning and setup steps.
 
 ---
 
