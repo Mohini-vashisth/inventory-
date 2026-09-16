@@ -15,7 +15,7 @@ class ProductTypeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProductType
-        fields = ['id', 'name', 'grade', 'size', 'description', 'steps']
+        fields = ['id', 'item_code', 'grade', 'size', 'description', 'steps']
 
 
 class MaterialSerializer(serializers.ModelSerializer):
@@ -58,16 +58,16 @@ class StepLogSerializer(serializers.ModelSerializer):
 
 
 class ProductionJobSerializer(serializers.ModelSerializer):
-    product_type_name = serializers.CharField(source='product_type.name', read_only=True)
-    part_no = serializers.CharField(source='part.part_no', read_only=True)
-    coil_no = serializers.CharField(source='part.coil.formatted_coil', read_only=True)
+    product_type_item_code = serializers.CharField(source='product_type.item_code', read_only=True)
+    coil_no = serializers.CharField(source='pick.coil.formatted_coil', read_only=True)
+    weight_allocated = serializers.DecimalField(source='pick.weight_allocated', max_digits=10, decimal_places=3, read_only=True)
     latest_logs = serializers.SerializerMethodField()
 
     class Meta:
         model = ProductionJob
         fields = [
-            'id', 'job_no', 'status', 'product_type', 'product_type_name',
-            'part_no', 'coil_no', 'order', 'created_at', 'updated_at', 'latest_logs',
+            'id', 'job_no', 'status', 'product_type', 'product_type_item_code',
+            'coil_no', 'weight_allocated', 'order', 'created_at', 'updated_at', 'latest_logs',
         ]
 
     def get_latest_logs(self, obj):
@@ -86,13 +86,13 @@ class CustomerSerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.name', read_only=True)
-    product_type_name = serializers.CharField(source='product_type.name', read_only=True)
+    product_type_item_code = serializers.CharField(source='product_type.item_code', read_only=True)
     weight_cut = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
         fields = [
-            'id', 'customer', 'customer_name', 'product_type', 'product_type_name',
+            'id', 'order_no', 'customer', 'customer_name', 'product_type', 'product_type_item_code',
             'grade', 'size', 'quantity', 'delivery_form', 'frequency', 'delivery_date',
             'status', 'created_at', 'weight_cut',
         ]
@@ -103,5 +103,5 @@ class OrderSerializer(serializers.ModelSerializer):
         # aggregate if the serializer is ever used on an unannotated queryset.
         annotated = getattr(obj, '_weight_cut', None)
         return annotated if annotated is not None else (
-            obj.jobs.aggregate(total=Sum('part__weight'))['total'] or 0
+            obj.coil_picks.aggregate(total=Sum('weight_allocated'))['total'] or 0
         )

@@ -73,22 +73,98 @@
       color: rgba(255,255,255,0.7); font-size: 0.9rem; text-decoration: none;
     }
     .back-link:hover { color: white; }
+
+    /* Fulfillment progress */
+    .progress-card {
+      background: white; border-radius: 12px; padding: 1.1rem 1.25rem;
+      margin-bottom: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    }
+    .progress-label {
+      display: flex; justify-content: space-between; font-size: 0.85rem;
+      color: #444; margin-bottom: 0.5rem;
+    }
+    .progress-bar-bg { background: #e5e7eb; border-radius: 999px; height: 10px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; background: #16a34a; border-radius: 999px; }
+    .progress-fulfilled { color: #166534; font-weight: 700; }
+
+    /* Scan/enter coil number */
+    .scan-form {
+      display: flex; gap: 0.6rem; margin-bottom: 1.5rem;
+    }
+    .scan-form input[type="text"] {
+      flex: 1; padding: 0.65rem 0.9rem; border: none; border-radius: 8px;
+      font-size: 16px; font-family: monospace;
+    }
+    .scan-form button {
+      padding: 0.65rem 1.1rem; border: none; border-radius: 8px;
+      background: #1cc88a; color: white; font-weight: 700; cursor: pointer;
+    }
+    .scan-error {
+      background: rgba(255,200,0,0.2); border: 1px solid rgba(255,200,0,0.5);
+      border-radius: 10px; padding: 0.7rem 1rem; margin-bottom: 1rem;
+      color: white; font-size: 0.88rem;
+    }
+
+    /* Already-picked coils */
+    .picks-list { margin-bottom: 1.75rem; }
+    .pick-row {
+      background: rgba(255,255,255,0.12); border-radius: 8px;
+      padding: 0.6rem 1rem; margin-bottom: 0.5rem;
+      color: white; font-size: 0.85rem;
+      display: flex; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;
+    }
   </style>
 </head>
 <body>
 <div class="page">
 
+  <a href="{% url 'select_order' %}" class="back-link" style="margin-top:0; margin-bottom:1.25rem;">← Back to orders</a>
+
   <!-- Order summary -->
   <div class="order-banner">
-    <div class="label">Order ORD-{{ order.pk|stringformat:"04d" }}</div>
+    <div class="label">Order ORD-{{ order.order_no|stringformat:"04d" }}</div>
     <div class="company">{{ order.customer.name }}</div>
     <div class="meta">
       {% if order.grade %}<span>📐 Grade: {{ order.grade }}</span>{% endif %}
       {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
-      {% if order.product_type %}<span>🔧 {{ order.product_type.name }}</span>{% endif %}
+      {% if order.product_type %}<span>🔧 {{ order.product_type.item_code }}</span>{% endif %}
       {% if order.delivery_date %}<span>📅 {{ order.delivery_date|date:"d M Y" }}</span>{% endif %}
     </div>
   </div>
+
+  <!-- Fulfillment progress -->
+  <div class="progress-card">
+    <div class="progress-label">
+      <span>Raw material picked</span>
+      <span class="{% if fully_picked %}progress-fulfilled{% endif %}">
+        {{ picked_output|floatformat:1 }} / {{ required_output|floatformat:1 }} kg
+        {% if fully_picked %} ✅{% endif %}
+      </span>
+    </div>
+    <div class="progress-bar-bg">
+      <div class="progress-bar-fill" style="width:{{ pct_fulfilled }}%;"></div>
+    </div>
+  </div>
+
+  <!-- Scan or type a coil number -->
+  {% if scan_error %}<div class="scan-error">⚠️ {{ scan_error }}</div>{% endif %}
+  <form method="POST" class="scan-form">
+    {% csrf_token %}
+    <input type="text" name="coil_no" placeholder="Scan or type coil number (e.g. COIL0007)" autofocus>
+    <button type="submit">Pick →</button>
+  </form>
+
+  {% if picks %}
+  <h2>Picked so far</h2>
+  <div class="picks-list">
+    {% for pick in picks %}
+    <div class="pick-row">
+      <span>{{ pick.coil.formatted_coil }}</span>
+      <span>{{ pick.weight_allocated }} kg</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   {% if not order.product_type %}
   <div style="background:rgba(255,200,0,0.2); border:1px solid rgba(255,200,0,0.5);
@@ -97,23 +173,23 @@
     ⚠️ <strong>No product type set on this order.</strong>
     Showing all coils with remaining weight — coil filtering is disabled.<br>
     Go to <a href="/admin/materials/order/{{ order.pk }}/change/"
-             style="color:white; text-decoration:underline;">Admin → Order ORD-{{ order.pk|stringformat:"04d" }}</a>
+             style="color:white; text-decoration:underline;">Admin → Order ORD-{{ order.order_no|stringformat:"04d" }}</a>
     and assign a Product Type to enable smart coil matching.
   </div>
   {% endif %}
 
   <h2>
     {% if order.product_type and order.product_type.allowed_specs.all %}
-      Matching coils for {{ order.product_type.name }}
+      Matching coils for {{ order.product_type.item_code }}
     {% elif order.product_type %}
-      All coils with remaining weight (no coil specs configured for {{ order.product_type.name }})
+      All coils with remaining weight (no coil specs configured for {{ order.product_type.item_code }})
     {% else %}
       All coils with remaining weight
     {% endif %}
   </h2>
 
   {% for item in coils %}
-  <a href="{% url 'coil_parts' item.coil.coil_no %}?from_order={{ order.pk }}" class="coil-card">
+  <a href="{% url 'pick_coil_for_order' order.pk item.coil.coil_no %}" class="coil-card">
     <div class="coil-left">
       <div class="coil-no">{{ item.coil.formatted_coil }}</div>
       <div class="coil-meta">
@@ -136,7 +212,7 @@
   {% empty %}
   <div class="empty">
     {% if order.product_type and order.product_type.allowed_specs.all %}
-      No coils in inventory match the allowed specs for <strong>{{ order.product_type.name }}</strong>.<br>
+      No coils in inventory match the allowed specs for <strong>{{ order.product_type.item_code }}</strong>.<br>
       Ask admin to update the allowed coil specs or add matching coils to inventory.
     {% else %}
       No coils with remaining weight in inventory.
@@ -144,7 +220,6 @@
   </div>
   {% endfor %}
 
-  <a href="{% url 'select_order' %}" class="back-link">← Back to orders</a>
 </div>
 </body>
 </html>

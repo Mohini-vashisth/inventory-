@@ -140,10 +140,10 @@
 
   <a href="{% url 'employee' %}" class="back-link">← Back to employee portal</a>
 
-  <h1>{{ job.part.part_no }}</h1>
+  <h1>{{ job.job_no }}</h1>
   <p class="job-meta">
-    Product: <strong>{{ job.product_type.name }}</strong> &nbsp;|&nbsp;
-    Coil: <strong>{{ job.part.coil.formatted_coil }}</strong>
+    Product: <strong>{{ job.product_type.item_code }}</strong> &nbsp;|&nbsp;
+    Coil: <strong>{{ job.pick.coil.formatted_coil }}</strong> ({{ job.pick.weight_allocated }} kg)
   </p>
 
   {% if job.status == 'on_hold' %}

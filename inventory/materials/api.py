@@ -23,7 +23,7 @@ from .serializers import (
 
 
 class ProductTypeViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = ProductType.objects.prefetch_related('steps').order_by('name')
+    queryset = ProductType.objects.prefetch_related('steps').order_by('item_code')
     serializer_class = ProductTypeSerializer
 
 
@@ -33,7 +33,7 @@ class MaterialViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = MaterialSerializer
 
     def get_queryset(self):
-        qs = Material.objects.prefetch_related('parts').order_by('-coil_no')
+        qs = Material.objects.prefetch_related('order_picks').order_by('-coil_no')
         if self.request.query_params.get('include_archived') != 'true':
             qs = qs.filter(archived_at__isnull=True)
         if self.request.query_params.get('remaining') == 'true':
@@ -42,7 +42,7 @@ class MaterialViewSet(viewsets.ReadOnlyModelViewSet):
             # calls, and a queryset annotation of the same name shadows it.
             # Includes legacy_used_weight, same as the model method.
             qs = (qs.annotate(_weight_used=Coalesce(
-                        Sum('parts__weight'), Value(Decimal('0')), output_field=DecimalField())
+                        Sum('order_picks__weight_allocated'), Value(Decimal('0')), output_field=DecimalField())
                         + F('legacy_used_weight'))
                     .filter(quantity__gt=F('_weight_used')))
         return qs
@@ -54,7 +54,7 @@ class ProductionJobViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         qs = (ProductionJob.objects
-              .select_related('product_type', 'part__coil', 'order')
+              .select_related('product_type', 'pick__coil', 'order')
               .prefetch_related('step_logs__step')
               .order_by('-created_at'))
         status_param = self.request.query_params.get('status')
@@ -76,7 +76,7 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
               # Annotated so OrderSerializer.get_weight_cut can read this off
               # the row instead of issuing a fresh aggregate query per order.
               .annotate(_weight_cut=Coalesce(
-                  Sum('jobs__part__weight'), Value(Decimal('0')), output_field=DecimalField()))
+                  Sum('coil_picks__weight_allocated'), Value(Decimal('0')), output_field=DecimalField()))
               .order_by('-created_at'))
         status_param = self.request.query_params.get('status')
         if status_param:
