@@ -47,6 +47,15 @@ CSRF_TRUSTED_ORIGINS = (
 # this header — request.is_secure() there is unaffected.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
+# The public origin customers' quote-form links should point to (e.g.
+# https://quote.mattadrawing.com). Admins only ever reach this app over
+# Tailscale, so building the link from the current request's own host (the
+# obvious default) would put a private Tailscale address in an email sent to
+# an external customer — unreachable for them. Left blank, quote emails fall
+# back to request.build_absolute_uri(), which is fine for local dev/testing
+# but wrong for anything sent to a real customer in production.
+PUBLIC_QUOTE_BASE_URL = os.environ.get('PUBLIC_QUOTE_BASE_URL', '').rstrip('/')
+
 
 # Application definition
 

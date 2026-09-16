@@ -1451,6 +1451,31 @@ class QuoteEmailDispatchTests(TestCase):
         self.assertIn(self.customer.email, mail.outbox[0].to)
         self.assertIn(str(self.customer.quote_token), mail.outbox[0].body)
 
+    @override_settings(
+        EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com',
+        PUBLIC_QUOTE_BASE_URL='https://quote.mattadrawing.com',
+        ALLOWED_HOSTS=['mdw.tail2734e7.ts.net', 'testserver'],
+    )
+    def test_quote_link_uses_public_base_url_not_the_admin_request_host(self):
+        """Admins only ever reach this app over Tailscale — the email must
+        not link to that private address, which a real customer can't open."""
+        self.client.force_login(self.staff)
+        self.client.post(
+            reverse('send_quote_email', kwargs={'pk': self.customer.pk}),
+            HTTP_HOST='mdw.tail2734e7.ts.net',
+        )
+        self.assertEqual(len(mail.outbox), 1)
+        body = mail.outbox[0].body
+        self.assertIn(f"https://quote.mattadrawing.com/quote/{self.customer.quote_token}/", body)
+        self.assertNotIn('tail2734e7', body)
+
+    @override_settings(EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com')
+    def test_quote_link_falls_back_to_request_host_when_public_base_url_unset(self):
+        self.client.force_login(self.staff)
+        self.client.post(reverse('send_quote_email', kwargs={'pk': self.customer.pk}))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(f"testserver/quote/{self.customer.quote_token}/", mail.outbox[0].body)
+
     def test_send_quote_email_fails_gracefully_without_recipient_address(self):
         no_email_customer = Customer.objects.create(name='No Email Co')
         self.client.force_login(self.staff)

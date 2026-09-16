@@ -790,8 +790,13 @@ def _dispatch_quote_email(request, customer):
         messages.error(request, "Email is not configured — set EMAIL_HOST, EMAIL_HOST_USER, and EMAIL_HOST_PASSWORD in your .env file.")
         return
 
-    quote_url = request.build_absolute_uri(
-        reverse('quote_form', kwargs={'token': customer.quote_token})
+    quote_path = reverse('quote_form', kwargs={'token': customer.quote_token})
+    # Admins only ever reach this app over Tailscale — building the link from
+    # this request's own host would put that private address in a customer's
+    # email. Use the configured public origin when set (see PUBLIC_QUOTE_BASE_URL).
+    quote_url = (
+        f"{settings.PUBLIC_QUOTE_BASE_URL}{quote_path}" if settings.PUBLIC_QUOTE_BASE_URL
+        else request.build_absolute_uri(quote_path)
     )
     try:
         send_mail(
