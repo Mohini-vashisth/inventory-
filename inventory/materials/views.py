@@ -101,6 +101,30 @@ def _first_formset_error(formset):
     return "Check the lot details below."
 
 
+def material_field_autocomplete(request):
+    """Autosuggest for the free-text company/vendor fields on the gate entry
+    form, drawn from values already used in Material — so 'Tata Steel'
+    typed once doesn't turn into 'TATA STEEL' and 'Tata steel' as separate
+    entries later. `field` is restricted to company/vendor so the query
+    param can't be used to probe arbitrary model fields."""
+    guard = _employee_required(request)
+    if guard: return guard
+    field = request.GET.get('field')
+    if field not in ('company', 'vendor'):
+        return JsonResponse([], safe=False)
+    q = request.GET.get('q', '').strip()
+    if not q:
+        return JsonResponse([], safe=False)
+    values = (
+        Material.objects.filter(**{f'{field}__icontains': q})
+        .exclude(**{field: ''})
+        .order_by(field)
+        .values_list(field, flat=True)
+        .distinct()[:8]
+    )
+    return JsonResponse(list(values), safe=False)
+
+
 def gate_entry_form(request):
     """Log a truck's delivery in one submission: the truck's own details
     (company/vehicle/total weight) plus one or more lots — vendor/grade/

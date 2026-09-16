@@ -606,6 +606,78 @@ class MaterialFormViewErrorDisplayTests(TestCase):
         self.assertEqual(Material.objects.count(), 0)
 
 
+class BackfillOptionsCommandTests(TestCase):
+    """Backfills GradeOption/SizeOption from whatever distinct grade/size
+    values already exist in Material, as-is — duplicate spellings included.
+    A migration (0013) seeds a small baseline set of options into every
+    fresh database, so assertions check for specific values rather than
+    the table being empty beforehand."""
+
+    def test_adds_new_grades_and_sizes_found_in_material(self):
+        Material.objects.create(grade='EN-8D', size='6.500', quantity=500)
+        Material.objects.create(grade='EN-8D', size='6.500', quantity=500)  # duplicate, not double-added
+        Material.objects.create(grade='SAE 1008', size='9.000', quantity=500)
+
+        call_command('backfill_options')
+
+        self.assertEqual(GradeOption.objects.filter(name='EN-8D').count(), 1)
+        self.assertEqual(GradeOption.objects.filter(name='SAE 1008').count(), 1)
+        self.assertEqual(SizeOption.objects.filter(value=Decimal('6.500')).count(), 1)
+        self.assertEqual(SizeOption.objects.filter(value=Decimal('9.000')).count(), 1)
+
+    def test_does_not_duplicate_existing_options(self):
+        Material.objects.create(grade='EN8D', size='1.200', quantity=500)  # already seeded by 0013
+
+        call_command('backfill_options')
+
+        self.assertEqual(GradeOption.objects.filter(name='EN8D').count(), 1)
+        self.assertEqual(SizeOption.objects.filter(value=Decimal('1.200')).count(), 1)
+
+    def test_blank_and_null_grades_are_ignored(self):
+        Material.objects.create(grade=None, size=None, quantity=500)
+        Material.objects.create(grade='', size='6.000', quantity=500)
+
+        call_command('backfill_options')
+
+        self.assertFalse(GradeOption.objects.filter(name='').exists())
+        self.assertEqual(SizeOption.objects.filter(value=Decimal('6.000')).count(), 1)
+
+    def test_dry_run_changes_nothing(self):
+        Material.objects.create(grade='EN-8D', size='6.500', quantity=500)
+        call_command('backfill_options', '--dry-run')
+        self.assertFalse(GradeOption.objects.filter(name='EN-8D').exists())
+        self.assertFalse(SizeOption.objects.filter(value=Decimal('6.500')).exists())
+
+
+class MaterialFieldAutocompleteTests(TestCase):
+    def setUp(self):
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        Material.objects.create(company='Tata Steel', vendor='ABC Traders', quantity=500)
+        Material.objects.create(company='Tata Sons', vendor='XYZ Traders', quantity=500)
+
+    def test_matches_company_by_partial_name(self):
+        response = self.client.get(reverse('material_field_autocomplete'), {'field': 'company', 'q': 'tata'})
+        self.assertEqual(set(response.json()), {'Tata Steel', 'Tata Sons'})
+
+    def test_matches_vendor_by_partial_name(self):
+        response = self.client.get(reverse('material_field_autocomplete'), {'field': 'vendor', 'q': 'abc'})
+        self.assertEqual(response.json(), ['ABC Traders'])
+
+    def test_unknown_field_returns_empty(self):
+        response = self.client.get(reverse('material_field_autocomplete'), {'field': 'heat_no', 'q': 'H'})
+        self.assertEqual(response.json(), [])
+
+    def test_empty_query_returns_empty(self):
+        response = self.client.get(reverse('material_field_autocomplete'), {'field': 'company'})
+        self.assertEqual(response.json(), [])
+
+    def test_requires_employee_login(self):
+        self.client.post(reverse('employee_logout'))
+        url = reverse('material_field_autocomplete')
+        response = self.client.get(url, {'field': 'company', 'q': 'tata'})
+        self.assertRedirects(response, f"{reverse('employee_login')}?next={url}")
+
+
 class GateEntryModelTests(TestCase):
     def test_weight_per_coil_splits_evenly_across_all_lots(self):
         ge = GateEntry.objects.create(total_weight=2500)

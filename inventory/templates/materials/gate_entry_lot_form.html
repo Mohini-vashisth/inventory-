@@ -44,6 +44,19 @@
 
   .form-group { margin-bottom: 1.1rem; }
 
+  /* Autocomplete */
+  .autocomplete-wrapper { position: relative; }
+  .autocomplete-list {
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: white; border: 1px solid #ddd; border-top: none;
+    border-radius: 0 0 8px 8px; z-index: 100;
+    max-height: 200px; overflow-y: auto; display: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  }
+  .autocomplete-list.open { display: block; }
+  .autocomplete-item { padding: 0.55rem 0.75rem; cursor: pointer; font-size: 0.9rem; }
+  .autocomplete-item:hover, .autocomplete-item.active { background: #eff2ff; color: #4e73df; }
+
   label {
     display: block;
     font-size: 0.72rem; font-weight: 700;
@@ -182,7 +195,10 @@
 
       <div class="form-group">
         <label>Vendor</label>
-        <input type="text" name="vendor" value="{{ post.vendor|default:'' }}" placeholder="e.g. ABC Traders">
+        <div class="autocomplete-wrapper">
+          <input type="text" name="vendor" id="vendor-input" value="{{ post.vendor|default:'' }}" placeholder="e.g. ABC Traders" autocomplete="off">
+          <div class="autocomplete-list" data-field-autocomplete="vendor"></div>
+        </div>
       </div>
 
       <div class="form-group">
@@ -237,6 +253,60 @@
 </div>
 
 <script>
+  var autocompleteUrl = "{% url 'material_field_autocomplete' %}";
+
+  // Autosuggest for the vendor field, drawn from values already used in
+  // Material — so the same vendor doesn't end up spelled differently
+  // across gate entries.
+  (function () {
+    var input = document.getElementById('vendor-input');
+    var wrapper = input.closest('.autocomplete-wrapper');
+    var list = wrapper.querySelector('.autocomplete-list');
+    var activeIndex = -1, currentItems = [];
+
+    input.addEventListener('input', function () {
+      var q = this.value.trim();
+      if (q.length < 1) { close_(); return; }
+      fetch(autocompleteUrl + '?field=vendor&q=' + encodeURIComponent(q))
+        .then(function (r) { return r.json(); })
+        .then(function (items) {
+          currentItems = items; activeIndex = -1;
+          if (!items.length) { close_(); return; }
+          list.innerHTML = items.map(function (it, i) {
+            var div = document.createElement('div');
+            div.className = 'autocomplete-item';
+            div.setAttribute('data-i', i);
+            div.textContent = it;
+            return div.outerHTML;
+          }).join('');
+          list.classList.add('open');
+          list.querySelectorAll('.autocomplete-item').forEach(function (el) {
+            el.addEventListener('mousedown', function (e) { e.preventDefault(); pick(parseInt(this.dataset.i, 10)); });
+          });
+        });
+    });
+
+    input.addEventListener('keydown', function (e) {
+      var els = list.querySelectorAll('.autocomplete-item');
+      if (!els.length) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); activeIndex = Math.min(activeIndex + 1, els.length - 1); hi(els); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); activeIndex = Math.max(activeIndex - 1, 0); hi(els); }
+      else if (e.key === 'Enter' && activeIndex >= 0) { e.preventDefault(); pick(activeIndex); }
+      else if (e.key === 'Escape') close_();
+    });
+
+    document.addEventListener('click', function (e) {
+      if (!input.contains(e.target) && !list.contains(e.target)) close_();
+    });
+
+    function pick(i) {
+      input.value = currentItems[i];
+      close_();
+    }
+    function hi(els) { els.forEach(function (el, i) { el.classList.toggle('active', i === activeIndex); }); }
+    function close_() { list.classList.remove('open'); list.innerHTML = ''; activeIndex = -1; currentItems = []; }
+  })();
+
   function openPicker(id) {
     document.getElementById(id).classList.add('open');
     window.scrollTo(0, 0);
