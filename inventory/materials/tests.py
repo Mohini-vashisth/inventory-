@@ -917,6 +917,8 @@ class MaterialFormGateEntryTests(TestCase):
     registered against it."""
 
     def setUp(self):
+        GradeOption.objects.get_or_create(name='EN8D')
+        SizeOption.objects.get_or_create(value='1.200')
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         self.gate_entry = GateEntry.objects.create(
             company='Tata Steel', vehicle_no='AP16TA1234', total_weight=1000,
