@@ -4,6 +4,7 @@ from . import views
 urlpatterns = [
     path("", views.home, name="home"),
     path("gate-entry/", views.gate_entry_form, name="gate_entry_form"),
+    path("gate-entry/autocomplete/", views.material_field_autocomplete, name="material_field_autocomplete"),
     path("gate-entry/select/", views.select_gate_entry, name="select_gate_entry"),
     path("gate-entry/<int:gate_entry_pk>/", views.gate_entry_detail, name="gate_entry_detail"),
     path("gate-entry/<int:gate_entry_pk>/add-lot/", views.gate_entry_lot_form, name="gate_entry_lot_form"),
