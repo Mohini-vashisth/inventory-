@@ -104,7 +104,7 @@
 
   <div class="gate-entry-card">
     <span>{{ gate_entry.vehicle_no|default:"no vehicle no." }}</span>
-    <span>{{ gate_entry.company|default:"—" }}</span>
+    <span>{{ gate_entry.vendor|default:"—" }}</span>
     {% if gate_entry.bill_no %}<span>Bill {{ gate_entry.bill_no }}</span>{% endif %}
     {% if gate_entry.invoice_no %}<span>Invoice {{ gate_entry.invoice_no }}</span>{% endif %}
     <span>⚖️ {{ gate_entry.total_weight }} kg total</span>
@@ -116,7 +116,7 @@
     <div class="lot-link" style="cursor:default;">
       <div class="lot-left">
         <div class="lot-title">{{ lot.grade }}, {{ lot.size }} mm</div>
-        <div class="lot-meta">{{ lot.vendor|default:"—" }} · {{ lot.no_of_coils }} coil(s)</div>
+        <div class="lot-meta">{{ lot.company|default:"—" }} · {{ lot.no_of_coils }} coil(s)</div>
       </div>
       <div class="lot-right">
         <span class="badge-complete">Complete</span>
@@ -126,7 +126,7 @@
     <a href="{% url 'material_form' lot.pk %}" class="lot-link">
       <div class="lot-left">
         <div class="lot-title">{{ lot.grade }}, {{ lot.size }} mm</div>
-        <div class="lot-meta">{{ lot.vendor|default:"—" }} · {{ lot.no_of_coils }} coil(s)</div>
+        <div class="lot-meta">{{ lot.company|default:"—" }} · {{ lot.no_of_coils }} coil(s)</div>
       </div>
       <div class="lot-right">
         <div class="remaining-label">Coils left</div>
