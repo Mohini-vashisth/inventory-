@@ -758,6 +758,16 @@ def order_dashboard(request):
             order.save()
             return redirect('order_dashboard')
 
+    # Persistent low-stock indicator for orders already committed to
+    # production — a one-time warning at confirm time can get missed, so
+    # this stays visible for as long as it's actually true. Skipped for
+    # pending/completed/cancelled orders where it isn't actionable.
+    for order in orders:
+        order.low_stock = (
+            order.status in ('confirmed', 'in_production')
+            and order.has_sufficient_raw_material() is False
+        )
+
     return render(request, 'materials/order_dashboard.html', {
         'orders': orders,
         'customers': customers,
@@ -797,6 +807,14 @@ def order_confirm(request, pk):
     order.status = 'confirmed'
     order.save(update_fields=['status'])
     messages.success(request, f"ORD-{order.order_no:04d} confirmed.")
+    if order.has_sufficient_raw_material() is False:
+        available = order.available_raw_material_output()
+        messages.warning(
+            request,
+            f"⚠️ Raw material for ORD-{order.order_no:04d} looks short — only "
+            f"{available:.0f} kg of the {order.quantity:.0f} kg needed is currently in stock. "
+            f"Consider ordering more."
+        )
     return redirect('order_dashboard')
 
 

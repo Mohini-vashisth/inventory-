@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from django.db import models
 from django.contrib.auth.models import User
+from django.db.models.functions import Coalesce
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.utils import timezone
@@ -402,6 +403,45 @@ class Order(models.Model):
 
     def is_fully_picked(self):
         return self.picked_output_weight() >= self.quantity
+
+    def available_raw_material_output(self):
+        """Total finished-product output that could be made right now from
+        in-stock raw material matching this order's product type — summed
+        across every AllowedCoilSpec (grade/size + ratio), or any non-
+        archived coil with remaining weight if none are configured (same
+        wildcard fallback _coil_matches_order_specs uses in views.py).
+        None if there's no product type yet to check against. Used to warn
+        an admin confirming an order that raw material may need reordering
+        before production can actually happen."""
+        if not self.product_type:
+            return None
+        specs = list(self.product_type.allowed_specs.all())
+        total = Decimal('0')
+        for spec in (specs or [None]):  # None = wildcard, matches any coil
+            coils_qs = Material.objects.filter(archived_at__isnull=True)
+            ratio = Decimal('1')
+            if spec is not None:
+                if spec.grade:
+                    coils_qs = coils_qs.filter(grade__iexact=spec.grade)
+                if spec.size:
+                    coils_qs = coils_qs.filter(size=spec.size)
+                ratio = spec.raw_material_ratio
+            agg = coils_qs.annotate(
+                _weight_used=Coalesce(models.Sum('order_picks__weight_allocated'), models.Value(Decimal('0')), output_field=models.DecimalField())
+                             + models.F('legacy_used_weight'),
+            ).aggregate(
+                total_remaining=models.Sum(models.F('quantity') - models.F('_weight_used')),
+            )
+            remaining = max(agg['total_remaining'] or Decimal('0'), Decimal('0'))
+            total += remaining / ratio
+        return total
+
+    def has_sufficient_raw_material(self):
+        """None if there's no product type set yet to check stock against."""
+        available = self.available_raw_material_output()
+        if available is None:
+            return None
+        return available >= self.quantity
 
 
 @receiver(post_delete, sender=Order)
