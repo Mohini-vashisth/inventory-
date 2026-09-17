@@ -115,6 +115,12 @@ The real client sheet has extra columns beyond `COLUMN_MAP` — `ISSUED QTY 1`, 
 - **in_production**: first coil picked against this order
 - **completed**: admin dispatched
 
+### Raw-material stock check on confirm
+
+`Order.available_raw_material_output()` (`materials/models.py`) sums how much finished-product output the currently in-stock raw material could cover — across every `AllowedCoilSpec` on the order's product type (grade/size + ratio), or any non-archived coil with remaining weight if none are configured (same wildcard fallback the picking flow uses). `has_sufficient_raw_material()` compares that against `Order.quantity`; both return `None` if no product type is set yet (nothing to check against).
+
+Checked once, at `order_confirm` (`materials/views.py`) — not at quote submission, since the exact grade/size requirement is only locked in once a product type is assigned, which confirming already requires. If stock looks short, the admin gets an immediate `messages.warning()` on confirming, **and** a persistent "⚠️ Low stock" badge stays on that order's row in `/orders/` for as long as it's still true — scoped to `confirmed`/`in_production` orders only (not pending/completed/cancelled, where it isn't actionable). On-screen only, deliberately no email — the owner sees it browsing the dashboard, not in an inbox.
+
 ### Two user roles
 
 **Admin/staff** (`is_staff=True` Django user):
