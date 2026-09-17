@@ -428,7 +428,10 @@
     var grade = row.querySelector('.grade-val').value;
     var size = row.querySelector('.size-val').value;
     var summary = row.querySelector('.lot-summary');
-    summary.textContent = (grade || size) ? ('— ' + (grade || '?') + ', ' + (size || '?') + ' mm') : '';
+    var parts = [];
+    if (grade) parts.push(grade);
+    if (size) parts.push(size + ' mm');
+    summary.textContent = parts.length ? ('— ' + parts.join(', ')) : '';
   }
 
   function selectGrade(val) {
