@@ -1600,6 +1600,57 @@ class SelectCoilForOrderSpecFilterTests(TestCase):
         self.assertNotIn(non_matching.pk, coil_ids)
 
 
+class SelectCoilForOrderBestFitSortTests(TestCase):
+    """Coils closest to what the order still needs are listed first, not
+    just the newest coils — a best-fit pick wastes less than always
+    grabbing whichever coil was registered most recently."""
+
+    def setUp(self):
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.customer = Customer.objects.create(name='Best Fit Co')
+        self.product_type = ProductType.objects.create(item_code='Fit Bar', grade='X', size='9.999')
+        AllowedCoilSpec.objects.create(
+            product_type=self.product_type, grade='EN8D', size='1.200',
+            raw_material_ratio=Decimal('1.000'),
+        )
+        # Order needs 100kg of output — with a 1:1 ratio, closest coil to 100kg wins.
+        self.order = Order.objects.create(
+            customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed',
+        )
+
+    def test_closest_remaining_weight_listed_first(self):
+        far = Material.objects.create(quantity=500, grade='EN8D', size='1.200')       # 500 remaining, diff 400
+        exact = Material.objects.create(quantity=100, grade='EN8D', size='1.200')     # 100 remaining, diff 0
+        close = Material.objects.create(quantity=120, grade='EN8D', size='1.200')     # 120 remaining, diff 20
+
+        response = self.client.get(reverse('select_coil_for_order', kwargs={'order_pk': self.order.pk}))
+        coil_ids = [c['coil'].pk for c in response.context['coils']]
+        self.assertEqual(coil_ids, [exact.pk, close.pk, far.pk])
+
+    def test_ordering_accounts_for_partial_usage_not_just_total_quantity(self):
+        """A big coil already mostly used up can be a closer match than a
+        smaller untouched one — sorting must use remaining weight, not the
+        coil's original total."""
+        big_but_used = Material.objects.create(quantity=1000, grade='EN8D', size='1.200')
+        OrderCoilPick.objects.create(order=self.order, coil=big_but_used, weight_allocated=910)  # 90 remaining, diff 10
+        small_untouched = Material.objects.create(quantity=200, grade='EN8D', size='1.200')  # 200 remaining, diff 100
+
+        response = self.client.get(reverse('select_coil_for_order', kwargs={'order_pk': self.order.pk}))
+        coil_ids = [c['coil'].pk for c in response.context['coils']]
+        self.assertEqual(coil_ids, [big_but_used.pk, small_untouched.pk])
+
+    def test_ratio_is_applied_when_computing_best_fit(self):
+        """A 1.5 ratio means the order needs 150kg of this raw material to
+        produce its 100kg of output — best fit should target 150, not 100."""
+        AllowedCoilSpec.objects.filter(product_type=self.product_type).update(raw_material_ratio=Decimal('1.500'))
+        near_150 = Material.objects.create(quantity=150, grade='EN8D', size='1.200')  # remaining 150, diff 0
+        near_100 = Material.objects.create(quantity=100, grade='EN8D', size='1.200')  # remaining 100, diff 50
+
+        response = self.client.get(reverse('select_coil_for_order', kwargs={'order_pk': self.order.pk}))
+        coil_ids = [c['coil'].pk for c in response.context['coils']]
+        self.assertEqual(coil_ids, [near_150.pk, near_100.pk])
+
+
 class OrderCoilPickRatioTests(TestCase):
     """A pick's output_equivalent() converts raw material weight into
     finished-product terms via the matching AllowedCoilSpec's ratio, and
