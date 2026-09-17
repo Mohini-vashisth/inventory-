@@ -394,6 +394,21 @@ def _coil_matches_order_specs(coil, order):
     return False
 
 
+def _ratio_for_coil(order, coil):
+    """The AllowedCoilSpec.raw_material_ratio for whichever spec matches this
+    coil's grade/size under the order's product type — same matching rule
+    OrderCoilPick.output_equivalent() uses, so the "how much raw material
+    does the order still need" figure stays consistent everywhere it's
+    computed. Falls back to 1:1 if no spec matches."""
+    if order.product_type:
+        for spec in order.product_type.allowed_specs.all():
+            grade_matches = not spec.grade or spec.grade.lower() == (coil.grade or '').lower()
+            size_matches = not spec.size or spec.size == coil.size
+            if grade_matches and size_matches:
+                return spec.raw_material_ratio
+    return Decimal('1')
+
+
 def _parse_coil_no(raw):
     """Accepts either the formatted tag text ("COIL0007") or a bare number,
     tolerant of surrounding whitespace/case — matches whatever a barcode
@@ -454,23 +469,30 @@ def select_coil_for_order(request, order_pk):
                     q |= spec_q
             coils_qs = coils_qs.filter(q)
 
-    # Only coils with remaining weight
+    picked_output = order.picked_output_weight()
+    required_output = order.quantity or Decimal('0')
+    order_remaining_output = max(required_output - picked_output, Decimal('0'))
+
+    # Only coils with remaining weight, closest-to-what's-still-needed first
+    # (in this coil's own raw-material terms, via its matching spec ratio) —
+    # a best-fit pick wastes less than grabbing whatever coil is newest.
     coils = []
     for coil in coils_qs.order_by('-coil_no'):
         used      = float(coil._weight_used or 0)
         total     = float(coil.quantity or 0)
         remaining = total - used
         if remaining > 0:
+            order_needs = float(order_remaining_output * _ratio_for_coil(order, coil))
             coils.append({
                 'coil': coil,
                 'remaining': remaining,
                 'total': total,
                 'pct_used': int((used / total * 100)) if total > 0 else 0,
+                'weight_diff': abs(remaining - order_needs),
             })
+    coils.sort(key=lambda item: item['weight_diff'])
 
     picks = order.coil_picks.select_related('coil').order_by('-picked_at')
-    picked_output = order.picked_output_weight()
-    required_output = order.quantity or Decimal('0')
 
     return render(request, 'materials/select_coil_for_order.html', {
         'order': order,
@@ -504,14 +526,7 @@ def pick_coil_for_order(request, order_pk, coil_pk):
     # Suggest a weight capped at both what's left on the coil and what the
     # order still needs (in this coil's raw-material terms), so an employee
     # isn't nudged into over-allocating by default.
-    ratio = Decimal('1')
-    if order.product_type:
-        for spec in order.product_type.allowed_specs.all():
-            grade_matches = not spec.grade or spec.grade.lower() == (coil.grade or '').lower()
-            size_matches = not spec.size or spec.size == coil.size
-            if grade_matches and size_matches:
-                ratio = spec.raw_material_ratio
-                break
+    ratio = _ratio_for_coil(order, coil)
     order_remaining_raw = max(order.quantity - order.picked_output_weight(), Decimal('0')) * ratio
     suggested_weight = max(min(coil_remaining, order_remaining_raw), Decimal('0'))
 
