@@ -56,6 +56,16 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # but wrong for anything sent to a real customer in production.
 PUBLIC_QUOTE_BASE_URL = os.environ.get('PUBLIC_QUOTE_BASE_URL', '').rstrip('/')
 
+# WhatsApp Cloud API webhook (materials/views.py::whatsapp_webhook) — see
+# CLAUDE.md for the Meta-side setup this depends on (Business/App/phone
+# number registration happens in Meta's own dashboard, not in this codebase).
+WHATSAPP_VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', '')
+WHATSAPP_APP_SECRET = os.environ.get('WHATSAPP_APP_SECRET', '')
+# Used to actually send messages (the intake template + follow-up
+# questions) via the Graph API — see materials/views.py's WhatsApp helpers.
+WHATSAPP_ACCESS_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN', '')
+WHATSAPP_PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '')
+
 
 # Application definition
 

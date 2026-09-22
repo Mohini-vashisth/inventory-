@@ -21,6 +21,14 @@ urlpatterns = [
     path('order/<int:order_pk>/pick-coil/<int:coil_pk>/', views.pick_coil_for_order, name='pick_coil_for_order'),
     path('production-board/', views.production_board, name='production_board'),
     path('job/<int:pk>/', views.job_detail, name='job_detail'),
+    path('queries/', views.query_dashboard, name='query_dashboard'),
+    path('queries/<int:pk>/send-quote/', views.query_send_quote, name='query_send_quote'),
+    path('queries/<int:pk>/not-interested/', views.query_not_interested, name='query_not_interested'),
+    # Public, unauthenticated — Meta's Cloud API calls this directly. Verified
+    # via HMAC/verify-token inside the view, not Django auth. Reaches the
+    # internet only via its own Tailscale Funnel path on the deployment
+    # machine — see CLAUDE.md.
+    path('webhooks/whatsapp/', views.whatsapp_webhook, name='whatsapp_webhook'),
     path('orders/', views.order_dashboard, name='order_dashboard'),
     path('orders/customer-autocomplete/', views.customer_autocomplete, name='customer_autocomplete'),
     path('orders/<int:pk>/confirm/', views.order_confirm, name='order_confirm'),

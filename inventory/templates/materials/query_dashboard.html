@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Query Dashboard</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; background: #f4f6f9; color: #333; }
+
+    header {
+      background: #4e73df; color: white;
+      padding: 1rem 2rem;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    header h1 { font-size: 1.3rem; }
+    .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; margin-left: 1.25rem; }
+    .back-link:hover { color: white; }
+
+    .content { max-width: 1150px; margin: 2rem auto; padding: 0 1.5rem; }
+
+    .card {
+      background: white; border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      margin-bottom: 2rem; overflow: hidden;
+    }
+    .card-header {
+      padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0;
+      font-size: 1rem; font-weight: 600;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .card-header span { color: #aaa; font-size: 0.85rem; font-weight: 400; }
+    .card-body { padding: 1.75rem; }
+
+    .form-row { display: grid; gap: 0.75rem; margin-bottom: 0.75rem; }
+    .cols-2 { grid-template-columns: 1fr 1fr; }
+
+    .table-scroll { overflow-x: auto; }
+
+    .form-group { display: flex; flex-direction: column; }
+    label {
+      font-size: 0.72rem; color: #888; margin-bottom: 0.3rem;
+      font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    input, select, textarea {
+      padding: 0.55rem 0.75rem; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 0.9rem; width: 100%;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #4e73df; }
+
+    .submit-row { display: flex; justify-content: flex-end; margin-top: 1rem; }
+    .btn-primary {
+      padding: 0.65rem 2rem; background: #4e73df; color: white;
+      border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
+    }
+    .btn-primary:hover { background: #3a5ec0; }
+
+    .error-msg {
+      background: #fee2e2; color: #991b1b;
+      padding: 0.6rem 0.9rem; border-radius: 8px;
+      font-size: 0.87rem; margin-bottom: 1rem;
+    }
+
+    .alert {
+      padding: 0.75rem 1rem; border-radius: 8px;
+      font-size: 0.88rem; margin-bottom: 1.25rem;
+    }
+    .alert-success { background: #dcfce7; color: #166534; }
+    .alert-error   { background: #fee2e2; color: #991b1b; }
+    .alert-warning { background: #fef3c7; color: #92400e; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      background: #f8f9fb; padding: 0.65rem 1rem; text-align: left;
+      font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
+      color: #888; font-weight: 600; white-space: nowrap;
+    }
+    td { padding: 0.75rem 1rem; border-top: 1px solid #f0f0f0; font-size: 0.88rem; vertical-align: middle; }
+    tr:hover td { background: #fafbff; }
+
+    .badge {
+      display: inline-block; padding: 0.25rem 0.65rem;
+      border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap;
+    }
+    .badge-new             { background: #dbeafe; color: #1e40af; }
+    .badge-quote_sent      { background: #fef3c7; color: #92400e; }
+    .badge-converted       { background: #dcfce7; color: #166534; }
+    .badge-not_interested  { background: #f3f4f6; color: #6b7280; }
+
+    .muted { color: #aaa; font-size: 0.82rem; }
+
+    .icon-btn {
+      background: #f3f4f6; border: 1px solid #ddd;
+      border-radius: 6px; padding: 0.25rem 0.65rem;
+      font-size: 0.75rem; cursor: pointer; color: #4e73df;
+    }
+    .icon-btn:hover { background: #eff2ff; }
+    .icon-btn.green { background: #dcfce7; border-color: #bbf7d0; color: #166534; margin-left: 4px; }
+    .icon-btn.green:hover { background: #bbf7d0; }
+    .icon-btn.red { background: #fee2e2; border-color: #fecaca; color: #991b1b; margin-left: 4px; }
+    .icon-btn.red:hover { background: #fecaca; }
+
+    .empty-row td { text-align: center; color: #bbb; padding: 3rem; }
+
+    @media (max-width: 640px) {
+      header { padding: 1rem; flex-wrap: wrap; gap: 0.5rem; }
+      .content { padding: 0 0.85rem; margin: 1rem auto; }
+      .card-body { padding: 1.1rem; }
+      .card-header { flex-direction: column; align-items: flex-start; gap: 0.3rem; }
+      .cols-2 { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Query Dashboard</h1>
+  <div>
+    <a href="{% url 'home' %}" class="back-link">← Back to home</a>
+  </div>
+</header>
+
+<div class="content">
+
+  {% for msg in messages %}
+  <div class="alert
+    {% if msg.tags == 'success' %}alert-success
+    {% elif msg.tags == 'warning' %}alert-warning
+    {% else %}alert-error{% endif %}">
+    {{ msg }}
+  </div>
+  {% endfor %}
+
+  <!-- ── Log New Query ─────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      Log New Query
+      <span>Record an inbound inquiry from any source</span>
+    </div>
+    <div class="card-body">
+      {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+
+      <form method="post" action="{% url 'query_dashboard' %}">
+        {% csrf_token %}
+
+        <div class="form-row cols-2">
+          <div class="form-group">
+            <label>Source *</label>
+            <select name="source">
+              <option value="">— select —</option>
+              <option value="call"      {% if post.source == 'call'      %}selected{% endif %}>Phone Call</option>
+              <option value="referral"  {% if post.source == 'referral'  %}selected{% endif %}>Referral</option>
+              <option value="indiamart" {% if post.source == 'indiamart' %}selected{% endif %}>IndiaMART</option>
+              <option value="whatsapp"  {% if post.source == 'whatsapp'  %}selected{% endif %}>WhatsApp</option>
+              <option value="other"     {% if post.source == 'other'     %}selected{% endif %}>Other</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Phone *</label>
+            <input type="text" name="contact_phone" placeholder="+91 98765 43210" value="{{ post.contact_phone|default:'' }}">
+          </div>
+        </div>
+
+        <div class="submit-row">
+          <button type="submit" class="btn-primary">+ Log Query</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Queries Table ─────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-header">
+      All Queries
+      <span>{{ queries|length }} total</span>
+    </div>
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Source</th>
+          <th>Company / Contact</th>
+          <th>Product</th>
+          <th>Notes</th>
+          <th>Status</th>
+          <th>Received</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for query in queries %}
+        <tr>
+          <td class="muted">{{ query.get_source_display }}</td>
+          <td>
+            <div style="font-weight:600;">{{ query.company_name|default:query.contact_phone }}</div>
+            <div class="muted">{{ query.contact_email|default:"" }}{% if query.contact_email and query.contact_phone %} · {% endif %}{{ query.contact_phone|default:"" }}</div>
+          </td>
+          <td>
+            {% if query.product_type %}{{ query.product_type.item_code }}<br>{% endif %}
+            <span class="muted">{{ query.grade|default:"" }}{% if query.grade and query.size %}, {% endif %}{{ query.size|default:"" }}{% if query.size %} mm{% endif %}</span>
+          </td>
+          <td>
+            {% if query.notes %}
+            <div style="max-height:4.5em; overflow-y:auto; white-space:pre-wrap; font-size:0.85em; max-width:220px;" class="muted">{{ query.notes|truncatechars:300 }}</div>
+            {% else %}
+            <span class="muted">—</span>
+            {% endif %}
+          </td>
+          <td><span class="badge badge-{{ query.status }}">{{ query.get_status_display }}</span></td>
+          <td class="muted">{{ query.created_at|date:"d M Y" }}</td>
+          <td>
+            {% if query.status == 'new' %}
+              <form method="post" action="{% url 'query_send_quote' query.pk %}" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit" class="icon-btn green">📧 Send Quote</button>
+              </form>
+              <form method="post" action="{% url 'query_not_interested' query.pk %}" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit" class="icon-btn red">✕ Not Interested</button>
+              </form>
+            {% elif query.status == 'quote_sent' and query.customer %}
+              <button class="icon-btn"
+                      onclick="copyLink('{{ request.scheme }}://{{ request.get_host }}{% url 'quote_form' query.customer.quote_token %}', this)">
+                📋 Copy Link
+              </button>
+              <form method="post" action="{% url 'query_not_interested' query.pk %}" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit" class="icon-btn red">✕ Not Interested</button>
+              </form>
+            {% elif query.status == 'converted' %}
+              <span class="muted">✅ Order placed</span>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr class="empty-row"><td colspan="7">No queries logged yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function copyLink(url, btn) {
+    navigator.clipboard.writeText(url).then(function() {
+      const orig = btn.textContent;
+      btn.textContent = '✓ Copied!';
+      setTimeout(function() { btn.textContent = orig; }, 1500);
+    });
+  }
+</script>
+
+</body>
+</html>

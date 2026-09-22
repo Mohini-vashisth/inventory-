@@ -7,16 +7,25 @@ from django.urls import reverse
 from django.db import transaction
 from django.db.models import Count, DecimalField, F, Sum, Value
 from django.db.models.functions import Coalesce
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse, HttpResponseForbidden
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.crypto import constant_time_compare
+from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 import uuid
 import qrcode
 import io
 import base64
+import hmac
+import hashlib
+import json
+import re
+import urllib.request
+import urllib.error
 from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
-from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
+from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Order
 from .forms import GateEntryForm, GateEntryLotForm, GateEntryLotFormSet, MaterialForm, OrderForm
 
 
@@ -717,7 +726,90 @@ def employee_landing(request):
     return render(request, 'materials/employee_landing.html')
 
 
-# ── Orders ───────────────────────────────────────────────────
+# ── Queries (pre-quote leads) ──────────────────────────────────
+
+def query_dashboard(request):
+    """Unified log of inbound sales inquiries — phone calls, referrals,
+    IndiaMART, WhatsApp — regardless of source, before any of them become a
+    formal quote/order. Logging a query immediately kicks off the WhatsApp
+    intake sequence (see whatsapp_webhook below) — staff only ever type in
+    a phone number here; everything else arrives via WhatsApp. Staff decide
+    which ones to pursue via query_send_quote once that sequence completes."""
+    if not request.user.is_authenticated or not request.user.is_staff:
+        return redirect(f"{reverse('admin_login')}?next={reverse('query_dashboard')}")
+
+    queries = Query.objects.select_related('product_type', 'customer').all()
+    error = None
+
+    if request.method == 'POST':
+        source = request.POST.get('source', '')
+        contact_phone = request.POST.get('contact_phone', '').strip()
+
+        if not contact_phone:
+            error = "Phone number is required."
+        elif source not in dict(Query.SOURCE_CHOICES):
+            error = "Please select where this query came from."
+        else:
+            query = Query.objects.create(source=source, contact_phone=contact_phone)
+            try:
+                _send_whatsapp_template_message(contact_phone, WHATSAPP_QUERY_INTAKE_TEMPLATE)
+            except WhatsAppSendError as e:
+                messages.warning(
+                    request,
+                    f"Query logged, but the WhatsApp intake message to {contact_phone} couldn't be "
+                    f"sent automatically ({e}). Please reach out directly.",
+                )
+            return redirect('query_dashboard')
+
+    return render(request, 'materials/query_dashboard.html', {
+        'queries': queries,
+        'error': error,
+        'post': request.POST if error else {},
+    })
+
+
+def query_send_quote(request, pk):
+    """Create/reuse a Customer from the query's captured info and send the
+    quote form link — by email if one's on file, otherwise staff fall back
+    to the Copy Link action (same as any other customer)."""
+    if not request.user.is_staff:
+        return redirect('home')
+    if request.method != 'POST':
+        return redirect('query_dashboard')
+    query = get_object_or_404(Query, pk=pk)
+
+    customer_name = query.company_name or query.contact_phone or f"Query #{query.pk}"
+    customer, _ = Customer.objects.get_or_create(name=customer_name)
+    if query.contact_email:
+        customer.email = query.contact_email
+    if query.contact_phone:
+        customer.phone = query.contact_phone
+    customer.save(update_fields=['email', 'phone'])
+
+    query.customer = customer
+    query.status = 'quote_sent'
+    query.save(update_fields=['customer', 'status'])
+
+    if customer.email:
+        _dispatch_quote_email(request, customer)
+    else:
+        messages.warning(
+            request,
+            f"No email on file for {customer.name} — use “Copy Link” to share the quote form directly.",
+        )
+    return redirect('query_dashboard')
+
+
+def query_not_interested(request, pk):
+    if not request.user.is_staff:
+        return redirect('home')
+    if request.method != 'POST':
+        return redirect('query_dashboard')
+    query = get_object_or_404(Query, pk=pk)
+    query.status = 'not_interested'
+    query.save(update_fields=['status'])
+    return redirect('query_dashboard')
+
 
 def order_dashboard(request):
     if not request.user.is_authenticated or not request.user.is_staff:
@@ -851,6 +943,10 @@ def quote_form(request, token):
         str(pt.pk): {'grade': pt.grade, 'size': str(pt.size) if pt.size else ''}
         for pt in product_types
     }
+    # The query (if any) that led to this quote being sent — its info
+    # pre-fills the form below so the customer isn't re-typing what they
+    # already told us on a call/referral/IndiaMART message.
+    query = Query.objects.filter(customer=customer, status='quote_sent').order_by('-created_at').first()
     error = None
 
     if request.method == 'POST':
@@ -860,19 +956,33 @@ def quote_form(request, token):
         else:
             order = form.save(commit=False)
             order.customer = customer
+            order.source_query = query
             order.status = 'pending'
             order.save()
+            if query:
+                query.status = 'converted'
+                query.save(update_fields=['status'])
             # Invalidate this link — regenerate token so the URL becomes a 404
             customer.quote_token = uuid.uuid4()
             customer.save(update_fields=['quote_token'])
             return render(request, 'materials/quote_submitted.html', {'customer': customer})
+
+    initial = {}
+    if query and not error:
+        initial = {
+            'product_type': str(query.product_type_id) if query.product_type_id else '',
+            'grade': query.grade,
+            'size': str(query.size) if query.size is not None else '',
+            'quantity': str(query.quantity) if query.quantity is not None else '',
+            'notes': query.notes,
+        }
 
     return render(request, 'materials/quote_form.html', {
         'customer': customer,
         'product_types': product_types,
         'product_type_data': product_type_data,
         'error': error,
-        'post': request.POST if error else {},
+        'post': request.POST if error else initial,
     })
 
 
@@ -950,3 +1060,232 @@ def _dispatch_quote_email(request, customer):
         messages.success(request, f"Quote form sent to {customer.email}.")
     except Exception as e:
         messages.error(request, f"Failed to send email: {e}")
+
+
+# ── WhatsApp webhook (public, unauthenticated) ─────────────────────
+
+WHATSAPP_GRAPH_API_VERSION = "v21.0"
+WHATSAPP_QUERY_INTAKE_TEMPLATE = "matta_drawing_query_intake"
+# Fixed intake order — the next question is whichever of these is still
+# blank on the Query, so there's no separate "stage" field to drift out of
+# sync with the actual data.
+WHATSAPP_QUERY_FIELDS = ['company_name', 'contact_email', 'grade', 'size']
+WHATSAPP_QUERY_QUESTIONS = {
+    'contact_email': "Thanks! What's the best email address to send your quote to?",
+    'grade': "Got it. Which grade do you need (e.g. EN8D, EN9)?",
+    'size': "And what size do you need (in mm), e.g. 1.2?",
+}
+WHATSAPP_CLOSING_MESSAGE = (
+    "Thanks - that's everything we need for now. Our team will get back to "
+    "you shortly with your quote."
+)
+
+
+class WhatsAppSendError(Exception):
+    """Raised by the send helpers below on any failure — missing config,
+    network error, or a non-2xx response from the Graph API. Callers
+    decide how to degrade; nothing here is allowed to propagate into a
+    crash (a failed outbound send should never lose an already-saved
+    answer or block a query from being created)."""
+
+
+def _whatsapp_graph_request(payload):
+    phone_number_id = settings.WHATSAPP_PHONE_NUMBER_ID
+    access_token = settings.WHATSAPP_ACCESS_TOKEN
+    if not phone_number_id or not access_token:
+        raise WhatsAppSendError("WhatsApp sending is not configured (missing access token/phone number ID).")
+
+    url = f"https://graph.facebook.com/{WHATSAPP_GRAPH_API_VERSION}/{phone_number_id}/messages"
+    req = urllib.request.Request(
+        url, data=json.dumps(payload).encode("utf-8"), method="POST",
+        headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            if resp.status >= 300:
+                raise WhatsAppSendError(f"WhatsApp API returned HTTP {resp.status}")
+    except urllib.error.HTTPError as e:
+        raise WhatsAppSendError(f"WhatsApp API error {e.code}: {e.read().decode(errors='replace')}") from e
+    except (urllib.error.URLError, OSError) as e:
+        raise WhatsAppSendError(f"WhatsApp API request failed: {e}") from e
+
+
+def _send_whatsapp_template_message(phone, template_name, language="en_US"):
+    """The first message to a number that hasn't messaged us (or has gone
+    quiet 24h+) must be a pre-approved template — Meta rejects free-form
+    text otherwise. `template_name` must already be approved in Meta
+    Business Manager."""
+    _whatsapp_graph_request({
+        "messaging_product": "whatsapp", "to": phone, "type": "template",
+        "template": {"name": template_name, "language": {"code": language}},
+    })
+
+
+def _send_whatsapp_text_message(phone, text):
+    """Free-form follow-up — only usable once the customer has replied at
+    least once within the last 24 hours."""
+    _whatsapp_graph_request({
+        "messaging_product": "whatsapp", "to": phone, "type": "text", "text": {"body": text},
+    })
+
+
+def _next_expected_query_field(query):
+    """The next blank field in the fixed intake order, or None once
+    company_name/contact_email/grade/size are all filled."""
+    for field in WHATSAPP_QUERY_FIELDS:
+        value = getattr(query, field)
+        if field == 'size':
+            if value is None:
+                return field
+        elif not value:
+            return field
+    return None
+
+
+def _parse_whatsapp_size(text):
+    """Lenient size parsing — "1.2", "1.2mm", "1.2 mm" all become
+    Decimal('1.2'); anything with no usable digits returns None so the
+    caller can re-ask instead of saving garbage."""
+    cleaned = re.sub(r'[^0-9.\-]', '', text or '')
+    if not cleaned:
+        return None
+    try:
+        return Decimal(cleaned)
+    except InvalidOperation:
+        return None
+
+
+@csrf_exempt
+@require_http_methods(["GET", "POST"])
+def whatsapp_webhook(request):
+    """Meta WhatsApp Cloud API webhook. GET is the one-time subscription
+    handshake Meta performs when the webhook URL is registered; POST
+    delivers inbound message events. csrf_exempt because Meta's servers
+    never carry a Django session/CSRF cookie — HMAC verification of
+    X-Hub-Signature-256 (POST) and the verify-token check (GET) are the
+    real authentication here, not Django's CSRF protection."""
+    if request.method == "GET":
+        return _whatsapp_verify(request)
+    return _whatsapp_receive(request)
+
+
+def _whatsapp_verify(request):
+    mode = request.GET.get("hub.mode")
+    token = request.GET.get("hub.verify_token", "")
+    challenge = request.GET.get("hub.challenge", "")
+    if mode == "subscribe" and constant_time_compare(token, settings.WHATSAPP_VERIFY_TOKEN):
+        return HttpResponse(challenge, content_type="text/plain")
+    return HttpResponseForbidden("Verification failed")
+
+
+def _whatsapp_receive(request):
+    # Signature check happens before anything else touches the body — an
+    # invalid/missing signature means nothing here is trusted, so nothing
+    # gets parsed or written.
+    signature = request.headers.get("X-Hub-Signature-256", "")
+    if not _valid_whatsapp_signature(request.body, signature):
+        return HttpResponseForbidden("Invalid signature")
+
+    try:
+        payload = json.loads(request.body.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        # Malformed body from an already-authenticated sender — ack anyway
+        # so Meta doesn't retry-storm; there's nothing usable to process.
+        return HttpResponse(status=200)
+
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
+            _process_whatsapp_change(change.get("value", {}))
+
+    return HttpResponse(status=200)
+
+
+def _valid_whatsapp_signature(raw_body, signature_header):
+    if not signature_header.startswith("sha256="):
+        return False
+    provided = signature_header[len("sha256="):]
+    expected = hmac.new(
+        settings.WHATSAPP_APP_SECRET.encode("utf-8"), raw_body, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(provided, expected)
+
+
+def _process_whatsapp_change(value):
+    """Meta posts both inbound messages and delivery-status receipts
+    (`value['statuses']`) to this same webhook — only the former should
+    ever touch a Query."""
+    incoming_messages = value.get("messages")
+    if not incoming_messages:
+        return
+
+    contacts = value.get("contacts", [])
+    profile_name = contacts[0].get("profile", {}).get("name", "") if contacts else ""
+
+    for msg in incoming_messages:
+        phone = msg.get("from", "")
+        if not phone:
+            continue
+        text = (msg.get("text") or {}).get("body", "").strip()
+        if not text:
+            continue  # non-text message types (image/audio/etc.) — not handled yet
+        _route_whatsapp_message(phone, text, profile_name)
+
+
+def _route_whatsapp_message(phone, text, profile_name):
+    """Route an inbound message to whichever open Query is mid-intake for
+    this phone number. A message from a number with no in-progress query —
+    either a cold inbound message, or a reply after that query already
+    converted/was marked not interested — still becomes a bare Query
+    rather than being silently dropped."""
+    query = (
+        Query.objects
+        .filter(contact_phone=phone)
+        .exclude(status__in=['converted', 'not_interested'])
+        .order_by('-created_at')
+        .first()
+    )
+    if query:
+        _process_whatsapp_answer(query, text)
+    else:
+        Query.objects.create(source='whatsapp', company_name=profile_name, contact_phone=phone, notes=text)
+
+
+def _process_whatsapp_answer(query, text):
+    """Save this message as the answer to whichever question is next in
+    the intake sequence, then send the following question — or, once the
+    sequence is complete, try to auto-match an existing ProductType and
+    send the closing message. A message that arrives after the sequence
+    is already done is just appended to notes, not mistaken for an answer."""
+    field = _next_expected_query_field(query)
+    if field is None:
+        stamp = timezone.now().strftime('%d %b %H:%M')
+        query.notes = f"{query.notes}\n[{stamp}] {text}".strip()
+        query.save(update_fields=['notes'])
+        return
+
+    if field == 'size':
+        parsed = _parse_whatsapp_size(text)
+        if parsed is None:
+            try:
+                _send_whatsapp_text_message(query.contact_phone, WHATSAPP_QUERY_QUESTIONS['size'])
+            except WhatsAppSendError:
+                pass
+            return
+        query.size = parsed
+    else:
+        setattr(query, field, text.strip())
+    query.save(update_fields=[field])
+
+    next_field = _next_expected_query_field(query)
+    try:
+        if next_field:
+            _send_whatsapp_text_message(query.contact_phone, WHATSAPP_QUERY_QUESTIONS[next_field])
+        else:
+            if query.grade and query.size is not None:
+                match = ProductType.objects.filter(grade__iexact=query.grade, size=query.size).first()
+                if match:
+                    query.product_type = match
+                    query.save(update_fields=['product_type'])
+            _send_whatsapp_text_message(query.contact_phone, WHATSAPP_CLOSING_MESSAGE)
+    except WhatsAppSendError:
+        pass  # the answer is already saved; a failed follow-up send shouldn't lose it
