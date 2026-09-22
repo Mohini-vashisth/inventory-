@@ -334,6 +334,53 @@ class Customer(models.Model):
         return self.name
 
 
+class Query(models.Model):
+    """An inbound sales inquiry, logged before any quote/order exists —
+    phone calls, referrals, IndiaMART messages, WhatsApp, etc. Staff decide
+    which ones to pursue by sending a quote; the quote form the customer
+    eventually fills is pre-populated with whatever was already captured
+    here. `company_name` is often blank at creation time — a manually
+    logged query starts as just a phone number, and a WhatsApp-sourced one
+    (see `materials/views.py::whatsapp_webhook`) only has a name if Meta's
+    payload included one — it gets filled in later (via the admin) once
+    staff actually know who they're talking to."""
+    SOURCE_CHOICES = [
+        ('call', 'Phone Call'),
+        ('referral', 'Referral'),
+        ('indiamart', 'IndiaMART'),
+        ('whatsapp', 'WhatsApp'),
+        ('other', 'Other'),
+    ]
+    STATUS_CHOICES = [
+        ('new', 'New'),
+        ('quote_sent', 'Quote Sent'),
+        ('converted', 'Converted'),
+        ('not_interested', 'Not Interested'),
+    ]
+    source        = models.CharField(max_length=20, choices=SOURCE_CHOICES)
+    company_name  = models.CharField(max_length=100, blank=True)
+    contact_phone = models.CharField(max_length=20, blank=True)
+    contact_email = models.EmailField(blank=True)
+    product_type  = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)
+    grade         = models.CharField(max_length=100, blank=True)
+    size          = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    quantity      = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    notes         = models.TextField(blank=True)
+    status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new', db_index=True)
+    # Set only once a quote is actually sent — before that, a query is just
+    # free-standing prospect info, not yet a Customer record (mirrors how
+    # Customer itself is created on-demand in quick_send_quote).
+    customer      = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='queries')
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        label = self.company_name or self.contact_phone or f"Query #{self.pk}"
+        return f"{label} — {self.get_source_display()}"
+
+
 class Order(models.Model):
     STATUS_CHOICES = [
         ('pending',       'Pending'),
@@ -361,6 +408,7 @@ class Order(models.Model):
                   "coil_no/job_no which are never reused.",
     )
     customer              = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='orders')
+    source_query          = models.ForeignKey(Query, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
     product_type          = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Type")
     # 1. Drawing / dimensions
     drawing_dimensions    = models.TextField(blank=True, verbose_name="Drawing / Dimensions")

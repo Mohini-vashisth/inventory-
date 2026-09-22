@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
-from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Order
+from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Order
 
 
 class GateEntryLotInline(admin.TabularInline):
@@ -424,6 +424,18 @@ class CustomerAdmin(admin.ModelAdmin):
     def order_count(self, obj):
         return obj.orders.count()
     order_count.short_description = 'Orders'
+
+
+@admin.register(Query)
+class QueryAdmin(admin.ModelAdmin):
+    list_display  = ['display_name', 'source', 'status', 'product_type', 'created_at']
+    list_filter   = ['source', 'status']
+    search_fields = ['company_name', 'contact_email', 'contact_phone']
+    ordering      = ['-created_at']
+
+    @admin.display(description='Company / Contact')
+    def display_name(self, obj):
+        return obj.company_name or obj.contact_phone or f"Query #{obj.pk}"
 
 
 @admin.register(Order)
