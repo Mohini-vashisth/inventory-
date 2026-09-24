@@ -244,6 +244,10 @@
           </div>
           <div class="lot-body">
             <div class="form-group">
+              <label>No. of Coils</label>
+              <input type="number" name="lot-{{ forloop.counter0 }}-no_of_coils" class="coils-input" step="1" min="1" value="{{ lot_form.no_of_coils.value|default:'' }}" placeholder="e.g. 3">
+            </div>
+            <div class="form-group">
               <label>Size</label>
               <input type="hidden" name="lot-{{ forloop.counter0 }}-size" class="size-val" value="{{ lot_form.size.value|default:'' }}">
               <button type="button" class="picker-btn size-btn" onclick="openPicker('size', {{ forloop.counter0 }})">
@@ -265,10 +269,6 @@
                 <input type="text" name="lot-{{ forloop.counter0 }}-company" class="company-input" value="{{ lot_form.company.value|default:'' }}" placeholder="e.g. Tata Steel" autocomplete="off">
                 <div class="autocomplete-list" data-field-autocomplete="company"></div>
               </div>
-            </div>
-            <div class="form-group">
-              <label>No. of Coils</label>
-              <input type="number" name="lot-{{ forloop.counter0 }}-no_of_coils" class="coils-input" step="1" min="1" value="{{ lot_form.no_of_coils.value|default:'' }}" placeholder="e.g. 3">
             </div>
             <button type="button" class="btn-remove-lot" onclick="removeLot(this)">✕ Remove This Lot</button>
           </div>
@@ -517,6 +517,10 @@
       '</div>' +
       '<div class="lot-body">' +
         '<div class="form-group">' +
+          '<label>No. of Coils</label>' +
+          '<input type="number" name="lot-' + index + '-no_of_coils" class="coils-input" step="1" min="1" placeholder="e.g. 3">' +
+        '</div>' +
+        '<div class="form-group">' +
           '<label>Size</label>' +
           '<input type="hidden" name="lot-' + index + '-size" class="size-val" value="">' +
           '<button type="button" class="picker-btn size-btn" onclick="openPicker(\'size\', ' + index + ')">' +
@@ -536,10 +540,6 @@
             '<input type="text" name="lot-' + index + '-company" class="company-input" placeholder="e.g. Tata Steel" autocomplete="off">' +
             '<div class="autocomplete-list" data-field-autocomplete="company"></div>' +
           '</div>' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label>No. of Coils</label>' +
-          '<input type="number" name="lot-' + index + '-no_of_coils" class="coils-input" step="1" min="1" placeholder="e.g. 3">' +
         '</div>' +
         '<button type="button" class="btn-remove-lot" onclick="removeLot(this)">✕ Remove This Lot</button>' +
       '</div>';
