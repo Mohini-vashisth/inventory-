@@ -24,7 +24,8 @@ from .models import (
     OrderCoilPick, ProcessStep, ProductionJob, ProductType, Query, SizeOption, StepLog,
 )
 from .views import (
-    WhatsAppSendError, WHATSAPP_QUERY_INTAKE_TEMPLATE, WHATSAPP_QUERY_QUESTIONS, WHATSAPP_CLOSING_MESSAGE,
+    WhatsAppSendError, WHATSAPP_QUERY_INTAKE_TEMPLATE, WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE,
+    WHATSAPP_QUERY_QUESTIONS, WHATSAPP_CLOSING_MESSAGE,
 )
 
 
@@ -2093,7 +2094,9 @@ class QueryDashboardTests(TestCase):
         self.assertEqual(query.source, 'call')
         self.assertEqual(query.status, 'new')
         self.assertEqual(query.company_name, '')
-        mock_send.assert_called_once_with('9123456780', WHATSAPP_QUERY_INTAKE_TEMPLATE)
+        mock_send.assert_called_once_with(
+            '9123456780', WHATSAPP_QUERY_INTAKE_TEMPLATE, language=WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE,
+        )
 
     @patch('materials.views._send_whatsapp_template_message')
     def test_logging_a_query_normalizes_phone_to_digits_only(self, mock_send):
@@ -2102,7 +2105,9 @@ class QueryDashboardTests(TestCase):
             'source': 'call', 'contact_phone': '+91 98765 43210',
         })
         query = Query.objects.get(contact_phone='919876543210')
-        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_INTAKE_TEMPLATE)
+        mock_send.assert_called_once_with(
+            '919876543210', WHATSAPP_QUERY_INTAKE_TEMPLATE, language=WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE,
+        )
 
     @patch('materials.views._send_whatsapp_template_message')
     def test_logging_a_query_surfaces_warning_when_whatsapp_send_fails(self, mock_send):
