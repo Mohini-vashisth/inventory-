@@ -123,7 +123,7 @@
 
       <div class="form-group">
         <label>Actual Measured Weight (kg)</label>
-        <input type="number" name="quantity" step="0.001" value="{{ post.quantity|default:'' }}" placeholder="e.g. 500.000" {% if not complete %}required{% endif %}>
+        <input type="number" name="quantity" step="0.001" min="0.001" value="{{ post.quantity|default:'' }}" placeholder="e.g. 500.000" {% if not complete %}required{% endif %}>
       </div>
 
       <button type="submit" class="btn-submit">Save Coil →</button>

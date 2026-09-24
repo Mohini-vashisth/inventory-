@@ -557,6 +557,16 @@ class MaterialFormValidationTests(TestCase):
         form = MaterialForm(self.base_data())
         self.assertTrue(form.is_valid(), form.errors)
 
+    def test_negative_quantity_rejected(self):
+        form = MaterialForm(self.base_data(quantity='-500.000'))
+        self.assertFalse(form.is_valid())
+        self.assertIn('quantity', form.errors)
+
+    def test_zero_quantity_rejected(self):
+        form = MaterialForm(self.base_data(quantity='0'))
+        self.assertFalse(form.is_valid())
+        self.assertIn('quantity', form.errors)
+
 
 class GateEntryFormViewErrorDisplayTests(TestCase):
     """A rejected gate entry submission must show why, and not force the
@@ -579,6 +589,19 @@ class GateEntryFormViewErrorDisplayTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Enter a number')
         self.assertContains(response, 'ABC Traders')
+        self.assertEqual(GateEntry.objects.count(), 0)
+
+    def test_negative_total_weight_rejected(self):
+        response = self.client.post(reverse('gate_entry_form'), {
+            'date': '2026-07-06', 'vendor': 'ABC Traders',
+            'vehicle_no': 'AP16TA1234', 'total_weight': '-2500.000',
+            'lot-TOTAL_FORMS': '1', 'lot-INITIAL_FORMS': '0',
+            'lot-MIN_NUM_FORMS': '0', 'lot-MAX_NUM_FORMS': '1000',
+            'lot-0-company': 'Tata Steel', 'lot-0-grade': 'EN8D',
+            'lot-0-size': '1.200', 'lot-0-no_of_coils': '3',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "greater than zero")
         self.assertEqual(GateEntry.objects.count(), 0)
 
 
