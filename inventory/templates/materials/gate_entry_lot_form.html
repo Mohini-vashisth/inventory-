@@ -176,6 +176,11 @@
       {% csrf_token %}
 
       <div class="form-group">
+        <label>No. of Coils</label>
+        <input type="number" name="no_of_coils" step="1" min="1" value="{{ post.no_of_coils|default:'' }}" placeholder="e.g. 3" required>
+      </div>
+
+      <div class="form-group">
         <label>Size</label>
         <input type="hidden" name="size" id="size-val" value="{{ post.size|default:'' }}">
         <button type="button" class="picker-btn" onclick="openPicker('size-picker')">
@@ -199,11 +204,6 @@
           <input type="text" name="company" id="company-input" value="{{ post.company|default:'' }}" placeholder="e.g. Tata Steel" autocomplete="off">
           <div class="autocomplete-list" data-field-autocomplete="company"></div>
         </div>
-      </div>
-
-      <div class="form-group">
-        <label>No. of Coils</label>
-        <input type="number" name="no_of_coils" step="1" min="1" value="{{ post.no_of_coils|default:'' }}" placeholder="e.g. 3" required>
       </div>
 
       <button type="submit" class="btn-submit">Save Lot →</button>
