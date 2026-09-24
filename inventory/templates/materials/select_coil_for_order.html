@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -104,6 +105,26 @@
       border-radius: 10px; padding: 0.7rem 1rem; margin-bottom: 1rem;
       color: white; font-size: 0.88rem;
     }
+    .scan-camera-btn {
+      padding: 0.65rem 0.9rem; border: none; border-radius: 8px;
+      background: rgba(255,255,255,0.25); color: white; font-size: 1.1rem; cursor: pointer;
+    }
+
+    /* Camera scan modal */
+    .scan-modal {
+      position: fixed; inset: 0; background: #000; z-index: 100;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .scan-modal video {
+      width: 100%; max-width: 500px; border-radius: 12px;
+    }
+    .scan-modal-status {
+      color: white; font-size: 0.95rem; margin: 1rem 0; text-align: center; padding: 0 1rem;
+    }
+    .scan-modal-cancel {
+      padding: 0.65rem 1.5rem; border: none; border-radius: 8px;
+      background: rgba(255,255,255,0.2); color: white; font-weight: 700; cursor: pointer;
+    }
 
     /* Browse-list filter */
     #coil-search {
@@ -158,11 +179,18 @@
 
   <!-- Scan or type a coil number -->
   {% if scan_error %}<div class="scan-error">⚠️ {{ scan_error }}</div>{% endif %}
-  <form method="POST" class="scan-form">
+  <form method="POST" class="scan-form" id="coil-scan-form">
     {% csrf_token %}
-    <input type="text" name="coil_no" placeholder="Scan or type coil number (e.g. COIL0007)" autofocus>
+    <input type="text" name="coil_no" id="coil-no-input" placeholder="Scan or type coil number (e.g. COIL0007)" autofocus>
+    <button type="button" class="scan-camera-btn" id="camera-scan-btn" title="Scan QR with camera">📷</button>
     <button type="submit">Pick →</button>
   </form>
+
+  <div class="scan-modal" id="scan-modal" hidden>
+    <video id="scan-video" autoplay playsinline muted></video>
+    <div class="scan-modal-status" id="scan-modal-status">Point the camera at the coil's QR tag</div>
+    <button type="button" class="scan-modal-cancel" id="scan-modal-cancel">✕ Cancel</button>
+  </div>
 
   {% if picks %}
   <h2>Picked so far</h2>
@@ -256,5 +284,10 @@
     });
   }
 </script>
+
+<!-- Camera QR scanning — shared with select_job_for_coil.html. jsQR is a
+     fallback decoder for browsers without the native BarcodeDetector API. -->
+<script src="{% static 'materials/jsQR.min.js' %}"></script>
+<script src="{% static 'materials/coil_scan.js' %}"></script>
 </body>
 </html>

@@ -1,0 +1,112 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Update Progress</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      background: linear-gradient(135deg, #4e73df, #1cc88a);
+      min-height: 100vh;
+      padding: 2rem 1rem;
+    }
+
+    .page { max-width: 500px; margin: 0 auto; }
+
+    .back-link {
+      color: rgba(255,255,255,0.8); text-decoration: none;
+      font-size: 0.9rem; display: inline-block; margin-bottom: 1.25rem;
+    }
+    .back-link:hover { color: white; }
+
+    h1 { color: white; font-size: 1.6rem; margin-bottom: 0.35rem; }
+    .subtitle { color: rgba(255,255,255,0.75); font-size: 0.9rem; margin-bottom: 2rem; }
+
+    .scan-error {
+      background: rgba(255,200,0,0.2); border: 1px solid rgba(255,200,0,0.5);
+      border-radius: 10px; padding: 0.7rem 1rem; margin-bottom: 1rem;
+      color: white; font-size: 0.88rem;
+    }
+
+    .scan-form { display: flex; gap: 0.6rem; margin-bottom: 1.5rem; }
+    .scan-form input[type="text"] {
+      flex: 1; padding: 0.65rem 0.9rem; border: none; border-radius: 8px;
+      font-size: 16px; font-family: monospace;
+    }
+    .scan-form button {
+      padding: 0.65rem 1.1rem; border: none; border-radius: 8px;
+      background: #1cc88a; color: white; font-weight: 700; cursor: pointer;
+    }
+    .scan-camera-btn {
+      padding: 0.65rem 0.9rem; border: none; border-radius: 8px;
+      background: rgba(255,255,255,0.25); color: white; font-size: 1.1rem; cursor: pointer;
+    }
+
+    .scan-modal {
+      position: fixed; inset: 0; background: #000; z-index: 100;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .scan-modal video { width: 100%; max-width: 500px; border-radius: 12px; }
+    .scan-modal-status { color: white; font-size: 0.95rem; margin: 1rem 0; text-align: center; padding: 0 1rem; }
+    .scan-modal-cancel {
+      padding: 0.65rem 1.5rem; border: none; border-radius: 8px;
+      background: rgba(255,255,255,0.2); color: white; font-weight: 700; cursor: pointer;
+    }
+
+    /* Job picker, when a coil has more than one active job */
+    .job-card {
+      display: flex; justify-content: space-between; align-items: center;
+      background: white; border-radius: 12px; padding: 1rem 1.25rem;
+      margin-bottom: 0.75rem; text-decoration: none; color: #333;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .job-card .job-no { font-weight: 700; }
+    .job-card .job-meta { font-size: 0.82rem; color: #888; margin-top: 0.2rem; }
+    .job-card .arrow { color: #4e73df; font-size: 1.2rem; }
+  </style>
+</head>
+<body>
+<div class="page">
+  <a href="{% url 'employee' %}" class="back-link">← Back to employee portal</a>
+  <h1>Update Progress</h1>
+  <p class="subtitle">
+    Scan or type the coil's number to open its job.
+    <a href="{% url 'production_board' %}" style="color:white;">View all jobs →</a>
+  </p>
+
+  {% if scan_error %}<div class="scan-error">⚠️ {{ scan_error }}</div>{% endif %}
+
+  <form method="POST" class="scan-form" id="coil-scan-form">
+    {% csrf_token %}
+    <input type="text" name="coil_no" id="coil-no-input" placeholder="Scan or type coil number (e.g. COIL0007)" autofocus>
+    <button type="button" class="scan-camera-btn" id="camera-scan-btn" title="Scan QR with camera">📷</button>
+    <button type="submit">Go →</button>
+  </form>
+
+  {% if jobs %}
+  <p class="subtitle">This coil has more than one job — pick one:</p>
+  {% for job in jobs %}
+  <a href="{% url 'job_detail' job.pk %}" class="job-card">
+    <div>
+      <div class="job-no">{{ job.job_no }}</div>
+      <div class="job-meta">{{ job.order.customer.name }} · {{ job.product_type.item_code }} · {{ job.get_status_display }}</div>
+    </div>
+    <div class="arrow">›</div>
+  </a>
+  {% endfor %}
+  {% endif %}
+
+  <div class="scan-modal" id="scan-modal" hidden>
+    <video id="scan-video" autoplay playsinline muted></video>
+    <div class="scan-modal-status" id="scan-modal-status">Point the camera at the coil's QR tag</div>
+    <button type="button" class="scan-modal-cancel" id="scan-modal-cancel">✕ Cancel</button>
+  </div>
+</div>
+
+<script src="{% static 'materials/jsQR.min.js' %}"></script>
+<script src="{% static 'materials/coil_scan.js' %}"></script>
+</body>
+</html>
