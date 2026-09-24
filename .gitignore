@@ -7,3 +7,4 @@ inventory/db_backups/
 inventory/db.sqlite3
 
 .env
+.envrc

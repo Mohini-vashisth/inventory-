@@ -17,6 +17,7 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from . import views
 from .forms import MaterialForm
 from .models import (
     AllowedCoilSpec, Customer, GateEntry, GateEntryLot, GradeOption, Material, Order,
@@ -2095,6 +2096,15 @@ class QueryDashboardTests(TestCase):
         mock_send.assert_called_once_with('9123456780', WHATSAPP_QUERY_INTAKE_TEMPLATE)
 
     @patch('materials.views._send_whatsapp_template_message')
+    def test_logging_a_query_normalizes_phone_to_digits_only(self, mock_send):
+        self.client.force_login(self.staff)
+        self.client.post(reverse('query_dashboard'), {
+            'source': 'call', 'contact_phone': '+91 98765 43210',
+        })
+        query = Query.objects.get(contact_phone='919876543210')
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_INTAKE_TEMPLATE)
+
+    @patch('materials.views._send_whatsapp_template_message')
     def test_logging_a_query_surfaces_warning_when_whatsapp_send_fails(self, mock_send):
         mock_send.side_effect = WhatsAppSendError("boom")
         self.client.force_login(self.staff)
@@ -2104,6 +2114,25 @@ class QueryDashboardTests(TestCase):
 
         self.assertTrue(Query.objects.filter(contact_phone='9123456780').exists())
         self.assertContains(response, "Please reach out directly")
+
+    @patch('materials.views._send_whatsapp_template_message')
+    def test_logging_a_query_twice_for_same_phone_is_rejected(self, mock_send):
+        self.client.force_login(self.staff)
+        self.client.post(reverse('query_dashboard'), {'source': 'call', 'contact_phone': '9123456780'})
+        response = self.client.post(reverse('query_dashboard'), {'source': 'call', 'contact_phone': '9123456780'})
+
+        self.assertEqual(Query.objects.filter(contact_phone='9123456780').count(), 1)
+        self.assertContains(response, "already in progress")
+        mock_send.assert_called_once()
+
+    @patch('materials.views._send_whatsapp_template_message')
+    def test_logging_a_query_for_same_phone_allowed_once_prior_query_closed(self, mock_send):
+        self.client.force_login(self.staff)
+        Query.objects.create(source='call', contact_phone='9123456780', status='converted')
+        response = self.client.post(reverse('query_dashboard'), {'source': 'call', 'contact_phone': '9123456780'})
+
+        self.assertRedirects(response, reverse('query_dashboard'))
+        self.assertEqual(Query.objects.filter(contact_phone='9123456780').count(), 2)
 
     def test_logging_a_query_requires_phone_and_source(self):
         self.client.force_login(self.staff)
@@ -2138,6 +2167,23 @@ class QueryDashboardTests(TestCase):
         self.assertEqual(query.status, 'quote_sent')
         self.assertEqual(len(mail.outbox), 0)
         self.assertContains(response, "Copy")
+
+    @override_settings(
+        PUBLIC_QUOTE_BASE_URL='https://quote.mattadrawing.com',
+        ALLOWED_HOSTS=['mdw.tail2734e7.ts.net', 'testserver'],
+    )
+    def test_copy_link_uses_public_base_url_not_the_admin_request_host(self):
+        """Same private-address problem as the emailed link — the Copy Link
+        fallback previously built its URL from the admin's own request
+        host instead of PUBLIC_QUOTE_BASE_URL."""
+        query = Query.objects.create(source='call', company_name='No Email Co', contact_phone='9999999999')
+        self.client.force_login(self.staff)
+        self.client.post(reverse('query_send_quote', kwargs={'pk': query.pk}))
+        query.refresh_from_db()
+
+        response = self.client.get(reverse('query_dashboard'), HTTP_HOST='mdw.tail2734e7.ts.net')
+        self.assertContains(response, f"https://quote.mattadrawing.com/quote/{query.customer.quote_token}/")
+        self.assertNotContains(response, 'tail2734e7')
 
     def test_not_interested_sets_status(self):
         query = Query.objects.create(source='other', company_name='Dead End Co')
@@ -2225,6 +2271,16 @@ class WhatsAppWebhookTests(TestCase):
         })
         self.assertEqual(response.status_code, 403)
 
+    @override_settings(WHATSAPP_VERIFY_TOKEN='')
+    def test_get_handshake_rejects_when_verify_token_unset(self):
+        # An unset WHATSAPP_VERIFY_TOKEN must never "verify" anything, even
+        # a request that also omits hub.verify_token ('' == '' would
+        # otherwise pass).
+        response = self.client.get(reverse('whatsapp_webhook'), {
+            'hub.mode': 'subscribe', 'hub.challenge': '12345',
+        })
+        self.assertEqual(response.status_code, 403)
+
     def test_post_with_no_matching_query_creates_bare_query(self):
         payload = self._message_payload('919876543210', 'Need 500kg EN8D', profile_name='Ramesh Traders')
         response = self._post_payload(payload)
@@ -2246,7 +2302,7 @@ class WhatsAppWebhookTests(TestCase):
         new_query = Query.objects.filter(contact_phone='919876543210', status='new').get()
         self.assertEqual(new_query.notes, 'new inquiry')
 
-    @patch('materials.views._send_whatsapp_text_message')
+    @patch('materials.views._send_whatsapp_text_message_background')
     def test_inbound_answer_captures_company_name_then_asks_email(self, mock_send):
         Query.objects.create(source='call', contact_phone='919876543210')
         payload = self._message_payload('919876543210', 'Ramesh Traders')
@@ -2256,7 +2312,7 @@ class WhatsAppWebhookTests(TestCase):
         self.assertEqual(query.company_name, 'Ramesh Traders')
         mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['contact_email'])
 
-    @patch('materials.views._send_whatsapp_text_message')
+    @patch('materials.views._send_whatsapp_text_message_background')
     def test_inbound_answer_captures_email_then_asks_grade(self, mock_send):
         Query.objects.create(source='call', contact_phone='919876543210', company_name='Ramesh Traders')
         payload = self._message_payload('919876543210', 'ramesh@example.com')
@@ -2266,7 +2322,7 @@ class WhatsAppWebhookTests(TestCase):
         self.assertEqual(query.contact_email, 'ramesh@example.com')
         mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['grade'])
 
-    @patch('materials.views._send_whatsapp_text_message')
+    @patch('materials.views._send_whatsapp_text_message_background')
     def test_inbound_answer_captures_grade_then_asks_size(self, mock_send):
         Query.objects.create(
             source='call', contact_phone='919876543210',
@@ -2279,7 +2335,7 @@ class WhatsAppWebhookTests(TestCase):
         self.assertEqual(query.grade, 'EN8D')
         mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['size'])
 
-    @patch('materials.views._send_whatsapp_text_message')
+    @patch('materials.views._send_whatsapp_text_message_background')
     def test_inbound_size_answer_completes_sequence_and_sends_closing(self, mock_send):
         Query.objects.create(
             source='call', contact_phone='919876543210', company_name='Ramesh Traders',
@@ -2292,7 +2348,7 @@ class WhatsAppWebhookTests(TestCase):
         self.assertEqual(query.size, Decimal('1.2'))
         mock_send.assert_called_once_with('919876543210', WHATSAPP_CLOSING_MESSAGE)
 
-    @patch('materials.views._send_whatsapp_text_message')
+    @patch('materials.views._send_whatsapp_text_message_background')
     def test_inbound_size_with_units_is_parsed(self, mock_send):
         Query.objects.create(
             source='call', contact_phone='919876543210', company_name='Ramesh Traders',
@@ -2303,7 +2359,7 @@ class WhatsAppWebhookTests(TestCase):
         query = Query.objects.get(contact_phone='919876543210')
         self.assertEqual(query.size, Decimal('1.2'))
 
-    @patch('materials.views._send_whatsapp_text_message')
+    @patch('materials.views._send_whatsapp_text_message_background')
     def test_inbound_unparseable_size_reasks_without_saving(self, mock_send):
         Query.objects.create(
             source='call', contact_phone='919876543210', company_name='Ramesh Traders',
@@ -2315,7 +2371,28 @@ class WhatsAppWebhookTests(TestCase):
         self.assertIsNone(query.size)
         mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['size'])
 
-    @patch('materials.views._send_whatsapp_text_message')
+    @patch('materials.views._send_whatsapp_text_message_background')
+    def test_inbound_negative_size_reasks_without_saving(self, mock_send):
+        Query.objects.create(
+            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
+            contact_email='ramesh@example.com', grade='EN8D',
+        )
+        self._post_payload(self._message_payload('919876543210', '-1.2'))
+
+        query = Query.objects.get(contact_phone='919876543210')
+        self.assertIsNone(query.size)
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['size'])
+
+    @patch('materials.views._send_whatsapp_text_message_background')
+    def test_inbound_invalid_email_reasks_without_saving(self, mock_send):
+        Query.objects.create(source='call', contact_phone='919876543210', company_name='Ramesh Traders')
+        self._post_payload(self._message_payload('919876543210', 'not an email'))
+
+        query = Query.objects.get(contact_phone='919876543210')
+        self.assertEqual(query.contact_email, '')
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['contact_email'])
+
+    @patch('materials.views._send_whatsapp_text_message_background')
     def test_size_completion_matches_existing_product_type(self, mock_send):
         product_type = ProductType.objects.create(item_code='Matched Bar', grade='EN8D', size='1.200')
         Query.objects.create(
@@ -2327,7 +2404,7 @@ class WhatsAppWebhookTests(TestCase):
         query = Query.objects.get(contact_phone='919876543210')
         self.assertEqual(query.product_type, product_type)
 
-    @patch('materials.views._send_whatsapp_text_message')
+    @patch('materials.views._send_whatsapp_text_message_background')
     def test_size_completion_leaves_product_type_null_when_no_match(self, mock_send):
         Query.objects.create(
             source='call', contact_phone='919876543210', company_name='Ramesh Traders',
@@ -2338,7 +2415,7 @@ class WhatsAppWebhookTests(TestCase):
         query = Query.objects.get(contact_phone='919876543210')
         self.assertIsNone(query.product_type)
 
-    @patch('materials.views._send_whatsapp_text_message')
+    @patch('materials.views._send_whatsapp_text_message_background')
     def test_size_completion_requires_both_grade_and_size_to_match(self, mock_send):
         # Same grade, different size — and same size, different grade —
         # must NOT match; only a ProductType agreeing on both should link.
@@ -2353,7 +2430,7 @@ class WhatsAppWebhookTests(TestCase):
         query = Query.objects.get(contact_phone='919876543210')
         self.assertIsNone(query.product_type)
 
-    @patch('materials.views._send_whatsapp_text_message')
+    @patch('materials.views._send_whatsapp_text_message_background')
     def test_message_after_sequence_complete_is_appended_to_notes(self, mock_send):
         Query.objects.create(
             source='call', contact_phone='919876543210', company_name='Ramesh Traders',
@@ -2374,6 +2451,19 @@ class WhatsAppWebhookTests(TestCase):
         query = Query.objects.get(contact_phone='919876543210')
         self.assertEqual(query.company_name, 'Ramesh Traders')
 
+    @patch('materials.views._send_whatsapp_text_message')
+    def test_background_send_logs_and_swallows_failure(self, mock_send):
+        # _send_whatsapp_text_message_background is what _process_whatsapp_answer
+        # actually calls — it must never let a send failure propagate (the
+        # webhook has already acked by the time this thread runs), but a
+        # persistent failure (e.g. an expired access token) should still be
+        # visible somewhere, via a log line.
+        mock_send.side_effect = WhatsAppSendError("boom")
+        with self.assertLogs('materials.views', level='WARNING') as logs:
+            thread = views._send_whatsapp_text_message_background('919876543210', 'hello')
+            thread.join(timeout=2)
+        self.assertTrue(any('919876543210' in line and 'boom' in line for line in logs.output))
+
     def test_post_with_invalid_signature_is_rejected(self):
         payload = self._message_payload('919876543210', 'Need 500kg EN8D')
         response = self._post_payload(payload, secret='wrong-secret')
@@ -2387,6 +2477,38 @@ class WhatsAppWebhookTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertEqual(Query.objects.count(), 0)
+
+    @override_settings(WHATSAPP_APP_SECRET='')
+    def test_post_is_rejected_when_app_secret_unset(self):
+        # An unset WHATSAPP_APP_SECRET must never validate anything — HMAC
+        # keyed with an empty string is a key anyone can also compute, so
+        # this must reject even a signature computed the "correct" way
+        # against that same empty secret.
+        payload = self._message_payload('919876543210', 'Need 500kg EN8D')
+        response = self._post_payload(payload, secret='')
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(Query.objects.count(), 0)
+
+    @patch('materials.views._send_whatsapp_text_message_background')
+    @patch('materials.views._send_whatsapp_template_message')
+    def test_phone_with_symbols_still_routes_to_open_query(self, mock_template_send, mock_text_send):
+        # Staff may log a number formatted like the UI's own placeholder
+        # ("+91 98765 43210") — Meta's inbound "from" is always digits-only,
+        # so the stored value must be normalized the same way at write time
+        # for the two to ever match.
+        staff = User.objects.create_user('symbol_phone_staff', password='pw', is_staff=True)
+        self.client.force_login(staff)
+        self.client.post(reverse('query_dashboard'), {
+            'source': 'call', 'contact_phone': '+91 98765 43210',
+        })
+
+        payload = self._message_payload('919876543210', 'Ramesh Traders')
+        self._post_payload(payload)
+
+        self.assertEqual(Query.objects.filter(contact_phone='919876543210').count(), 1)
+        query = Query.objects.get(contact_phone='919876543210')
+        self.assertEqual(query.company_name, 'Ramesh Traders')
 
     def test_post_ignores_status_payloads(self):
         payload = {'entry': [{'changes': [{'value': {'statuses': [{'id': 'abc', 'status': 'delivered'}]}}]}]}
