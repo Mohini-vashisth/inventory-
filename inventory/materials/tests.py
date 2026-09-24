@@ -2149,6 +2149,15 @@ class QueryDashboardTests(TestCase):
         self.assertContains(response, "Please select where this query came from.")
         self.assertEqual(Query.objects.count(), 0)
 
+    def test_logging_a_query_rejects_incomplete_phone(self):
+        # The field is pre-filled with "+91 " — submitting without adding
+        # the actual number normalizes to just "91", not empty, so this
+        # needs its own check beyond "phone number is required".
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse('query_dashboard'), {'source': 'call', 'contact_phone': '+91 '})
+        self.assertContains(response, "complete phone number")
+        self.assertEqual(Query.objects.count(), 0)
+
     @override_settings(EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com')
     def test_send_quote_creates_customer_and_emails_the_link(self):
         query = Query.objects.create(source='referral', company_name='Referral Co', contact_email='ref@example.com')

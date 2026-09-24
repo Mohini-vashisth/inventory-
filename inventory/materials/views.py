@@ -752,6 +752,13 @@ def query_dashboard(request):
 
         if not contact_phone:
             error = "Phone number is required."
+        elif len(contact_phone) < 10:
+            # The phone field is pre-filled with "+91 " so staff don't have
+            # to retype the country code — but that also means submitting
+            # without adding the actual number normalizes to a short,
+            # meaningless digit string ("91") instead of failing the
+            # "required" check above.
+            error = "That doesn't look like a complete phone number."
         elif source not in dict(Query.SOURCE_CHOICES):
             error = "Please select where this query came from."
         elif Query.objects.filter(contact_phone=contact_phone).exclude(status__in=['converted', 'not_interested']).exists():
