@@ -20,11 +20,16 @@ import base64
 import hmac
 import hashlib
 import json
+import logging
 import re
+import threading
 import urllib.request
 import urllib.error
 from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
+
+logger = logging.getLogger(__name__)
 from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Order
 from .forms import GateEntryForm, GateEntryLotForm, GateEntryLotFormSet, MaterialForm, OrderForm
 
@@ -743,12 +748,18 @@ def query_dashboard(request):
 
     if request.method == 'POST':
         source = request.POST.get('source', '')
-        contact_phone = request.POST.get('contact_phone', '').strip()
+        contact_phone = _normalize_phone(request.POST.get('contact_phone', ''))
 
         if not contact_phone:
             error = "Phone number is required."
         elif source not in dict(Query.SOURCE_CHOICES):
             error = "Please select where this query came from."
+        elif Query.objects.filter(contact_phone=contact_phone).exclude(status__in=['converted', 'not_interested']).exists():
+            # Logging the same number twice would fire a second template
+            # message and create a duplicate Query that the customer's
+            # replies (routed to the newest match) would never reach —
+            # silently orphaning it in 'new' status forever.
+            error = f"A query for {contact_phone} is already in progress — check the table below."
         else:
             query = Query.objects.create(source=source, contact_phone=contact_phone)
             try:
@@ -765,6 +776,7 @@ def query_dashboard(request):
         'queries': queries,
         'error': error,
         'post': request.POST if error else {},
+        'quote_base_url': _public_quote_base_url(request),
     })
 
 
@@ -867,6 +879,7 @@ def order_dashboard(request):
         'product_type_data': product_type_data,
         'error': error,
         'post': request.POST if error else {},
+        'quote_base_url': _public_quote_base_url(request),
     })
 
 
@@ -1030,6 +1043,17 @@ def quick_send_quote(request):
     return redirect('order_dashboard')
 
 
+def _public_quote_base_url(request):
+    """The origin (scheme+host, no trailing slash) that any customer-facing
+    quote link must be built from. Admins only ever reach this app over
+    Tailscale — building a link from this request's own host would hand an
+    external customer a private address they can never open. Used for both
+    the emailed link (_dispatch_quote_email) and the dashboards' "Copy
+    Link" fallback, which previously built its URL from request.get_host()
+    directly and inherited that same bug."""
+    return settings.PUBLIC_QUOTE_BASE_URL or request.build_absolute_uri('/').rstrip('/')
+
+
 def _dispatch_quote_email(request, customer):
     """Send the quote form link to customer.email. Adds a Django message for success/failure."""
     if not settings.EMAIL_HOST_USER:
@@ -1037,13 +1061,7 @@ def _dispatch_quote_email(request, customer):
         return
 
     quote_path = reverse('quote_form', kwargs={'token': customer.quote_token})
-    # Admins only ever reach this app over Tailscale — building the link from
-    # this request's own host would put that private address in a customer's
-    # email. Use the configured public origin when set (see PUBLIC_QUOTE_BASE_URL).
-    quote_url = (
-        f"{settings.PUBLIC_QUOTE_BASE_URL}{quote_path}" if settings.PUBLIC_QUOTE_BASE_URL
-        else request.build_absolute_uri(quote_path)
-    )
+    quote_url = f"{_public_quote_base_url(request)}{quote_path}"
     try:
         send_mail(
             subject="Quotation Request Form",
@@ -1129,6 +1147,25 @@ def _send_whatsapp_text_message(phone, text):
     })
 
 
+def _send_whatsapp_text_message_background(phone, text):
+    """Fire-and-forget a follow-up question from inside the webhook. Meta
+    expects a fast ack on every delivery — waiting on the Graph API's own
+    network round trip before responding risks a slow/timed-out ack, which
+    is exactly what triggers Meta to redeliver the same message. The
+    answer that triggered this send is already saved by the time this
+    runs, so a failed send here only means a delayed follow-up question,
+    never lost data — logged (not silently swallowed) so a persistent
+    failure, e.g. an expired access token, is actually visible."""
+    def _send():
+        try:
+            _send_whatsapp_text_message(phone, text)
+        except WhatsAppSendError as e:
+            logger.warning("WhatsApp follow-up send to %s failed: %s", phone, e)
+    thread = threading.Thread(target=_send, daemon=True)
+    thread.start()
+    return thread
+
+
 def _next_expected_query_field(query):
     """The next blank field in the fixed intake order, or None once
     company_name/contact_email/grade/size are all filled."""
@@ -1142,17 +1179,38 @@ def _next_expected_query_field(query):
     return None
 
 
+def _normalize_phone(phone):
+    """Digits only — matches the format Meta's Cloud API uses for
+    msg['from'] (no '+', spaces, hyphens, or parens), so a number staff
+    type in any human format (+91 98765 43210, 98765-43210, ...) still
+    matches the customer's later WhatsApp replies exactly."""
+    return re.sub(r'\D', '', phone or '')
+
+
 def _parse_whatsapp_size(text):
     """Lenient size parsing — "1.2", "1.2mm", "1.2 mm" all become
-    Decimal('1.2'); anything with no usable digits returns None so the
-    caller can re-ask instead of saving garbage."""
+    Decimal('1.2'); anything with no usable digits, or a zero/negative
+    result, returns None so the caller can re-ask instead of saving a
+    coil size that could never be real."""
     cleaned = re.sub(r'[^0-9.\-]', '', text or '')
     if not cleaned:
         return None
     try:
-        return Decimal(cleaned)
+        value = Decimal(cleaned)
     except InvalidOperation:
         return None
+    return value if value > 0 else None
+
+
+def _is_valid_whatsapp_email(text):
+    """Reject an obviously-wrong reply at the email step (a typo, or an
+    answer to the wrong question) rather than saving it and only finding
+    out much later when query_send_quote tries to actually mail it."""
+    try:
+        validate_email(text)
+        return True
+    except ValidationError:
+        return False
 
 
 @csrf_exempt
@@ -1173,7 +1231,15 @@ def _whatsapp_verify(request):
     mode = request.GET.get("hub.mode")
     token = request.GET.get("hub.verify_token", "")
     challenge = request.GET.get("hub.challenge", "")
-    if mode == "subscribe" and constant_time_compare(token, settings.WHATSAPP_VERIFY_TOKEN):
+    # An unset WHATSAPP_VERIFY_TOKEN must never "verify" anything — without
+    # this check, a blank token setting would match a request that also
+    # omits hub.verify_token ('' == ''), passing a handshake that verified
+    # nothing at all.
+    if (
+        settings.WHATSAPP_VERIFY_TOKEN
+        and mode == "subscribe"
+        and constant_time_compare(token, settings.WHATSAPP_VERIFY_TOKEN)
+    ):
         return HttpResponse(challenge, content_type="text/plain")
     return HttpResponseForbidden("Verification failed")
 
@@ -1192,6 +1258,10 @@ def _whatsapp_receive(request):
         # Malformed body from an already-authenticated sender — ack anyway
         # so Meta doesn't retry-storm; there's nothing usable to process.
         return HttpResponse(status=200)
+    if not isinstance(payload, dict):
+        # Syntactically valid JSON that isn't an object (e.g. "null", "5",
+        # a bare array) — same "nothing usable, just ack" case as above.
+        return HttpResponse(status=200)
 
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
@@ -1201,7 +1271,10 @@ def _whatsapp_receive(request):
 
 
 def _valid_whatsapp_signature(raw_body, signature_header):
-    if not signature_header.startswith("sha256="):
+    # An unset WHATSAPP_APP_SECRET must never validate anything — HMAC
+    # keyed with an empty string is a key anyone can also compute, which
+    # would make the signature trivially forgeable rather than absent.
+    if not settings.WHATSAPP_APP_SECRET or not signature_header.startswith("sha256="):
         return False
     provided = signature_header[len("sha256="):]
     expected = hmac.new(
@@ -1237,6 +1310,7 @@ def _route_whatsapp_message(phone, text, profile_name):
     either a cold inbound message, or a reply after that query already
     converted/was marked not interested — still becomes a bare Query
     rather than being silently dropped."""
+    phone = _normalize_phone(phone)
     query = (
         Query.objects
         .filter(contact_phone=phone)
@@ -1245,47 +1319,57 @@ def _route_whatsapp_message(phone, text, profile_name):
         .first()
     )
     if query:
-        _process_whatsapp_answer(query, text)
+        _process_whatsapp_answer(query.pk, text)
     else:
         Query.objects.create(source='whatsapp', company_name=profile_name, contact_phone=phone, notes=text)
 
 
-def _process_whatsapp_answer(query, text):
+def _process_whatsapp_answer(query_pk, text):
     """Save this message as the answer to whichever question is next in
     the intake sequence, then send the following question — or, once the
     sequence is complete, try to auto-match an existing ProductType and
     send the closing message. A message that arrives after the sequence
-    is already done is just appended to notes, not mistaken for an answer."""
-    field = _next_expected_query_field(query)
-    if field is None:
-        stamp = timezone.now().strftime('%d %b %H:%M')
-        query.notes = f"{query.notes}\n[{stamp}] {text}".strip()
-        query.save(update_fields=['notes'])
-        return
+    is already done is just appended to notes, not mistaken for an answer.
 
-    if field == 'size':
-        parsed = _parse_whatsapp_size(text)
-        if parsed is None:
-            try:
-                _send_whatsapp_text_message(query.contact_phone, WHATSAPP_QUERY_QUESTIONS['size'])
-            except WhatsAppSendError:
-                pass
+    Re-fetches and locks the row inside a transaction (select_for_update)
+    rather than trusting the caller's already-read Query instance — Meta
+    can redeliver the same webhook, and two overlapping deliveries for the
+    same phone must not both read the same "next field" and race each
+    other into the wrong column. A no-op on SQLite (no row locking there),
+    but real protection once/if this ever runs on Postgres."""
+    with transaction.atomic():
+        query = Query.objects.select_for_update().get(pk=query_pk)
+
+        field = _next_expected_query_field(query)
+        if field is None:
+            stamp = timezone.now().strftime('%d %b %H:%M')
+            query.notes = f"{query.notes}\n[{stamp}] {text}".strip()
+            query.save(update_fields=['notes'])
             return
-        query.size = parsed
-    else:
-        setattr(query, field, text.strip())
-    query.save(update_fields=[field])
 
-    next_field = _next_expected_query_field(query)
-    try:
+        if field == 'size':
+            parsed = _parse_whatsapp_size(text)
+            if parsed is None:
+                _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_QUERY_QUESTIONS['size'])
+                return
+            query.size = parsed
+        elif field == 'contact_email':
+            candidate = text.strip()
+            if not _is_valid_whatsapp_email(candidate):
+                _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_QUERY_QUESTIONS['contact_email'])
+                return
+            query.contact_email = candidate
+        else:
+            setattr(query, field, text.strip())
+        query.save(update_fields=[field])
+
+        next_field = _next_expected_query_field(query)
         if next_field:
-            _send_whatsapp_text_message(query.contact_phone, WHATSAPP_QUERY_QUESTIONS[next_field])
+            _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_QUERY_QUESTIONS[next_field])
         else:
             if query.grade and query.size is not None:
                 match = ProductType.objects.filter(grade__iexact=query.grade, size=query.size).first()
                 if match:
                     query.product_type = match
                     query.save(update_fields=['product_type'])
-            _send_whatsapp_text_message(query.contact_phone, WHATSAPP_CLOSING_MESSAGE)
-    except WhatsAppSendError:
-        pass  # the answer is already saved; a failed follow-up send shouldn't lose it
+            _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_CLOSING_MESSAGE)

@@ -220,7 +220,7 @@
               </form>
             {% elif query.status == 'quote_sent' and query.customer %}
               <button class="icon-btn"
-                      onclick="copyLink('{{ request.scheme }}://{{ request.get_host }}{% url 'quote_form' query.customer.quote_token %}', this)">
+                      onclick="copyLink('{{ quote_base_url }}{% url 'quote_form' query.customer.quote_token %}', this)">
                 📋 Copy Link
               </button>
               <form method="post" action="{% url 'query_not_interested' query.pk %}" style="display:inline;">
