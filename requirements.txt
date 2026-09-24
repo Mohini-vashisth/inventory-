@@ -12,3 +12,5 @@ djangorestframework==3.16.1
 whitenoise==6.11.0
 gunicorn==23.0.0; sys_platform != 'win32'
 waitress==3.0.2; sys_platform == 'win32'
+reportlab==4.4.4
+

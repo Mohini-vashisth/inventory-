@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
-from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Order
+from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Quotation, Order
 
 
 class GateEntryLotInline(admin.TabularInline):
@@ -444,6 +444,7 @@ class OrderAdmin(admin.ModelAdmin):
     list_filter   = ['status', 'delivery_form', 'frequency', 'customer']
     search_fields = ['customer__name', 'grade', 'mill_make']
     ordering      = ['-created_at']
+    readonly_fields = ['purchase_order_link']
     fieldsets = (
         ('Order Info', {
             'fields': ('customer', 'product_type', 'status', 'delivery_date', 'frequency', 'notes')
@@ -454,7 +455,16 @@ class OrderAdmin(admin.ModelAdmin):
         ('Quantity & Delivery', {
             'fields': ('quantity', 'delivery_form')
         }),
+        ('Customer Purchase Order', {
+            'fields': ('purchase_order_link',)
+        }),
     )
+
+    def purchase_order_link(self, obj):
+        if not obj.purchase_order:
+            return 'No PO attached'
+        return format_html('<a href="{}" target="_blank">Download PO</a>', obj.purchase_order.url)
+    purchase_order_link.short_description = 'Purchase Order'
 
     def order_number(self, obj):
         return f'ORD-{obj.order_no:04d}'
@@ -475,3 +485,20 @@ class OrderAdmin(admin.ModelAdmin):
             bg, text, obj.get_status_display()
         )
     status_badge.short_description = 'Status'
+
+
+@admin.register(Quotation)
+class QuotationAdmin(admin.ModelAdmin):
+    """Read-only history of what's actually been quoted — a Quotation is
+    never edited after creation, so there's no manual-entry screen here."""
+    list_display  = ['formatted_no', 'customer', 'rate_per_kg', 'grade', 'size', 'product_type', 'created_at']
+    list_filter   = ['product_type', 'created_at']
+    search_fields = ['customer__name', 'quotation_no']
+    ordering      = ['-created_at']
+    readonly_fields = ['quotation_no', 'customer', 'source_query', 'rate_per_kg', 'product_type', 'grade', 'size', 'created_at']
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False

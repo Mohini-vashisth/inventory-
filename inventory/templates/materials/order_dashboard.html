@@ -243,7 +243,7 @@
         {% csrf_token %}
 
         <!-- Company info — filled once, shared by both paths -->
-        <div class="form-row cols-3">
+        <div class="form-row cols-4">
           <div class="form-group">
             <label for="co-name">Company Name *</label>
             <div class="autocomplete-wrapper">
@@ -264,6 +264,12 @@
             <input type="text" id="co-phone" name="phone"
                    placeholder="+91 98765 43210"
                    value="{{ post.phone|default:'' }}">
+          </div>
+          <div class="form-group">
+            <label for="co-rate">Rate/kg (for quote)</label>
+            <input type="number" id="co-rate" name="rate_per_kg" step="0.01" min="0.01"
+                   placeholder="e.g. 85.50"
+                   value="{{ post.rate_per_kg|default:'' }}">
           </div>
         </div>
 
@@ -530,8 +536,10 @@
                     onclick="copyLink('{{ quote_base_url }}{% url 'quote_form' c.quote_token %}', this)">
               📋 Copy Link
             </button>
-            <form method="post" action="{% url 'send_quote_email' c.pk %}" style="display:inline;">
+            <form method="post" action="{% url 'send_quote_email' c.pk %}" style="display:inline-flex; align-items:center; gap:4px;">
               {% csrf_token %}
+              <input type="number" name="rate_per_kg" step="0.01" min="0.01" placeholder="Rate/kg" required
+                     style="width:75px; padding:0.25rem 0.4rem; border:1px solid #ddd; border-radius:6px; font-size:0.75rem;">
               <button type="submit" class="icon-btn green"
                       {% if not c.email %}disabled title="No email on file"{% endif %}>
                 📧 Resend{% if c.email %} to {{ c.email }}{% endif %}

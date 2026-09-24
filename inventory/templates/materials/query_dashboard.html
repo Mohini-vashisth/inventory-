@@ -212,8 +212,13 @@
           <td>
             <a href="{% url 'query_edit' query.pk %}" class="icon-btn">✏️ Edit</a>
             {% if query.status == 'new' %}
-              <form method="post" action="{% url 'query_send_quote' query.pk %}" style="display:inline;">
+              <form method="post" action="{% url 'query_send_quote' query.pk %}" style="display:inline-flex; align-items:center; gap:4px;">
                 {% csrf_token %}
+                <input type="hidden" name="product_type" value="{{ query.product_type_id|default:'' }}">
+                <input type="hidden" name="grade" value="{{ query.grade|default:'' }}">
+                <input type="hidden" name="size" value="{{ query.size|default:'' }}">
+                <input type="number" name="rate_per_kg" step="0.01" min="0.01" placeholder="Rate/kg" required
+                       style="width:75px; padding:0.25rem 0.4rem; border:1px solid #ddd; border-radius:6px; font-size:0.75rem;">
                 <button type="submit" class="icon-btn green">📧 Send Quote</button>
               </form>
               <form method="post" action="{% url 'query_not_interested' query.pk %}" style="display:inline;">
@@ -225,6 +230,11 @@
                       onclick="copyLink('{{ quote_base_url }}{% url 'quote_form' query.customer.quote_token %}', this)">
                 📋 Copy Link
               </button>
+              {% with latest_quotation=query.quotations.first %}
+              {% if latest_quotation %}
+              <a href="{% url 'quotation_pdf' latest_quotation.pk %}" class="icon-btn">📄 PDF</a>
+              {% endif %}
+              {% endwith %}
               <form method="post" action="{% url 'query_not_interested' query.pk %}" style="display:inline;">
                 {% csrf_token %}
                 <button type="submit" class="icon-btn red">✕ Not Interested</button>

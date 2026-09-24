@@ -1,7 +1,7 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login
 from django.contrib import messages
-from django.core.mail import send_mail
+from django.core.mail import EmailMessage
 from django.conf import settings
 from django.urls import reverse
 from django.db import transaction
@@ -30,8 +30,9 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
 logger = logging.getLogger(__name__)
-from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Order
+from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Order, Quotation
 from .forms import GateEntryForm, GateEntryLotForm, GateEntryLotFormSet, MaterialForm, OrderForm
+from .pdf import generate_quotation_pdf
 
 
 class _CoilOverCommitted(Exception):
@@ -72,6 +73,17 @@ def _safe_get(queryset, pk):
         return queryset.filter(pk=pk).first()
     except (ValueError, TypeError):
         return None
+
+
+def _parse_rate_per_kg(raw):
+    """A quotation's rate must be a real, positive number — returns None
+    (rather than raising) for anything else so callers can show a plain
+    error instead of a 500."""
+    try:
+        rate = Decimal(raw)
+    except (InvalidOperation, TypeError):
+        return None
+    return rate if rate > 0 else None
 
 
 # ── Employee auth ────────────────────────────────────────────
@@ -778,7 +790,7 @@ def query_dashboard(request):
     if not request.user.is_authenticated or not request.user.is_staff:
         return redirect(f"{reverse('admin_login')}?next={reverse('query_dashboard')}")
 
-    queries = Query.objects.select_related('product_type', 'customer').all()
+    queries = Query.objects.select_related('product_type', 'customer').prefetch_related('quotations').all()
     error = None
 
     if request.method == 'POST':
@@ -825,14 +837,21 @@ def query_dashboard(request):
 
 
 def query_send_quote(request, pk):
-    """Create/reuse a Customer from the query's captured info and send the
-    quote form link — by email if one's on file, otherwise staff fall back
-    to the Copy Link action (same as any other customer)."""
+    """Create/reuse a Customer from the query's captured info, record the
+    rate just finalized as an official Quotation, and send it — by email
+    (PDF attached, ahead of the order-form link) if one's on file,
+    otherwise staff fall back to Copy Link or the quotation PDF download
+    (same as any other customer)."""
     if not request.user.is_staff:
         return redirect('home')
     if request.method != 'POST':
         return redirect('query_dashboard')
     query = get_object_or_404(Query, pk=pk)
+
+    rate_per_kg = _parse_rate_per_kg(request.POST.get('rate_per_kg'))
+    if rate_per_kg is None:
+        messages.error(request, "Enter a valid rate per kg before sending the quote.")
+        return redirect('query_dashboard')
 
     customer_name = query.company_name or query.contact_phone or f"Query #{query.pk}"
     customer, _ = Customer.objects.get_or_create(name=customer_name)
@@ -846,12 +865,27 @@ def query_send_quote(request, pk):
     query.status = 'quote_sent'
     query.save(update_fields=['customer', 'status'])
 
+    # The rate form prefills from the query but is editable — fall back to
+    # the query's own values for anything left blank.
+    product_type_id = request.POST.get('product_type') or query.product_type_id
+    grade = request.POST.get('grade', '').strip() or query.grade
+    raw_size = request.POST.get('size') or (str(query.size) if query.size is not None else None)
+    try:
+        quotation = Quotation.objects.create(
+            customer=customer, source_query=query, rate_per_kg=rate_per_kg,
+            product_type_id=product_type_id, grade=grade, size=raw_size,
+        )
+    except (InvalidOperation, ValueError, ValidationError):
+        messages.error(request, "Check that size is a valid number.")
+        return redirect('query_dashboard')
+
     if customer.email:
-        _dispatch_quote_email(request, customer)
+        _dispatch_quote_email(request, customer, quotation)
     else:
         messages.warning(
             request,
-            f"No email on file for {customer.name} — use “Copy Link” to share the quote form directly.",
+            f"No email on file for {customer.name} — use “Copy Link” to share the quote form, "
+            f"or download the quotation PDF below to send manually.",
         )
     return redirect('query_dashboard')
 
@@ -1051,7 +1085,7 @@ def quote_form(request, token):
     error = None
 
     if request.method == 'POST':
-        form = OrderForm(request.POST)
+        form = OrderForm(request.POST, request.FILES)
         if not form.is_valid():
             error = _first_form_error(form)
         else:
@@ -1099,7 +1133,23 @@ def send_quote_email(request, pk):
         messages.error(request, f"No email address on file for {customer.name}.")
         return redirect('order_dashboard')
 
-    _dispatch_quote_email(request, customer)
+    rate_per_kg = _parse_rate_per_kg(request.POST.get('rate_per_kg'))
+    if rate_per_kg is None:
+        messages.error(request, "Enter a valid rate per kg before sending the quote.")
+        return redirect('order_dashboard')
+
+    try:
+        quotation = Quotation.objects.create(
+            customer=customer, rate_per_kg=rate_per_kg,
+            product_type_id=request.POST.get('product_type') or None,
+            grade=request.POST.get('grade', '').strip(),
+            size=request.POST.get('size') or None,
+        )
+    except (InvalidOperation, ValueError, ValidationError):
+        messages.error(request, "Check that size is a valid number.")
+        return redirect('order_dashboard')
+
+    _dispatch_quote_email(request, customer, quotation)
     return redirect('order_dashboard')
 
 
@@ -1121,13 +1171,29 @@ def quick_send_quote(request):
         messages.error(request, "Email address is required to send the form.")
         return redirect('order_dashboard')
 
+    rate_per_kg = _parse_rate_per_kg(request.POST.get('rate_per_kg'))
+    if rate_per_kg is None:
+        messages.error(request, "Enter a valid rate per kg before sending the quote.")
+        return redirect('order_dashboard')
+
     customer, _ = Customer.objects.get_or_create(name=name)
     customer.email = email
     if phone:
         customer.phone = phone
     customer.save(update_fields=['email', 'phone'])
 
-    _dispatch_quote_email(request, customer)
+    try:
+        quotation = Quotation.objects.create(
+            customer=customer, rate_per_kg=rate_per_kg,
+            product_type_id=request.POST.get('product_type') or None,
+            grade=request.POST.get('grade', '').strip(),
+            size=request.POST.get('size') or None,
+        )
+    except (InvalidOperation, ValueError, ValidationError):
+        messages.error(request, "Check that size is a valid number.")
+        return redirect('order_dashboard')
+
+    _dispatch_quote_email(request, customer, quotation)
     return redirect('order_dashboard')
 
 
@@ -1142,8 +1208,9 @@ def _public_quote_base_url(request):
     return settings.PUBLIC_QUOTE_BASE_URL or request.build_absolute_uri('/').rstrip('/')
 
 
-def _dispatch_quote_email(request, customer):
-    """Send the quote form link to customer.email. Adds a Django message for success/failure."""
+def _dispatch_quote_email(request, customer, quotation):
+    """Emails the official quotation PDF, followed by the order-form link,
+    to customer.email. Adds a Django message for success/failure."""
     if not settings.EMAIL_HOST_USER:
         messages.error(request, "Email is not configured — set EMAIL_HOST, EMAIL_HOST_USER, and EMAIL_HOST_PASSWORD in your .env file.")
         return
@@ -1151,21 +1218,40 @@ def _dispatch_quote_email(request, customer):
     quote_path = reverse('quote_form', kwargs={'token': customer.quote_token})
     quote_url = f"{_public_quote_base_url(request)}{quote_path}"
     try:
-        send_mail(
-            subject="Quotation Request Form",
-            message=(
+        pdf_bytes = generate_quotation_pdf(quotation)
+        email = EmailMessage(
+            subject=f"Quotation {quotation.formatted_no()} — {settings.COMPANY_NAME}",
+            body=(
                 f"Dear {customer.name},\n\n"
-                f"Please fill in your quotation requirements using the link below:\n\n"
+                f"Please find attached our official quotation {quotation.formatted_no()} "
+                f"for your requirement.\n\n"
+                f"If you wish to proceed, please log your order using the link below — "
+                f"you're welcome to attach your own Purchase Order there too, if you have one:\n\n"
                 f"{quote_url}\n\n"
-                f"This link is unique to your company and can be used for future requests as well.\n\n"
-                f"Regards"
+                f"This link is unique to your company.\n\n"
+                f"Regards,\n{settings.COMPANY_NAME}"
             ),
             from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[customer.email],
+            to=[customer.email],
         )
-        messages.success(request, f"Quote form sent to {customer.email}.")
+        email.attach(f"{quotation.formatted_no()}.pdf", pdf_bytes, "application/pdf")
+        email.send()
+        messages.success(request, f"Quotation {quotation.formatted_no()} sent to {customer.email}.")
     except Exception as e:
         messages.error(request, f"Failed to send email: {e}")
+
+
+def quotation_pdf(request, pk):
+    """Standalone download of a quotation's PDF — used for the Copy Link
+    fallback (no email on file to attach it to) and for staff wanting to
+    re-download/print one already sent."""
+    if not request.user.is_staff:
+        return redirect('home')
+    quotation = get_object_or_404(Quotation, pk=pk)
+    pdf_bytes = generate_quotation_pdf(quotation)
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{quotation.formatted_no()}.pdf"'
+    return response
 
 
 # ── WhatsApp webhook (public, unauthenticated) ─────────────────────

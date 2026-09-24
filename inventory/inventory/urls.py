@@ -14,6 +14,8 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
@@ -32,3 +34,8 @@ urlpatterns = [
     path('api-auth/', include('rest_framework.urls')),
     path('', include('materials.urls')),
 ]
+
+# Serves customer-uploaded Purchase Orders (Order.purchase_order) —
+# unconditional, not just under DEBUG, since WhiteNoise (STATIC_ROOT only)
+# doesn't cover MEDIA and this app has no reverse proxy in front of it.
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

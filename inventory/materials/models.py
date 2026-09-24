@@ -381,6 +381,38 @@ class Query(models.Model):
         return f"{label} — {self.get_source_display()}"
 
 
+class Quotation(models.Model):
+    """A record of an official per-kg rate quotation actually sent to a
+    customer — created every time Send Quote fires, regardless of which
+    entry point triggered it (query_send_quote, send_quote_email,
+    quick_send_quote all funnel through _dispatch_quote_email). Immutable
+    once created — correcting a rate means sending a new quotation, not
+    editing history, the same way Order itself is never silently rewritten."""
+    customer      = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='quotations')
+    source_query  = models.ForeignKey(Query, on_delete=models.SET_NULL, null=True, blank=True, related_name='quotations')
+    quotation_no  = models.PositiveIntegerField(unique=True, editable=False, null=True)
+    rate_per_kg   = models.DecimalField(max_digits=10, decimal_places=2)
+    product_type  = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)
+    grade         = models.CharField(max_length=100, blank=True)
+    size          = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def save(self, *args, **kwargs):
+        if self.quotation_no is None:
+            max_no = Quotation.objects.aggregate(models.Max('quotation_no'))['quotation_no__max'] or 0
+            self.quotation_no = max_no + 1
+        super().save(*args, **kwargs)
+
+    def formatted_no(self):
+        return f"QUO-{self.quotation_no:04d}"
+
+    def __str__(self):
+        return f"{self.formatted_no()} — {self.customer.name}"
+
+
 class Order(models.Model):
     STATUS_CHOICES = [
         ('pending',       'Pending'),
@@ -432,6 +464,10 @@ class Order(models.Model):
 
     delivery_date = models.DateField(null=True, blank=True)
     notes         = models.TextField(blank=True)
+    purchase_order = models.FileField(
+        upload_to='purchase_orders/%Y/%m/', blank=True, null=True,
+        help_text="Customer's own PO, if they attached one when filling the quote form.",
+    )
     status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
     created_at    = models.DateTimeField(auto_now_add=True)
 
