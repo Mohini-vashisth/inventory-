@@ -86,7 +86,7 @@
   </div>
   <div class="card-body">
     {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
-    <form method="post">
+    <form method="post" enctype="multipart/form-data">
       {% csrf_token %}
 
       <div class="section-label">Product</div>
@@ -186,6 +186,12 @@
           <label>Additional Notes</label>
           <input type="text" name="notes" placeholder="Any other requirements"
                  value="{{ post.notes|default:'' }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Attach Your Purchase Order (optional)</label>
+          <input type="file" name="purchase_order" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
         </div>
       </div>
 

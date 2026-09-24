@@ -66,6 +66,16 @@ WHATSAPP_APP_SECRET = os.environ.get('WHATSAPP_APP_SECRET', '')
 WHATSAPP_ACCESS_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN', '')
 WHATSAPP_PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '')
 
+# Printed on the official PDF quotation (materials/pdf.py::generate_quotation_pdf).
+# Blank defaults are deliberate — an incomplete-looking PDF is a visible
+# reminder to fill these in with the real business details before this
+# ever goes out to an actual customer.
+COMPANY_NAME = os.environ.get('COMPANY_NAME', 'Matta Drawing')
+COMPANY_ADDRESS = os.environ.get('COMPANY_ADDRESS', '')
+COMPANY_PHONE = os.environ.get('COMPANY_PHONE', '')
+COMPANY_EMAIL = os.environ.get('COMPANY_EMAIL', '')
+COMPANY_GST = os.environ.get('COMPANY_GST', '')
+
 
 # Application definition
 
@@ -177,7 +187,18 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# Customer-uploaded Purchase Orders (Order.purchase_order). WhiteNoise only
+# serves STATIC_ROOT, not this — materials/urls.py wires MEDIA_URL up via
+# Django's own static() helper unconditionally (not just in DEBUG), a
+# pragmatic choice for a small internal app with no reverse proxy in front,
+# consistent with running SQLite in production here.
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
     },

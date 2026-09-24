@@ -26,6 +26,7 @@ urlpatterns = [
     path('queries/<int:pk>/edit/', views.query_edit, name='query_edit'),
     path('queries/<int:pk>/send-quote/', views.query_send_quote, name='query_send_quote'),
     path('queries/<int:pk>/not-interested/', views.query_not_interested, name='query_not_interested'),
+    path('quotations/<int:pk>/pdf/', views.quotation_pdf, name='quotation_pdf'),
     # Public, unauthenticated — Meta's Cloud API calls this directly. Verified
     # via HMAC/verify-token inside the view, not Django auth. Reaches the
     # internet only via its own Tailscale Funnel path on the deployment

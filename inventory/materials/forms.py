@@ -78,5 +78,5 @@ class OrderForm(forms.ModelForm):
         fields = [
             'product_type', 'drawing_dimensions', 'grade', 'size', 'mill_make',
             'mechanical_properties', 'processes', 'end_usage', 'delivery_form',
-            'quantity', 'frequency', 'delivery_date', 'notes',
+            'quantity', 'frequency', 'delivery_date', 'notes', 'purchase_order',
         ]
