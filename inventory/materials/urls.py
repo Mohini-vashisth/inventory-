@@ -20,6 +20,7 @@ urlpatterns = [
     path('order/<int:order_pk>/select-coil/', views.select_coil_for_order, name='select_coil_for_order'),
     path('order/<int:order_pk>/pick-coil/<int:coil_pk>/', views.pick_coil_for_order, name='pick_coil_for_order'),
     path('production-board/', views.production_board, name='production_board'),
+    path('scan-job/', views.select_job_for_coil, name='select_job_for_coil'),
     path('job/<int:pk>/', views.job_detail, name='job_detail'),
     path('queries/', views.query_dashboard, name='query_dashboard'),
     path('queries/<int:pk>/edit/', views.query_edit, name='query_edit'),

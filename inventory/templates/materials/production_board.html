@@ -99,6 +99,9 @@
     .btn-update.done {
       background: #f3f4f6; color: #6b7280; cursor: default;
     }
+    .btn-update.readonly {
+      background: #eff2ff; color: #4e73df; cursor: default; font-weight: 400;
+    }
 
     .empty-state {
       background: rgba(255,255,255,0.15); border-radius: 16px;
@@ -115,7 +118,10 @@
 
   <a href="{% url 'employee' %}" class="back-link">← Back to employee portal</a>
   <h1>Production Board</h1>
-  <p class="subtitle">All orders currently in production</p>
+  <p class="subtitle">
+    All orders currently in production — read-only.
+    <a href="{% url 'select_job_for_coil' %}" style="color:white; font-weight:700;">📷 Scan a coil to update →</a>
+  </p>
 
   {% for item in board %}
   {% with order=item.order %}
@@ -180,7 +186,7 @@
           </td>
           <td>
             {% if jd.current_step %}
-              <a href="{% url 'job_detail' jd.job.pk %}" class="btn-update">Update →</a>
+              <span class="btn-update readonly">📷 Scan to update</span>
             {% else %}
               <span class="btn-update done">Completed</span>
             {% endif %}

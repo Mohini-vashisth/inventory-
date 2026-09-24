@@ -1951,6 +1951,59 @@ class ScanCoilForOrderTests(TestCase):
         self.assertContains(response, "no weight remaining")
 
 
+class SelectJobForCoilTests(TestCase):
+    """Updating a job's progress is gated behind scanning/typing the coil's
+    own number — production_board is read-only, this is the only path in."""
+
+    def setUp(self):
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.customer = Customer.objects.create(name='Job Scan Co')
+        self.product_type = ProductType.objects.create(item_code='Job Scan Bar')
+        self.order = Order.objects.create(customer=self.customer, quantity=100, status='in_production')
+
+    def _make_job(self, coil, job_no='JOB-0001'):
+        pick = OrderCoilPick.objects.create(order=self.order, coil=coil, weight_allocated=100)
+        return ProductionJob.objects.create(
+            pick=pick, product_type=self.product_type, job_no=job_no, order=self.order,
+        )
+
+    def test_scanning_coil_with_one_job_redirects_straight_to_it(self):
+        coil = Material.objects.create(quantity=500)
+        job = self._make_job(coil)
+        response = self.client.post(reverse('select_job_for_coil'), {'coil_no': coil.formatted_coil()})
+        self.assertRedirects(response, reverse('job_detail', kwargs={'pk': job.pk}))
+
+    def test_scanning_bare_number_also_works(self):
+        coil = Material.objects.create(quantity=500)
+        job = self._make_job(coil)
+        response = self.client.post(reverse('select_job_for_coil'), {'coil_no': str(coil.pk)})
+        self.assertRedirects(response, reverse('job_detail', kwargs={'pk': job.pk}))
+
+    def test_unknown_coil_shows_error(self):
+        response = self.client.post(reverse('select_job_for_coil'), {'coil_no': 'COIL9999'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Coil not found")
+
+    def test_coil_never_picked_shows_error(self):
+        coil = Material.objects.create(quantity=500)
+        response = self.client.post(reverse('select_job_for_coil'), {'coil_no': coil.formatted_coil()})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "hasn&#x27;t been picked")
+
+    def test_coil_with_multiple_jobs_lists_them_for_selection(self):
+        coil = Material.objects.create(quantity=500)
+        job1 = self._make_job(coil, job_no='JOB-0001')
+        other_order = Order.objects.create(customer=self.customer, quantity=50, status='in_production')
+        pick2 = OrderCoilPick.objects.create(order=other_order, coil=coil, weight_allocated=50)
+        job2 = ProductionJob.objects.create(
+            pick=pick2, product_type=self.product_type, job_no='JOB-0002', order=other_order,
+        )
+        response = self.client.post(reverse('select_job_for_coil'), {'coil_no': coil.formatted_coil()})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, job1.job_no)
+        self.assertContains(response, job2.job_no)
+
+
 class OrderDashboardTests(TestCase):
     def setUp(self):
         self.staff = User.objects.create_user('dash_staff', password='pw', is_staff=True)

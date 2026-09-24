@@ -666,6 +666,41 @@ def job_detail(request, pk):
     })
 
 
+def select_job_for_coil(request):
+    """Gate into job_detail — progress can only be updated by scanning or
+    typing the coil's own number, the same way an order can only be picked
+    by scanning the coil being picked. production_board is read-only status
+    now; this is the only path into actually updating a job."""
+    guard = _employee_required(request)
+    if guard: return guard
+
+    scan_error = None
+    jobs = None
+    if request.method == 'POST':
+        coil_no = _parse_coil_no(request.POST.get('coil_no'))
+        coil = _safe_get(Material.objects, coil_no) if coil_no is not None else None
+        if coil is None:
+            scan_error = "Coil not found. Check the number and try again."
+        else:
+            jobs = list(
+                ProductionJob.objects
+                .filter(pick__coil=coil)
+                .select_related('order', 'product_type')
+                .order_by('-created_at')
+            )
+            if not jobs:
+                scan_error = f"{coil.formatted_coil()} hasn't been picked for any order yet — nothing to update."
+            elif len(jobs) == 1:
+                return redirect('job_detail', pk=jobs[0].pk)
+            # else: multiple jobs on this coil (split across orders) — let
+            # the employee pick which one, rendered below.
+
+    return render(request, 'materials/select_job_for_coil.html', {
+        'scan_error': scan_error,
+        'jobs': jobs,
+    })
+
+
 def production_board(request):
     guard = _employee_required(request)
     if guard: return guard
