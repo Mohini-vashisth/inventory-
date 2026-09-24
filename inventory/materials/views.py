@@ -763,7 +763,9 @@ def query_dashboard(request):
         else:
             query = Query.objects.create(source=source, contact_phone=contact_phone)
             try:
-                _send_whatsapp_template_message(contact_phone, WHATSAPP_QUERY_INTAKE_TEMPLATE)
+                _send_whatsapp_template_message(
+                    contact_phone, WHATSAPP_QUERY_INTAKE_TEMPLATE, language=WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE,
+                )
             except WhatsAppSendError as e:
                 messages.warning(
                     request,
@@ -1084,6 +1086,12 @@ def _dispatch_quote_email(request, customer):
 
 WHATSAPP_GRAPH_API_VERSION = "v21.0"
 WHATSAPP_QUERY_INTAKE_TEMPLATE = "matta_drawing_query_intake"
+# Meta templates are keyed by the exact language code they were approved
+# under — picking "English" (not "English (US)") in WhatsApp Manager
+# approves the template as "en", not "en_US". Sending with the wrong code
+# fails with a "template does not exist" error even though the template
+# itself exists and is approved.
+WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE = "en"
 # Fixed intake order — the next question is whichever of these is still
 # blank on the Query, so there's no separate "stage" field to drift out of
 # sync with the actual data.
