@@ -15,6 +15,12 @@ class GateEntryForm(forms.ModelForm):
         vehicle_no = self.cleaned_data['vehicle_no']
         return vehicle_no.upper() if vehicle_no else vehicle_no
 
+    def clean_total_weight(self):
+        total_weight = self.cleaned_data['total_weight']
+        if total_weight <= 0:
+            raise forms.ValidationError("Total weight must be greater than zero.")
+        return total_weight
+
 
 class GateEntryLotForm(forms.Form):
     """A single lot row — company/grade/size/no_of_coils. Used both as a
@@ -58,6 +64,12 @@ class MaterialForm(forms.ModelForm):
         if not SizeOption.objects.filter(value=size).exists():
             raise forms.ValidationError("Select a size from the list.")
         return size
+
+    def clean_quantity(self):
+        quantity = self.cleaned_data['quantity']
+        if quantity <= 0:
+            raise forms.ValidationError("Weight must be greater than zero.")
+        return quantity
 
 
 class OrderForm(forms.ModelForm):

@@ -116,7 +116,7 @@
 
       <div class="form-group">
         <label>Total Weight (kg)</label>
-        <input type="number" name="total_weight" step="0.001" value="{{ post.total_weight|default:'' }}" placeholder="e.g. 2500.000" required>
+        <input type="number" name="total_weight" step="0.001" min="0.001" value="{{ post.total_weight|default:'' }}" placeholder="e.g. 2500.000" required>
       </div>
 
       <button type="submit" class="btn-submit">Save Changes →</button>
