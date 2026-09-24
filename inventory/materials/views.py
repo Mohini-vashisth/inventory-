@@ -832,6 +832,50 @@ def query_not_interested(request, pk):
     return redirect('query_dashboard')
 
 
+def query_edit(request, pk):
+    """Fix a wrong/incomplete field on a query directly from the dashboard —
+    a typo'd company name, a grade the WhatsApp bot mis-parsed, etc.
+    Previously the only way to do this was Django admin. `source`, `status`,
+    and `customer` are deliberately not editable here — status/customer
+    changes go through query_send_quote/query_not_interested so they can't
+    drift out of sync with what those actions actually did."""
+    if not request.user.is_staff:
+        return redirect('home')
+    query = get_object_or_404(Query, pk=pk)
+    product_types = ProductType.objects.order_by('item_code')
+    error = None
+
+    if request.method == 'POST':
+        raw_size = request.POST.get('size') or None
+        raw_quantity = request.POST.get('quantity') or None
+        try:
+            query.company_name = request.POST.get('company_name', '').strip()
+            query.contact_phone = _normalize_phone(request.POST.get('contact_phone', ''))
+            query.contact_email = request.POST.get('contact_email', '').strip()
+            query.product_type_id = request.POST.get('product_type') or None
+            query.grade = request.POST.get('grade', '').strip()
+            query.size = raw_size
+            query.quantity = raw_quantity
+            query.notes = request.POST.get('notes', '').strip()
+            query.full_clean(exclude=['source', 'status', 'customer'])
+        except ValidationError as e:
+            error = e.messages[0] if e.messages else "Check the values entered."
+        except (InvalidOperation, ValueError):
+            error = "Check that size and quantity are valid numbers."
+        else:
+            query.save(update_fields=[
+                'company_name', 'contact_phone', 'contact_email',
+                'product_type', 'grade', 'size', 'quantity', 'notes',
+            ])
+            return redirect('query_dashboard')
+
+    return render(request, 'materials/query_edit.html', {
+        'query': query,
+        'product_types': product_types,
+        'error': error,
+    })
+
+
 def order_dashboard(request):
     if not request.user.is_authenticated or not request.user.is_staff:
         return redirect(f"{reverse('admin_login')}?next={reverse('order_dashboard')}")

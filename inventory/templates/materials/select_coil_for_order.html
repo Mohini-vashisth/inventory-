@@ -105,6 +105,16 @@
       color: white; font-size: 0.88rem;
     }
 
+    /* Browse-list filter */
+    #coil-search {
+      width: 100%; padding: 0.65rem 0.9rem; border: none; border-radius: 8px;
+      font-size: 16px; margin-bottom: 1rem; box-sizing: border-box;
+    }
+    .no-search-results {
+      display: none; color: rgba(255,255,255,0.75); font-size: 0.88rem;
+      text-align: center; padding: 1.5rem 0;
+    }
+
     /* Already-picked coils */
     .picks-list { margin-bottom: 1.75rem; }
     .pick-row {
@@ -188,8 +198,14 @@
     {% endif %}
   </h2>
 
+  {% if coils %}
+  <input type="text" id="coil-search" placeholder="Search by coil no., grade, size, or vendor..." autocomplete="off">
+  {% endif %}
+
+  <div id="coil-list">
   {% for item in coils %}
-  <a href="{% url 'pick_coil_for_order' order.pk item.coil.coil_no %}" class="coil-card">
+  <a href="{% url 'pick_coil_for_order' order.pk item.coil.coil_no %}" class="coil-card"
+     data-search="{{ item.coil.formatted_coil|lower }} {{ item.coil.grade|lower }} {{ item.coil.size }} {{ item.coil.vendor|lower }}">
     <div class="coil-left">
       <div class="coil-no">{{ item.coil.formatted_coil }}</div>
       <div class="coil-meta">
@@ -219,7 +235,26 @@
     {% endif %}
   </div>
   {% endfor %}
+  </div>
+  <div class="no-search-results" id="no-search-results">No coils match your search.</div>
 
 </div>
+
+<script>
+  var coilSearch = document.getElementById('coil-search');
+  if (coilSearch) {
+    coilSearch.addEventListener('input', function () {
+      var query = coilSearch.value.trim().toLowerCase();
+      var cards = document.querySelectorAll('#coil-list .coil-card');
+      var visibleCount = 0;
+      cards.forEach(function (card) {
+        var matches = card.getAttribute('data-search').indexOf(query) !== -1;
+        card.hidden = !matches;
+        if (matches) visibleCount++;
+      });
+      document.getElementById('no-search-results').style.display = visibleCount === 0 ? 'block' : 'none';
+    });
+  }
+</script>
 </body>
 </html>

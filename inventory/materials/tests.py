@@ -1759,6 +1759,12 @@ class SelectCoilForOrderSpecFilterTests(TestCase):
         self.assertEqual(coil_ids, [matching.pk])
         self.assertNotIn(non_matching.pk, coil_ids)
 
+    def test_browse_list_search_box_present_with_matching_data_attributes(self):
+        Material.objects.create(quantity=500, grade='EN8D', size='1.200', vendor='ABC Traders')
+        response = self.client.get(reverse('select_coil_for_order', kwargs={'order_pk': self.order.pk}))
+        self.assertContains(response, 'id="coil-search"')
+        self.assertContains(response, 'abc traders')
+
 
 class SelectCoilForOrderBestFitSortTests(TestCase):
     """Coils closest to what the order still needs are listed first, not
@@ -2228,6 +2234,63 @@ class QueryDashboardTests(TestCase):
         self.client.post(reverse('query_not_interested', kwargs={'pk': query.pk}))
         query.refresh_from_db()
         self.assertEqual(query.status, 'not_interested')
+
+    def test_anonymous_cannot_edit_query(self):
+        query = Query.objects.create(source='call', contact_phone='9123456780')
+        response = self.client.get(reverse('query_edit', kwargs={'pk': query.pk}))
+        self.assertRedirects(response, reverse('home'))
+
+    def test_edit_query_updates_fields(self):
+        query = Query.objects.create(source='whatsapp', contact_phone='919123456780')
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), {
+            'company_name': 'Fixed Co Name', 'contact_phone': '+91 91234 56780',
+            'contact_email': 'fixed@example.com', 'grade': 'EN8D',
+            'size': '1.200', 'quantity': '500', 'notes': 'corrected via dashboard',
+        })
+        self.assertRedirects(response, reverse('query_dashboard'))
+        query.refresh_from_db()
+        self.assertEqual(query.company_name, 'Fixed Co Name')
+        self.assertEqual(query.contact_phone, '919123456780')
+        self.assertEqual(query.contact_email, 'fixed@example.com')
+        self.assertEqual(query.grade, 'EN8D')
+        self.assertEqual(query.size, Decimal('1.200'))
+        self.assertEqual(query.quantity, Decimal('500'))
+        self.assertEqual(query.notes, 'corrected via dashboard')
+
+    def test_edit_query_links_product_type(self):
+        product_type = ProductType.objects.create(item_code='Edit Bar', grade='SS304', size='2.500')
+        query = Query.objects.create(source='call', contact_phone='9123456780')
+        self.client.force_login(self.staff)
+        self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), {
+            'company_name': '', 'contact_phone': '9123456780', 'contact_email': '',
+            'product_type': str(product_type.pk), 'grade': '', 'size': '', 'quantity': '', 'notes': '',
+        })
+        query.refresh_from_db()
+        self.assertEqual(query.product_type, product_type)
+
+    def test_edit_query_rejects_invalid_size(self):
+        query = Query.objects.create(source='call', contact_phone='9123456780')
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), {
+            'company_name': '', 'contact_phone': '9123456780', 'contact_email': '',
+            'grade': '', 'size': 'not-a-number', 'quantity': '', 'notes': '',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "must be a decimal number")
+        query.refresh_from_db()
+        self.assertIsNone(query.size)
+
+    def test_edit_query_does_not_change_status_or_source(self):
+        query = Query.objects.create(source='call', contact_phone='9123456780', status='quote_sent')
+        self.client.force_login(self.staff)
+        self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), {
+            'company_name': 'Renamed Co', 'contact_phone': '9123456780', 'contact_email': '',
+            'grade': '', 'size': '', 'quantity': '', 'notes': '',
+        })
+        query.refresh_from_db()
+        self.assertEqual(query.source, 'call')
+        self.assertEqual(query.status, 'quote_sent')
 
     def test_quote_form_prefills_from_in_flight_query(self):
         customer = Customer.objects.create(name='Prefill Co')
