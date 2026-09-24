@@ -22,6 +22,7 @@ urlpatterns = [
     path('production-board/', views.production_board, name='production_board'),
     path('job/<int:pk>/', views.job_detail, name='job_detail'),
     path('queries/', views.query_dashboard, name='query_dashboard'),
+    path('queries/<int:pk>/edit/', views.query_edit, name='query_edit'),
     path('queries/<int:pk>/send-quote/', views.query_send_quote, name='query_send_quote'),
     path('queries/<int:pk>/not-interested/', views.query_not_interested, name='query_not_interested'),
     # Public, unauthenticated — Meta's Cloud API calls this directly. Verified
