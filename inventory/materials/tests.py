@@ -1081,6 +1081,18 @@ class MaterialFormGateEntryTests(TestCase):
         self.assertEqual(coil.grade, 'EN8D')
         self.assertEqual(coil.size, Decimal('1.200'))
 
+    def test_archived_at_and_legacy_used_weight_cannot_be_posted(self):
+        """These aren't read from trusted sources like company/vendor/grade/
+        size (there's no legitimate way to set them from this form at all —
+        archived_at only ever comes from the admin's archive action,
+        legacy_used_weight only from import_excel) — MaterialForm.Meta must
+        exclude both, or a raw/scripted POST could pre-archive a brand-new
+        coil or corrupt its weight_used() math with a fake legacy figure."""
+        self._post_coil(archived_at='2020-01-01T00:00:00Z', legacy_used_weight='999999')
+        coil = Material.objects.get()
+        self.assertIsNone(coil.archived_at)
+        self.assertEqual(coil.legacy_used_weight, Decimal('0'))
+
     def test_invoice_weight_computed_from_gate_entry_average(self):
         self._post_coil()
         coil = Material.objects.get()
@@ -1368,6 +1380,47 @@ class JobStatusRollupTests(TestCase):
         self.client.post(f'/admin/materials/steplog/{log.pk}/delete/', {'post': 'yes'})
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, 'pending')  # back to no logs at all
+
+    def test_admin_bulk_mark_completed_writes_real_steplogs(self):
+        """The bulk action used to be a raw queryset.update(status=...) —
+        it left step_logs untouched, so the very next StepLog change
+        anywhere on the job (recalculate_status runs on every StepLog
+        add/change/delete) would silently revert the status this action
+        just set. It must instead write a real completed StepLog per step,
+        the same as the employee portal does, so the status sticks."""
+        staff = User.objects.create_user('bulk_admin', password='pw', is_staff=True, is_superuser=True)
+        self.client.force_login(staff)
+        self.client.post('/admin/materials/productionjob/', {
+            'action': 'mark_completed', '_selected_action': [self.job.pk],
+        })
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'completed')
+        self.assertTrue(self.job.step_logs.filter(step=self.step1, status='completed').exists())
+        self.assertTrue(self.job.step_logs.filter(step=self.step2, status='completed').exists())
+
+        # An unrelated StepLog change elsewhere must not revert this.
+        StepLog.objects.create(job=self.job, step=self.step1, status='completed')
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'completed')
+
+    def test_admin_bulk_mark_on_hold_writes_a_failed_steplog(self):
+        StepLog.objects.create(job=self.job, step=self.step1, status='completed')
+        self.job.recalculate_status()
+        staff = User.objects.create_user('bulk_admin2', password='pw', is_staff=True, is_superuser=True)
+        self.client.force_login(staff)
+        self.client.post('/admin/materials/productionjob/', {
+            'action': 'mark_on_hold', '_selected_action': [self.job.pk],
+        })
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'on_hold')
+        self.assertTrue(self.job.step_logs.filter(status='failed').exists())
+
+        # recalculate_status derives on_hold from the failed log itself, so
+        # it survives an unrelated StepLog change instead of being silently
+        # overwritten the next time recalculate_status runs.
+        StepLog.objects.create(job=self.job, step=self.step2, status='in_progress')
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.status, 'on_hold')
 
 
 class OrderNumberingTests(TestCase):
@@ -2248,6 +2301,19 @@ class QuotationPdfTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'application/pdf')
         self.assertTrue(response.content.startswith(b'%PDF'))
+
+    def test_generate_quotation_pdf_survives_markup_like_text(self):
+        """Company/grade text can come from a raw WhatsApp reply with no
+        HTML-safety check — reportlab's Paragraph parses a real XML-like
+        markup subset, so unescaped text containing '<', '>' or '&' used to
+        raise a parse error inside doc.build() and silently kill the quote
+        email (or 500 the staff PDF-download endpoint)."""
+        customer = Customer.objects.create(name='<b>Evil & Co</b>', email='evil@example.com', phone='999')
+        quotation = Quotation.objects.create(
+            customer=customer, rate_per_kg=Decimal('50'), grade='<Foo & </para> Bar',
+        )
+        pdf_bytes = generate_quotation_pdf(quotation)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF'))
 
 
 class QueryDashboardTests(TestCase):
