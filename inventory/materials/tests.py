@@ -21,7 +21,7 @@ from . import views
 from .forms import MaterialForm
 from .models import (
     AllowedCoilSpec, Customer, GateEntry, GateEntryLot, GradeOption, Material, Order,
-    OrderCoilPick, ProcessStep, ProductionJob, ProductType, Query, Quotation, SizeOption, StepLog,
+    OrderCoilPick, ProcessStep, ProductionJob, ProductType, Query, Quotation, QuotationLineItem, SizeOption, StepLog,
 )
 from .pdf import generate_quotation_pdf
 from .views import (
@@ -2164,7 +2164,7 @@ class QuoteEmailDispatchTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn(self.customer.email, mail.outbox[0].to)
         self.assertIn(str(self.customer.quote_token), mail.outbox[0].body)
-        self.assertEqual(quotation.rate_per_kg, Decimal('85.50'))
+        self.assertEqual(quotation.line_items.get().rate_per_kg, Decimal('85.50'))
         self.assertEqual(len(mail.outbox[0].attachments), 1)
         filename, content, mimetype = mail.outbox[0].attachments[0]
         self.assertEqual(filename, f"{quotation.formatted_no()}.pdf")
@@ -2279,23 +2279,31 @@ class QuoteEmailDispatchTests(TestCase):
 
 
 class QuotationPdfTests(TestCase):
+    def _make_quotation(self, customer, rate_per_kg, grade='', size=None):
+        quotation = Quotation.objects.create(customer=customer)
+        QuotationLineItem.objects.create(
+            quotation=quotation, order=1, description=grade or 'Item',
+            grade=grade, size=size, quantity=Decimal('1'), unit='KGS', rate_per_kg=rate_per_kg,
+        )
+        return quotation
+
     def test_generate_quotation_pdf_returns_a_real_pdf(self):
         customer = Customer.objects.create(name='PDF Test Co', email='pdf@example.com')
-        quotation = Quotation.objects.create(customer=customer, rate_per_kg=Decimal('99.99'), grade='EN8D', size=Decimal('1.200'))
+        quotation = self._make_quotation(customer, Decimal('99.99'), grade='EN8D', size=Decimal('1.200'))
         pdf_bytes = generate_quotation_pdf(quotation)
         self.assertTrue(pdf_bytes.startswith(b'%PDF'))
         self.assertGreater(len(pdf_bytes), 0)
 
     def test_anonymous_cannot_download_quotation_pdf(self):
         customer = Customer.objects.create(name='PDF Guard Co')
-        quotation = Quotation.objects.create(customer=customer, rate_per_kg=Decimal('50'))
+        quotation = self._make_quotation(customer, Decimal('50'))
         response = self.client.get(reverse('quotation_pdf', kwargs={'pk': quotation.pk}))
         self.assertRedirects(response, reverse('home'))
 
     def test_staff_can_download_quotation_pdf(self):
         staff = User.objects.create_user('pdf_staff', password='pw', is_staff=True)
         customer = Customer.objects.create(name='PDF Download Co')
-        quotation = Quotation.objects.create(customer=customer, rate_per_kg=Decimal('50'))
+        quotation = self._make_quotation(customer, Decimal('50'))
         self.client.force_login(staff)
         response = self.client.get(reverse('quotation_pdf', kwargs={'pk': quotation.pk}))
         self.assertEqual(response.status_code, 200)
@@ -2309,9 +2317,7 @@ class QuotationPdfTests(TestCase):
         raise a parse error inside doc.build() and silently kill the quote
         email (or 500 the staff PDF-download endpoint)."""
         customer = Customer.objects.create(name='<b>Evil & Co</b>', email='evil@example.com', phone='999')
-        quotation = Quotation.objects.create(
-            customer=customer, rate_per_kg=Decimal('50'), grade='<Foo & </para> Bar',
-        )
+        quotation = self._make_quotation(customer, Decimal('50'), grade='<Foo & </para> Bar')
         pdf_bytes = generate_quotation_pdf(quotation)
         self.assertTrue(pdf_bytes.startswith(b'%PDF'))
 
@@ -2420,7 +2426,7 @@ class QueryDashboardTests(TestCase):
         self.assertIn('ref@example.com', mail.outbox[0].to)
         quotation = Quotation.objects.get(customer=customer)
         self.assertEqual(quotation.source_query, query)
-        self.assertEqual(quotation.rate_per_kg, Decimal('75.25'))
+        self.assertEqual(quotation.line_items.get().rate_per_kg, Decimal('75.25'))
         self.assertContains(response, f"Quotation {quotation.formatted_no()} sent to {customer.email}")
 
     def test_send_quote_without_email_shows_copy_link_fallback(self):
@@ -2455,9 +2461,10 @@ class QueryDashboardTests(TestCase):
         self.client.post(reverse('query_send_quote', kwargs={'pk': query.pk}), {'rate_per_kg': '60'})
 
         quotation = Quotation.objects.get(source_query=query)
-        self.assertEqual(quotation.grade, 'EN8D')
-        self.assertEqual(quotation.size, Decimal('1.200'))
-        self.assertEqual(quotation.product_type, self.product_type)
+        item = quotation.line_items.get()
+        self.assertEqual(item.grade, 'EN8D')
+        self.assertEqual(item.size, Decimal('1.200'))
+        self.assertEqual(item.product_type, self.product_type)
 
     @override_settings(
         PUBLIC_QUOTE_BASE_URL='https://quote.mattadrawing.com',

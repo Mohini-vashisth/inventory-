@@ -75,6 +75,7 @@ COMPANY_ADDRESS = os.environ.get('COMPANY_ADDRESS', '')
 COMPANY_PHONE = os.environ.get('COMPANY_PHONE', '')
 COMPANY_EMAIL = os.environ.get('COMPANY_EMAIL', '')
 COMPANY_GST = os.environ.get('COMPANY_GST', '')
+COMPANY_WEBSITE = os.environ.get('COMPANY_WEBSITE', '')
 
 
 # Application definition
@@ -142,6 +143,15 @@ DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        # WAL mode itself is enabled once, per-connection, in
+        # materials/apps.py::_set_sqlite_pragmas (it's a property of the
+        # database file, not something this OPTIONS dict can set) — this
+        # timeout is how long a write waits on SQLite's single-writer lock
+        # before raising "database is locked", instead of the 5s default,
+        # now that two concurrent writers (WAL readers don't block, but
+        # writers still serialize) is a real scenario once Plant B and QA's
+        # extra log rows are both live.
+        'OPTIONS': {'timeout': 20},
     }
 }
 
