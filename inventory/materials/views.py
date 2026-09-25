@@ -420,14 +420,18 @@ def _coil_matches_order_specs(coil, order):
     return False
 
 
-def _ratio_for_coil(order, coil):
+def _ratio_for_coil(order, coil, specs=None):
     """The AllowedCoilSpec.raw_material_ratio for whichever spec matches this
     coil's grade/size under the order's product type — same matching rule
     OrderCoilPick.output_equivalent() uses, so the "how much raw material
     does the order still need" figure stays consistent everywhere it's
-    computed. Falls back to 1:1 if no spec matches."""
+    computed. Falls back to 1:1 if no spec matches.
+
+    `specs` lets a caller looping over many coils for the same order (e.g.
+    the best-fit sort in select_coil_for_order) pass an already-fetched
+    list instead of re-querying allowed_specs on every single coil."""
     if order.product_type:
-        for spec in order.product_type.allowed_specs.all():
+        for spec in (specs if specs is not None else order.product_type.allowed_specs.all()):
             grade_matches = not spec.grade or spec.grade.lower() == (coil.grade or '').lower()
             size_matches = not spec.size or spec.size == coil.size
             if grade_matches and size_matches:
@@ -479,7 +483,10 @@ def select_coil_for_order(request, order_pk):
                      + F('legacy_used_weight'),
     )
 
-    # Filter by allowed specs if the order has a product type configured
+    # Filter by allowed specs if the order has a product type configured.
+    # Fetched once here and reused below for the best-fit ratio, instead of
+    # each coil in the loop re-querying allowed_specs for itself.
+    specs = []
     if order.product_type:
         specs = list(order.product_type.allowed_specs.all())
         if specs:
@@ -508,7 +515,7 @@ def select_coil_for_order(request, order_pk):
         total     = float(coil.quantity or 0)
         remaining = total - used
         if remaining > 0:
-            order_needs = float(order_remaining_output * _ratio_for_coil(order, coil))
+            order_needs = float(order_remaining_output * _ratio_for_coil(order, coil, specs))
             coils.append({
                 'coil': coil,
                 'remaining': remaining,
@@ -988,11 +995,20 @@ def order_dashboard(request):
     # production — a one-time warning at confirm time can get missed, so
     # this stays visible for as long as it's actually true. Skipped for
     # pending/completed/cancelled orders where it isn't actionable.
+    #
+    # available_raw_material_output() depends only on product_type, not on
+    # the individual order, so it's cached per product_type here — several
+    # orders sharing one catalog item (the common case) reuse one result
+    # instead of each re-running its own set of aggregate queries.
+    raw_material_output_cache = {}
     for order in orders:
-        order.low_stock = (
-            order.status in ('confirmed', 'in_production')
-            and order.has_sufficient_raw_material() is False
-        )
+        if order.status not in ('confirmed', 'in_production'):
+            order.low_stock = False
+            continue
+        if order.product_type_id not in raw_material_output_cache:
+            raw_material_output_cache[order.product_type_id] = order.available_raw_material_output()
+        available = raw_material_output_cache[order.product_type_id]
+        order.low_stock = available is not None and available < order.quantity
 
     return render(request, 'materials/order_dashboard.html', {
         'orders': orders,

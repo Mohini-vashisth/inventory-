@@ -51,7 +51,12 @@ GateEntryLotFormSet = formset_factory(GateEntryLotForm, extra=0, min_num=1, vali
 class MaterialForm(forms.ModelForm):
     class Meta:
         model = Material
-        exclude = ['coil_no', 'lot', 'invoice_weight']
+        # archived_at/legacy_used_weight are excluded alongside the other
+        # server-assigned fields — a coil being newly registered here was
+        # never archived and has no pre-app legacy usage to speak of; both
+        # only get set through the admin (archiving) or import_excel (legacy
+        # usage from the spreadsheet), never through this form.
+        exclude = ['coil_no', 'lot', 'invoice_weight', 'archived_at', 'legacy_used_weight']
 
     def clean_grade(self):
         grade = self.cleaned_data['grade']

@@ -165,11 +165,40 @@ class ProductionJobAdmin(admin.ModelAdmin):
     actions = ['mark_completed', 'mark_on_hold']
 
     def mark_completed(self, request, queryset):
-        queryset.update(status='completed')
+        """Writes a completed StepLog for every step still missing one, then
+        lets recalculate_status derive 'completed' from that — a raw
+        queryset.update(status='completed') would leave the job's own
+        step_logs looking untouched, so the very next StepLog change
+        anywhere on that job (recalculate_status runs on every StepLog
+        add/change/delete) would silently revert the status this action
+        just set."""
+        for job in queryset.prefetch_related('step_logs', 'product_type__steps'):
+            logged_step_ids = {log.step_id for log in job.step_logs.all() if log.status == 'completed'}
+            for step in job.product_type.steps.all():
+                if step.id not in logged_step_ids:
+                    StepLog.objects.create(
+                        job=job, step=step, status='completed', updated_by=request.user,
+                        notes='Marked completed via admin bulk action.',
+                    )
+            job.recalculate_status()
     mark_completed.short_description = 'Mark selected jobs as completed'
 
     def mark_on_hold(self, request, queryset):
-        queryset.update(status='on_hold')
+        """recalculate_status only ever derives on_hold from a 'failed'
+        StepLog — writes one against the job's current step (or its first
+        step, for a job with no logs yet) so the hold actually sticks
+        instead of being overwritten by the next unrelated StepLog change."""
+        for job in queryset.prefetch_related('step_logs', 'product_type__steps'):
+            current_log = job.step_logs.order_by('-timestamp').first()
+            steps = list(job.product_type.steps.all())
+            target_step = current_log.step if current_log else (steps[0] if steps else None)
+            if target_step is None:
+                continue
+            StepLog.objects.create(
+                job=job, step=target_step, status='failed', updated_by=request.user,
+                notes='Marked on hold via admin bulk action.',
+            )
+            job.recalculate_status()
     mark_on_hold.short_description = 'Mark selected jobs as on hold'
     def coil_link(self, obj):
         coil = obj.pick.coil

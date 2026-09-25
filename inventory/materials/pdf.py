@@ -4,6 +4,7 @@ it's needed (attached to the Send Quote email, or re-downloaded later),
 the same "derive it, don't persist it" approach coil_tag.html already uses
 for QR codes."""
 import io
+from xml.sax.saxutils import escape
 
 from django.conf import settings
 from django.utils import timezone
@@ -32,12 +33,12 @@ def generate_quotation_pdf(quotation):
 
     story = []
 
-    story.append(Paragraph(settings.COMPANY_NAME, company_style))
+    story.append(Paragraph(escape(settings.COMPANY_NAME), company_style))
     company_lines = [line for line in [settings.COMPANY_ADDRESS, settings.COMPANY_PHONE, settings.COMPANY_EMAIL] if line]
     if settings.COMPANY_GST:
         company_lines.append(f"GSTIN: {settings.COMPANY_GST}")
     for line in company_lines:
-        story.append(Paragraph(line, meta_style))
+        story.append(Paragraph(escape(line), meta_style))
     story.append(Spacer(1, 8 * mm))
 
     story.append(Paragraph("QUOTATION", title_style))
@@ -49,13 +50,17 @@ def generate_quotation_pdf(quotation):
     story.append(Spacer(1, 6 * mm))
 
     story.append(Paragraph("To", section_style))
-    story.append(Paragraph(quotation.customer.name, styles['Normal']))
+    story.append(Paragraph(escape(quotation.customer.name), styles['Normal']))
     if quotation.customer.email:
-        story.append(Paragraph(quotation.customer.email, meta_style))
+        story.append(Paragraph(escape(quotation.customer.email), meta_style))
     if quotation.customer.phone:
-        story.append(Paragraph(quotation.customer.phone, meta_style))
+        story.append(Paragraph(escape(quotation.customer.phone), meta_style))
 
     story.append(Paragraph("Quoted rate", section_style))
+    # Table cells (below) take plain strings, not Paragraphs — reportlab
+    # draws them directly without parsing markup, so escaping here would
+    # show a literal "&amp;" instead of "&" in the PDF. Only Paragraph(...)
+    # calls above need escaping, since those DO parse a markup subset.
     product_desc = quotation.product_type.item_code if quotation.product_type else "—"
     grade_size = " / ".join(filter(None, [
         quotation.grade or None,
