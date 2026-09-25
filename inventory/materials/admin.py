@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
-from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Quotation, Order
+from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
 
 
 class GateEntryLotInline(admin.TabularInline):
@@ -516,15 +516,35 @@ class OrderAdmin(admin.ModelAdmin):
     status_badge.short_description = 'Status'
 
 
+class QuotationLineItemInline(admin.TabularInline):
+    model = QuotationLineItem
+    extra = 0
+    can_delete = False
+    readonly_fields = [
+        'order', 'description', 'product_type', 'grade', 'size', 'quantity', 'unit',
+        'rate_per_kg', 'discount_pct', 'hsn_sac', 'gst_pct', 'tool_cost', 'moq',
+    ]
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
 @admin.register(Quotation)
 class QuotationAdmin(admin.ModelAdmin):
     """Read-only history of what's actually been quoted — a Quotation is
     never edited after creation, so there's no manual-entry screen here."""
-    list_display  = ['formatted_no', 'customer', 'rate_per_kg', 'grade', 'size', 'product_type', 'created_at']
-    list_filter   = ['product_type', 'created_at']
-    search_fields = ['customer__name', 'quotation_no']
+    list_display  = ['formatted_no', 'customer', 'subtotal', 'total_amount', 'created_at']
+    list_filter   = ['same_state_as_us', 'created_at']
+    search_fields = ['customer__name', 'quotation_no', 'ref_no']
     ordering      = ['-created_at']
-    readonly_fields = ['quotation_no', 'customer', 'source_query', 'rate_per_kg', 'product_type', 'grade', 'size', 'created_at']
+    inlines       = [QuotationLineItemInline]
+    readonly_fields = [
+        'quotation_no', 'customer', 'source_query', 'created_at',
+        'ref_no', 'rev_no', 'rev_date', 'sales_person', 'kind_attn', 'subject', 'customer_address',
+        'same_state_as_us', 'freight_amount', 'pf_amount',
+        'price_basis', 'gst_terms', 'insurance_terms', 'freight_terms',
+        'payment_terms', 'delivery_terms', 'validity_terms',
+    ]
 
     def has_add_permission(self, request):
         return False

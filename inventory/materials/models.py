@@ -1,5 +1,5 @@
 import uuid
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.db import models
 from django.contrib.auth.models import User
@@ -381,21 +381,93 @@ class Query(models.Model):
         return f"{label} — {self.get_source_display()}"
 
 
+def _indian_number_to_words(n):
+    """Converts a non-negative integer to words using the Indian numbering
+    system (lakh/crore, not the Western thousand/million grouping) — e.g.
+    197650 -> "One Lakh Ninety Seven Thousand Six Hundred Fifty", matching
+    how the client's existing (non-app) quotations render amounts."""
+    ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+            'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+            'Seventeen', 'Eighteen', 'Nineteen']
+    tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety']
+
+    def two_digits(num):
+        if num < 20:
+            return ones[num]
+        return (tens[num // 10] + (f" {ones[num % 10]}" if num % 10 else '')).strip()
+
+    def three_digits(num):
+        if num >= 100:
+            return f"{ones[num // 100]} Hundred" + (f" {two_digits(num % 100)}" if num % 100 else '')
+        return two_digits(num)
+
+    if n == 0:
+        return 'Zero'
+
+    crore, n = divmod(n, 10_000_000)
+    lakh, n = divmod(n, 100_000)
+    thousand, n = divmod(n, 1000)
+    hundred = n
+
+    parts = []
+    if crore:
+        parts.append(f"{three_digits(crore)} Crore")
+    if lakh:
+        parts.append(f"{two_digits(lakh)} Lakh")
+    if thousand:
+        parts.append(f"{two_digits(thousand)} Thousand")
+    if hundred:
+        parts.append(three_digits(hundred))
+    return ' '.join(parts)
+
+
 class Quotation(models.Model):
-    """A record of an official per-kg rate quotation actually sent to a
-    customer — created every time Send Quote fires, regardless of which
-    entry point triggered it (query_send_quote, send_quote_email,
-    quick_send_quote all funnel through _dispatch_quote_email). Immutable
-    once created — correcting a rate means sending a new quotation, not
-    editing history, the same way Order itself is never silently rewritten."""
-    customer      = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='quotations')
-    source_query  = models.ForeignKey(Query, on_delete=models.SET_NULL, null=True, blank=True, related_name='quotations')
-    quotation_no  = models.PositiveIntegerField(unique=True, editable=False, null=True)
-    rate_per_kg   = models.DecimalField(max_digits=10, decimal_places=2)
-    product_type  = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)
-    grade         = models.CharField(max_length=100, blank=True)
-    size          = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
-    created_at    = models.DateTimeField(auto_now_add=True)
+    """A record of an official quotation actually sent to a customer —
+    created every time Send Quote fires, regardless of which entry point
+    triggered it (query_send_quote, send_quote_email, quick_send_quote all
+    funnel through _dispatch_quote_email). Immutable once created —
+    correcting anything means sending a new quotation, not editing history,
+    the same way Order itself is never silently rewritten.
+
+    Mirrors the client's real, existing (previously non-app) quotation
+    format: header fields (ref/rev numbers, sales person, subject), one or
+    more QuotationLineItems, freight/P&F, and a same-state-driven GST split
+    (CGST+SGST if the customer is in the same state as us, else IGST — see
+    same_state_as_us and gst_total())."""
+    customer         = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='quotations')
+    source_query     = models.ForeignKey(Query, on_delete=models.SET_NULL, null=True, blank=True, related_name='quotations')
+    quotation_no     = models.PositiveIntegerField(unique=True, editable=False, null=True)
+    created_at       = models.DateTimeField(auto_now_add=True)
+
+    # Header fields — all optional, matching the reference template.
+    ref_no           = models.CharField(max_length=50, blank=True)
+    rev_no           = models.PositiveIntegerField(default=0)
+    rev_date         = models.DateField(null=True, blank=True)
+    sales_person     = models.CharField(max_length=100, blank=True)
+    kind_attn        = models.CharField(max_length=100, blank=True)
+    subject          = models.CharField(max_length=200, blank=True)
+    # Captured at quote time rather than looked up live from Customer (which
+    # has no address field of its own) — same reasoning as grade/size used
+    # to be copied onto the old single-rate Quotation: a quote is a point-
+    # in-time snapshot, not a live view of mutable customer data.
+    customer_address = models.TextField(blank=True)
+
+    same_state_as_us = models.BooleanField(
+        default=True,
+        help_text="Drives the GST split: CGST+SGST (half each) if checked, IGST if not.",
+    )
+    freight_amount   = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    pf_amount        = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="P&F amount")
+
+    # Terms & Conditions — editable per quote, defaulting to the client's
+    # standard wording so staff don't have to retype them every time.
+    price_basis      = models.CharField(max_length=200, blank=True, default='Ex-Works')
+    gst_terms        = models.CharField(max_length=200, blank=True, default='Extra As Applicable')
+    insurance_terms  = models.CharField(max_length=200, blank=True, default='Extra At actual to be borne by Customer')
+    freight_terms    = models.CharField(max_length=200, blank=True, default='The Same Shall be in your scope')
+    payment_terms    = models.CharField(max_length=200, blank=True, default='100% Advance')
+    delivery_terms   = models.CharField(max_length=200, blank=True, default='')
+    validity_terms   = models.CharField(max_length=200, blank=True, default='7 Days from date of offer')
 
     class Meta:
         ordering = ['-created_at']
@@ -409,8 +481,79 @@ class Quotation(models.Model):
     def formatted_no(self):
         return f"QUO-{self.quotation_no:04d}"
 
+    def subtotal(self):
+        return sum((item.amount() for item in self.line_items.all()), Decimal('0'))
+
+    def tool_cost_total(self):
+        return sum((item.tool_cost for item in self.line_items.all()), Decimal('0'))
+
+    def gst_total(self):
+        return sum((item.gst_amount() for item in self.line_items.all()), Decimal('0'))
+
+    def cgst(self):
+        return (self.gst_total() / 2) if self.same_state_as_us else Decimal('0')
+
+    def sgst(self):
+        return (self.gst_total() / 2) if self.same_state_as_us else Decimal('0')
+
+    def igst(self):
+        return Decimal('0') if self.same_state_as_us else self.gst_total()
+
+    def total_amount(self):
+        return (
+            self.subtotal() + self.tool_cost_total()
+            + self.freight_amount + self.pf_amount + self.gst_total()
+        )
+
+    def amount_in_words(self):
+        """Rounds to the nearest rupee — the reference format has no paise
+        in its words line ("... Six Hundred Fifty Only")."""
+        rupees = int(self.total_amount().to_integral_value(rounding=ROUND_HALF_UP))
+        return f"Rs. {_indian_number_to_words(rupees)} Only"
+
     def __str__(self):
         return f"{self.formatted_no()} — {self.customer.name}"
+
+
+class QuotationLineItem(models.Model):
+    """One priced item within a Quotation — a quote can cover several
+    grade/size combinations at once (e.g. two different chamfer sizes),
+    each with its own quantity, rate, HSN/SAC and GST%, matching the
+    client's real quotation format."""
+    quotation    = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name='line_items')
+    order        = models.PositiveIntegerField(default=1, help_text="Display order (Sr. No.) within the quotation.")
+    description  = models.CharField(max_length=255)
+    product_type = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)
+    grade        = models.CharField(max_length=100, blank=True)
+    size         = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    quantity     = models.DecimalField(max_digits=10, decimal_places=3)
+    unit         = models.CharField(max_length=20, default='KGS')
+    rate_per_kg  = models.DecimalField(max_digits=10, decimal_places=2)
+    discount_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0, verbose_name="Discount %")
+    hsn_sac      = models.CharField(max_length=20, blank=True, verbose_name="HSN/SAC")
+    gst_pct      = models.DecimalField(max_digits=5, decimal_places=2, default=18, verbose_name="GST %")
+    tool_cost    = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    moq          = models.DecimalField(max_digits=10, decimal_places=3, default=0, verbose_name="MOQ")
+
+    class Meta:
+        ordering = ['order']
+
+    def gross_amount(self):
+        return self.quantity * self.rate_per_kg
+
+    def discount_amount(self):
+        return self.gross_amount() * (self.discount_pct / Decimal('100'))
+
+    def amount(self):
+        """Net of the line's own discount — before GST, freight, P&F, or
+        tool cost, which are all applied at the quotation level."""
+        return self.gross_amount() - self.discount_amount()
+
+    def gst_amount(self):
+        return self.amount() * (self.gst_pct / Decimal('100'))
+
+    def __str__(self):
+        return f"{self.description} — {self.quantity} {self.unit}"
 
 
 class Order(models.Model):

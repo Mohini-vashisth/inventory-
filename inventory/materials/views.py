@@ -30,7 +30,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
 logger = logging.getLogger(__name__)
-from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Order, Quotation
+from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Order, Quotation, QuotationLineItem
 from .forms import GateEntryForm, GateEntryLotForm, GateEntryLotFormSet, MaterialForm, OrderForm
 from .pdf import generate_quotation_pdf
 
@@ -84,6 +84,27 @@ def _parse_rate_per_kg(raw):
     except (InvalidOperation, TypeError):
         return None
     return rate if rate > 0 else None
+
+
+def _create_quotation_with_single_item(customer, source_query, rate_per_kg, product_type_id, grade, size):
+    """The three Send Quote entry points only collect one rate/product/
+    grade/size today — no multi-line-item UI yet (that's a separate,
+    larger piece of work, still pending). This wraps that single input into
+    one QuotationLineItem on a new Quotation, the same shape
+    materials/migrations/0029_quotation_line_items.py used to convert
+    every pre-existing single-rate Quotation record, so today's simple
+    flow and tomorrow's real multi-item form both produce the same kind of
+    data underneath. Quantity is a placeholder (1 KGS) — there's no
+    quantity input in this flow yet either."""
+    quotation = Quotation.objects.create(customer=customer, source_query=source_query)
+    product_type = ProductType.objects.filter(pk=product_type_id).first() if product_type_id else None
+    description = product_type.item_code if product_type else (grade or 'Item')
+    QuotationLineItem.objects.create(
+        quotation=quotation, order=1, description=description,
+        product_type=product_type, grade=grade or '', size=size,
+        quantity=Decimal('1'), unit='KGS', rate_per_kg=rate_per_kg,
+    )
+    return quotation
 
 
 # ── Employee auth ────────────────────────────────────────────
@@ -878,9 +899,8 @@ def query_send_quote(request, pk):
     grade = request.POST.get('grade', '').strip() or query.grade
     raw_size = request.POST.get('size') or (str(query.size) if query.size is not None else None)
     try:
-        quotation = Quotation.objects.create(
-            customer=customer, source_query=query, rate_per_kg=rate_per_kg,
-            product_type_id=product_type_id, grade=grade, size=raw_size,
+        quotation = _create_quotation_with_single_item(
+            customer, query, rate_per_kg, product_type_id, grade, raw_size,
         )
     except (InvalidOperation, ValueError, ValidationError):
         messages.error(request, "Check that size is a valid number.")
@@ -1155,11 +1175,11 @@ def send_quote_email(request, pk):
         return redirect('order_dashboard')
 
     try:
-        quotation = Quotation.objects.create(
-            customer=customer, rate_per_kg=rate_per_kg,
-            product_type_id=request.POST.get('product_type') or None,
-            grade=request.POST.get('grade', '').strip(),
-            size=request.POST.get('size') or None,
+        quotation = _create_quotation_with_single_item(
+            customer, None, rate_per_kg,
+            request.POST.get('product_type') or None,
+            request.POST.get('grade', '').strip(),
+            request.POST.get('size') or None,
         )
     except (InvalidOperation, ValueError, ValidationError):
         messages.error(request, "Check that size is a valid number.")
@@ -1199,11 +1219,11 @@ def quick_send_quote(request):
     customer.save(update_fields=['email', 'phone'])
 
     try:
-        quotation = Quotation.objects.create(
-            customer=customer, rate_per_kg=rate_per_kg,
-            product_type_id=request.POST.get('product_type') or None,
-            grade=request.POST.get('grade', '').strip(),
-            size=request.POST.get('size') or None,
+        quotation = _create_quotation_with_single_item(
+            customer, None, rate_per_kg,
+            request.POST.get('product_type') or None,
+            request.POST.get('grade', '').strip(),
+            request.POST.get('size') or None,
         )
     except (InvalidOperation, ValueError, ValidationError):
         messages.error(request, "Check that size is a valid number.")
