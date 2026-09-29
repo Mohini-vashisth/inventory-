@@ -24,8 +24,8 @@ urlpatterns = [
     path('job/<int:pk>/', views.job_detail, name='job_detail'),
     path('queries/', views.query_dashboard, name='query_dashboard'),
     path('queries/<int:pk>/edit/', views.query_edit, name='query_edit'),
-    path('queries/<int:pk>/send-quote/', views.query_send_quote, name='query_send_quote'),
     path('queries/<int:pk>/not-interested/', views.query_not_interested, name='query_not_interested'),
+    path('quotations/new/', views.quotation_form, name='quotation_form'),
     path('quotations/<int:pk>/pdf/', views.quotation_pdf, name='quotation_pdf'),
     # Public, unauthenticated — Meta's Cloud API calls this directly. Verified
     # via HMAC/verify-token inside the view, not Django auth. Reaches the
@@ -37,7 +37,5 @@ urlpatterns = [
     path('orders/<int:pk>/confirm/', views.order_confirm, name='order_confirm'),
     path('orders/<int:pk>/reject/', views.order_reject, name='order_reject'),
     path('orders/<int:pk>/dispatch/', views.order_dispatch, name='order_dispatch'),
-    path('orders/customer/<int:pk>/send-quote/', views.send_quote_email, name='send_quote_email'),
-    path('orders/quick-send-quote/', views.quick_send_quote, name='quick_send_quote'),
     path('quote/<uuid:token>/', views.quote_form, name='quote_form'),
 ]

@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>New Quotation</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; background: #f4f6f9; color: #333; }
+
+    header {
+      background: #4e73df; color: white;
+      padding: 1rem 2rem;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    header h1 { font-size: 1.3rem; }
+    .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; }
+    .back-link:hover { color: white; }
+
+    .content { max-width: 980px; margin: 2rem auto; padding: 0 1.5rem 4rem; }
+
+    .card {
+      background: white; border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      margin-bottom: 1.5rem; overflow: hidden;
+    }
+    .card-header {
+      padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0;
+      font-size: 1rem; font-weight: 600;
+      display: flex; justify-content: space-between; align-items: center;
+      cursor: default;
+    }
+    .card-header span { color: #aaa; font-size: 0.85rem; font-weight: 400; }
+    .card-header.collapsible { cursor: pointer; }
+    .card-header .chevron { transition: transform 0.15s; color: #aaa; }
+    .card.collapsed .card-header .chevron { transform: rotate(-90deg); }
+    .card.collapsed .card-body { display: none; }
+    .card-body { padding: 1.5rem; }
+
+    .error-msg {
+      background: #fee2e2; color: #991b1b;
+      padding: 0.6rem 0.9rem; border-radius: 8px;
+      font-size: 0.87rem; margin-bottom: 1rem;
+    }
+
+    .form-row { display: grid; gap: 0.75rem; margin-bottom: 0.75rem; }
+    .cols-2 { grid-template-columns: 1fr 1fr; }
+    .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    .cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+    .cols-5 { grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr; }
+
+    .form-group { display: flex; flex-direction: column; }
+    .form-group.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; margin-top: 1.2rem; }
+    label {
+      font-size: 0.72rem; color: #888; margin-bottom: 0.3rem;
+      font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    input, select, textarea {
+      padding: 0.55rem 0.75rem; border: 1px solid #ddd;
+      border-radius: 8px; font-size: 0.9rem; width: 100%;
+    }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #4e73df; }
+    textarea { resize: vertical; min-height: 56px; }
+
+    .readonly-value { padding: 0.55rem 0; font-size: 0.95rem; font-weight: 600; }
+    .muted { color: #aaa; font-size: 0.82rem; }
+
+    .item-row {
+      border: 1px solid #eee; border-radius: 10px;
+      padding: 1rem; margin-bottom: 1rem; background: #fafbff;
+    }
+    .item-row-head {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 0.75rem; font-size: 0.85rem; font-weight: 700; color: #4e73df;
+    }
+    .btn-remove-item {
+      background: #fee2e2; border: 1px solid #fecaca; color: #991b1b;
+      border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.72rem; cursor: pointer;
+    }
+    .btn-remove-item:hover { background: #fecaca; }
+
+    .add-item-row { margin-bottom: 1.25rem; }
+    .btn-add-item {
+      background: #eff2ff; border: 1px dashed #4e73df; color: #4e73df;
+      border-radius: 8px; padding: 0.6rem 1rem; font-size: 0.88rem;
+      cursor: pointer; width: 100%; font-weight: 600;
+    }
+    .btn-add-item:hover { background: #e0e6fe; }
+
+    .submit-row { display: flex; justify-content: flex-end; margin-top: 1.5rem; gap: 0.75rem; }
+    .btn-primary {
+      padding: 0.75rem 2.25rem; background: #4e73df; color: white;
+      border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: 600;
+    }
+    .btn-primary:hover { background: #3a5ec0; }
+
+    @media (max-width: 720px) {
+      .cols-2, .cols-3, .cols-4, .cols-5 { grid-template-columns: 1fr; }
+      .content { padding: 0 0.85rem 3rem; margin: 1rem auto; }
+      .card-body { padding: 1.1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>New Quotation</h1>
+  <a href="{% if query %}{% url 'query_dashboard' %}{% else %}{% url 'order_dashboard' %}{% endif %}" class="back-link">← Cancel</a>
+</header>
+
+<div class="content">
+  {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+
+  <form method="post" id="quotation-form">
+    {% csrf_token %}
+    {{ formset.management_form }}
+    {% if query %}<input type="hidden" name="query" value="{{ query.pk }}">{% endif %}
+    {% if existing_customer %}<input type="hidden" name="customer" value="{{ existing_customer.pk }}">{% endif %}
+
+    <!-- ── Customer ─────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-header">Customer</div>
+      <div class="card-body">
+        {% if query %}
+          <div class="form-group">
+            <label>Company</label>
+            <div class="readonly-value">{{ query.company_name|default:query.contact_phone }}</div>
+            <p class="muted">From the logged query — company name is fixed here, edit it on the Query dashboard if it's wrong.</p>
+          </div>
+        {% elif existing_customer %}
+          <div class="form-row cols-3">
+            <div class="form-group">
+              <label>Company</label>
+              <div class="readonly-value">{{ existing_customer.name }}</div>
+            </div>
+            <div class="form-group">
+              <label for="customer_email">Email</label>
+              <input type="email" id="customer_email" name="customer_email" placeholder="company@example.com"
+                     value="{{ post.customer_email|default:existing_customer.email }}">
+            </div>
+            <div class="form-group">
+              <label for="customer_phone">Phone</label>
+              <input type="text" id="customer_phone" name="customer_phone" placeholder="+91 98765 43210"
+                     value="{{ post.customer_phone|default:existing_customer.phone }}">
+            </div>
+          </div>
+        {% else %}
+          <div class="form-row cols-3">
+            <div class="form-group">
+              <label for="customer_name">Company Name *</label>
+              <input type="text" id="customer_name" name="customer_name" placeholder="e.g. Sharma Steel Traders"
+                     value="{{ post.customer_name|default:new_customer_initial.name }}">
+            </div>
+            <div class="form-group">
+              <label for="customer_email">Email</label>
+              <input type="email" id="customer_email" name="customer_email" placeholder="company@example.com"
+                     value="{{ post.customer_email|default:new_customer_initial.email }}">
+            </div>
+            <div class="form-group">
+              <label for="customer_phone">Phone</label>
+              <input type="text" id="customer_phone" name="customer_phone" placeholder="+91 98765 43210"
+                     value="{{ post.customer_phone|default:new_customer_initial.phone }}">
+            </div>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ── Line items ───────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-header">Items<span>Product/grade/size, quantity and rate — add as many as this quote covers</span></div>
+      <div class="card-body">
+        <div id="items-container">
+          {% for item_form in formset %}
+          <div class="item-row" data-index="{{ forloop.counter0 }}">
+            <div class="item-row-head">
+              <span>Item {{ forloop.counter }}</span>
+              <button type="button" class="btn-remove-item" onclick="removeItem(this)">✕ Remove</button>
+            </div>
+            <div class="form-row cols-2">
+              <div class="form-group">
+                <label>Description *</label>
+                <input type="text" name="item-{{ forloop.counter0 }}-description" value="{{ item_form.description.value|default:'' }}" placeholder="e.g. Steel Chamfer 10x10x14 mm">
+              </div>
+              <div class="form-group">
+                <label>Product Type</label>
+                <select name="item-{{ forloop.counter0 }}-product_type">
+                  <option value="">— none —</option>
+                  {% for pt in item_form.fields.product_type.queryset %}
+                  <option value="{{ pt.pk }}" {% if item_form.product_type.value|stringformat:"s" == pt.pk|stringformat:"s" %}selected{% endif %}>{{ pt.item_code }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+            </div>
+            <div class="form-row cols-5">
+              <div class="form-group">
+                <label>Grade</label>
+                <input type="text" name="item-{{ forloop.counter0 }}-grade" value="{{ item_form.grade.value|default:'' }}" placeholder="EN8D">
+              </div>
+              <div class="form-group">
+                <label>Size (mm)</label>
+                <input type="number" step="0.001" name="item-{{ forloop.counter0 }}-size" value="{{ item_form.size.value|default:'' }}">
+              </div>
+              <div class="form-group">
+                <label>Quantity *</label>
+                <input type="number" step="0.001" min="0.001" name="item-{{ forloop.counter0 }}-quantity" value="{{ item_form.quantity.value|default:'' }}">
+              </div>
+              <div class="form-group">
+                <label>Unit</label>
+                <input type="text" name="item-{{ forloop.counter0 }}-unit" value="{{ item_form.unit.value|default:'KGS' }}">
+              </div>
+              <div class="form-group">
+                <label>Rate/kg *</label>
+                <input type="number" step="0.01" min="0.01" name="item-{{ forloop.counter0 }}-rate_per_kg" value="{{ item_form.rate_per_kg.value|default:'' }}">
+              </div>
+            </div>
+            <div class="form-row cols-5">
+              <div class="form-group">
+                <label>Discount %</label>
+                <input type="number" step="0.01" min="0" max="100" name="item-{{ forloop.counter0 }}-discount_pct" value="{{ item_form.discount_pct.value|default:'0' }}">
+              </div>
+              <div class="form-group">
+                <label>HSN/SAC</label>
+                <input type="text" name="item-{{ forloop.counter0 }}-hsn_sac" value="{{ item_form.hsn_sac.value|default:'' }}">
+              </div>
+              <div class="form-group">
+                <label>GST %</label>
+                <input type="number" step="0.01" min="0" max="100" name="item-{{ forloop.counter0 }}-gst_pct" value="{{ item_form.gst_pct.value|default:'18' }}">
+              </div>
+              <div class="form-group">
+                <label>Tool Cost</label>
+                <input type="number" step="0.01" min="0" name="item-{{ forloop.counter0 }}-tool_cost" value="{{ item_form.tool_cost.value|default:'0' }}">
+              </div>
+              <div class="form-group">
+                <label>MOQ</label>
+                <input type="number" step="0.001" min="0" name="item-{{ forloop.counter0 }}-moq" value="{{ item_form.moq.value|default:'0' }}">
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="add-item-row">
+          <button type="button" class="btn-add-item" id="add-item-btn">+ Add Item</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── More details (collapsed by default) ─────────────────── -->
+    <div class="card collapsed" id="details-card">
+      <div class="card-header collapsible" onclick="toggleCard('details-card')">
+        More details<span class="chevron">▾</span>
+      </div>
+      <div class="card-body">
+        <div class="form-row cols-4">
+          <div class="form-group">
+            <label>Ref. No.</label>
+            <input type="text" name="ref_no" value="{{ post.ref_no|default:'' }}">
+          </div>
+          <div class="form-group">
+            <label>Rev. No.</label>
+            <input type="number" min="0" name="rev_no" value="{{ post.rev_no|default:'0' }}">
+          </div>
+          <div class="form-group">
+            <label>Rev. Date</label>
+            <input type="date" name="rev_date" value="{{ post.rev_date|default:'' }}">
+          </div>
+          <div class="form-group">
+            <label>Sales Person</label>
+            <input type="text" name="sales_person" value="{{ post.sales_person|default:'' }}">
+          </div>
+        </div>
+        <div class="form-row cols-3">
+          <div class="form-group">
+            <label>Kind Attn</label>
+            <input type="text" name="kind_attn" value="{{ post.kind_attn|default:'' }}">
+          </div>
+          <div class="form-group">
+            <label>Subject</label>
+            <input type="text" name="subject" value="{{ post.subject|default:'' }}" placeholder="e.g. Steel Chamfer">
+          </div>
+          <div class="form-group checkbox">
+            <input type="checkbox" id="same_state_as_us" name="same_state_as_us" style="width:auto;"
+                   {% if post.same_state_as_us or not post %}checked{% endif %}>
+            <label for="same_state_as_us" style="margin:0;">Customer in same state (CGST+SGST, else IGST)</label>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Customer Address</label>
+            <textarea name="customer_address">{{ post.customer_address|default:'' }}</textarea>
+          </div>
+        </div>
+        <div class="form-row cols-2">
+          <div class="form-group">
+            <label>Freight Amount</label>
+            <input type="number" step="0.01" min="0" name="freight_amount" value="{{ post.freight_amount|default:'0' }}">
+          </div>
+          <div class="form-group">
+            <label>P&amp;F Amount</label>
+            <input type="number" step="0.01" min="0" name="pf_amount" value="{{ post.pf_amount|default:'0' }}">
+          </div>
+        </div>
+        <div class="form-row cols-2">
+          <div class="form-group">
+            <label>Price Basis</label>
+            <input type="text" name="price_basis" value="{{ post.price_basis|default:'Ex-Works' }}">
+          </div>
+          <div class="form-group">
+            <label>GST Terms</label>
+            <input type="text" name="gst_terms" value="{{ post.gst_terms|default:'Extra As Applicable' }}">
+          </div>
+          <div class="form-group">
+            <label>Insurance Terms</label>
+            <input type="text" name="insurance_terms" value="{{ post.insurance_terms|default:'Extra At actual to be borne by Customer' }}">
+          </div>
+          <div class="form-group">
+            <label>Freight Terms</label>
+            <input type="text" name="freight_terms" value="{{ post.freight_terms|default:'The Same Shall be in your scope' }}">
+          </div>
+          <div class="form-group">
+            <label>Payment Terms</label>
+            <input type="text" name="payment_terms" value="{{ post.payment_terms|default:'100% Advance' }}">
+          </div>
+          <div class="form-group">
+            <label>Delivery Terms</label>
+            <input type="text" name="delivery_terms" value="{{ post.delivery_terms|default:'' }}">
+          </div>
+          <div class="form-group">
+            <label>Validity Terms</label>
+            <input type="text" name="validity_terms" value="{{ post.validity_terms|default:'7 Days from date of offer' }}">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="submit-row">
+      <button type="submit" class="btn-primary">Create &amp; Send Quotation →</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  function toggleCard(id) {
+    document.getElementById(id).classList.toggle('collapsed');
+  }
+
+  // Renumbers every item row's field names/data-index/title to stay
+  // sequential (0, 1, 2, ...) — Django's formset requires contiguous
+  // indices matching TOTAL_FORMS, same pattern gate_entry_form.html uses
+  // for its lot rows.
+  function reindexItems() {
+    var rows = document.querySelectorAll('.item-row');
+    rows.forEach(function (row, i) {
+      row.setAttribute('data-index', i);
+      row.querySelector('.item-row-head span').textContent = 'Item ' + (i + 1);
+      row.querySelectorAll('[name]').forEach(function (el) {
+        el.name = el.name.replace(/^item-\d+-/, 'item-' + i + '-');
+      });
+    });
+    document.getElementById('id_item-TOTAL_FORMS').value = rows.length;
+    updateRemoveButtonsVisibility();
+  }
+
+  function updateRemoveButtonsVisibility() {
+    var show = document.querySelectorAll('.item-row').length > 1;
+    document.querySelectorAll('.btn-remove-item').forEach(function (btn) {
+      btn.style.display = show ? '' : 'none';
+    });
+  }
+
+  function removeItem(btn) {
+    if (document.querySelectorAll('.item-row').length <= 1) return;
+    btn.closest('.item-row').remove();
+    reindexItems();
+  }
+
+  updateRemoveButtonsVisibility();
+
+  document.getElementById('add-item-btn').addEventListener('click', function () {
+    var totalInput = document.getElementById('id_item-TOTAL_FORMS');
+    var index = parseInt(totalInput.value, 10);
+
+    var row = document.createElement('div');
+    row.className = 'item-row';
+    row.setAttribute('data-index', index);
+    row.innerHTML =
+      '<div class="item-row-head"><span>Item ' + (index + 1) + '</span>' +
+        '<button type="button" class="btn-remove-item" onclick="removeItem(this)">✕ Remove</button></div>' +
+      '<div class="form-row cols-2">' +
+        '<div class="form-group"><label>Description *</label>' +
+          '<input type="text" name="item-' + index + '-description" placeholder="e.g. Steel Chamfer 10x10x14 mm"></div>' +
+        '<div class="form-group"><label>Product Type</label>' +
+          '<select name="item-' + index + '-product_type">' + document.querySelector('[name="item-0-product_type"]').innerHTML + '</select></div>' +
+      '</div>' +
+      '<div class="form-row cols-5">' +
+        '<div class="form-group"><label>Grade</label><input type="text" name="item-' + index + '-grade" placeholder="EN8D"></div>' +
+        '<div class="form-group"><label>Size (mm)</label><input type="number" step="0.001" name="item-' + index + '-size"></div>' +
+        '<div class="form-group"><label>Quantity *</label><input type="number" step="0.001" min="0.001" name="item-' + index + '-quantity"></div>' +
+        '<div class="form-group"><label>Unit</label><input type="text" name="item-' + index + '-unit" value="KGS"></div>' +
+        '<div class="form-group"><label>Rate/kg *</label><input type="number" step="0.01" min="0.01" name="item-' + index + '-rate_per_kg"></div>' +
+      '</div>' +
+      '<div class="form-row cols-5">' +
+        '<div class="form-group"><label>Discount %</label><input type="number" step="0.01" min="0" max="100" name="item-' + index + '-discount_pct" value="0"></div>' +
+        '<div class="form-group"><label>HSN/SAC</label><input type="text" name="item-' + index + '-hsn_sac"></div>' +
+        '<div class="form-group"><label>GST %</label><input type="number" step="0.01" min="0" max="100" name="item-' + index + '-gst_pct" value="18"></div>' +
+        '<div class="form-group"><label>Tool Cost</label><input type="number" step="0.01" min="0" name="item-' + index + '-tool_cost" value="0"></div>' +
+        '<div class="form-group"><label>MOQ</label><input type="number" step="0.001" min="0" name="item-' + index + '-moq" value="0"></div>' +
+      '</div>';
+
+    document.getElementById('items-container').appendChild(row);
+    totalInput.value = index + 1;
+    updateRemoveButtonsVisibility();
+  });
+</script>
+</body>
+</html>

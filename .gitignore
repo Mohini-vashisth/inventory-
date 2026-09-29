@@ -5,7 +5,10 @@ inventory/STOCK INVENTORY SHEET.xlsx
 inventory/staticfiles/
 inventory/db_backups/
 inventory/db.sqlite3
+inventory/db.sqlite3-shm
+inventory/db.sqlite3-wal
 inventory/media/
+.claude/launch.json
 
 .env
 .envrc

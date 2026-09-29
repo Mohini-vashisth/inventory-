@@ -31,7 +31,7 @@ from django.core.validators import validate_email
 
 logger = logging.getLogger(__name__)
 from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Order, Quotation, QuotationLineItem
-from .forms import GateEntryForm, GateEntryLotForm, GateEntryLotFormSet, MaterialForm, OrderForm
+from .forms import GateEntryForm, GateEntryLotForm, GateEntryLotFormSet, MaterialForm, OrderForm, QuotationForm, QuotationLineItemFormSet
 from .pdf import generate_quotation_pdf
 
 
@@ -75,36 +75,6 @@ def _safe_get(queryset, pk):
         return None
 
 
-def _parse_rate_per_kg(raw):
-    """A quotation's rate must be a real, positive number — returns None
-    (rather than raising) for anything else so callers can show a plain
-    error instead of a 500."""
-    try:
-        rate = Decimal(raw)
-    except (InvalidOperation, TypeError):
-        return None
-    return rate if rate > 0 else None
-
-
-def _create_quotation_with_single_item(customer, source_query, rate_per_kg, product_type_id, grade, size):
-    """The three Send Quote entry points only collect one rate/product/
-    grade/size today — no multi-line-item UI yet (that's a separate,
-    larger piece of work, still pending). This wraps that single input into
-    one QuotationLineItem on a new Quotation, the same shape
-    materials/migrations/0029_quotation_line_items.py used to convert
-    every pre-existing single-rate Quotation record, so today's simple
-    flow and tomorrow's real multi-item form both produce the same kind of
-    data underneath. Quantity is a placeholder (1 KGS) — there's no
-    quantity input in this flow yet either."""
-    quotation = Quotation.objects.create(customer=customer, source_query=source_query)
-    product_type = ProductType.objects.filter(pk=product_type_id).first() if product_type_id else None
-    description = product_type.item_code if product_type else (grade or 'Item')
-    QuotationLineItem.objects.create(
-        quotation=quotation, order=1, description=description,
-        product_type=product_type, grade=grade or '', size=size,
-        quantity=Decimal('1'), unit='KGS', rate_per_kg=rate_per_kg,
-    )
-    return quotation
 
 
 # ── Employee auth ────────────────────────────────────────────
@@ -864,57 +834,126 @@ def query_dashboard(request):
     })
 
 
-def query_send_quote(request, pk):
-    """Create/reuse a Customer from the query's captured info, record the
-    rate just finalized as an official Quotation, and send it — by email
-    (PDF attached, ahead of the order-form link) if one's on file,
-    otherwise staff fall back to Copy Link or the quotation PDF download
-    (same as any other customer)."""
+def quotation_form(request):
+    """Builds and sends an official, multi-line-item Quotation — the one
+    page every Send Quote action now funnels into, reached three ways:
+    ?query=<pk> (from the Query dashboard, prefilled from that lead's
+    captured info — a Customer is created/reused from it on submit, same
+    as the old query_send_quote), ?customer=<pk> (re-quoting an existing
+    customer from the Orders dashboard), or with neither (a brand-new
+    company — name/email/phone collected right here, replacing the old
+    quick_send_quote). Saving the Quotation, its line items, and sending
+    the email all happen atomically — an invalid submission creates
+    nothing. GET never creates or changes anything, even with ?query= set."""
     if not request.user.is_staff:
         return redirect('home')
-    if request.method != 'POST':
-        return redirect('query_dashboard')
-    query = get_object_or_404(Query, pk=pk)
 
-    rate_per_kg = _parse_rate_per_kg(request.POST.get('rate_per_kg'))
-    if rate_per_kg is None:
-        messages.error(request, "Enter a valid rate per kg before sending the quote.")
-        return redirect('query_dashboard')
+    query = _safe_get(Query.objects, request.GET.get('query') or request.POST.get('query'))
+    existing_customer = _safe_get(Customer.objects, request.GET.get('customer') or request.POST.get('customer'))
+    # Always has all three keys (never a bare {}) — the template looks up
+    # .name/.email/.phone on this unconditionally, and a key that's
+    # genuinely missing (not just empty) raises during template rendering
+    # under Django's test client.
+    new_customer_initial = {'name': '', 'email': '', 'phone': ''}
 
-    customer_name = query.company_name or query.contact_phone or f"Query #{query.pk}"
-    customer, _ = Customer.objects.get_or_create(name=customer_name)
-    if query.contact_email:
-        customer.email = query.contact_email
-    if query.contact_phone:
-        customer.phone = query.contact_phone
-    customer.save(update_fields=['email', 'phone'])
+    error = None
+    if request.method == 'POST':
+        form = QuotationForm(request.POST)
+        formset = QuotationLineItemFormSet(request.POST, prefix='item')
 
-    query.customer = customer
-    query.status = 'quote_sent'
-    query.save(update_fields=['customer', 'status'])
+        typed_name = request.POST.get('customer_name', '').strip()
+        if query:
+            customer_name = query.company_name or query.contact_phone or f"Query #{query.pk}"
+        elif existing_customer:
+            customer_name = existing_customer.name
+        else:
+            customer_name = typed_name
 
-    # The rate form prefills from the query but is editable — fall back to
-    # the query's own values for anything left blank.
-    product_type_id = request.POST.get('product_type') or query.product_type_id
-    grade = request.POST.get('grade', '').strip() or query.grade
-    raw_size = request.POST.get('size') or (str(query.size) if query.size is not None else None)
-    try:
-        quotation = _create_quotation_with_single_item(
-            customer, query, rate_per_kg, product_type_id, grade, raw_size,
-        )
-    except (InvalidOperation, ValueError, ValidationError):
-        messages.error(request, "Check that size is a valid number.")
-        return redirect('query_dashboard')
+        if not customer_name:
+            error = "Company name is required."
+        elif not form.is_valid():
+            error = _first_form_error(form)
+        elif not formset.is_valid():
+            error = _first_formset_error(formset)
+        else:
+            email = request.POST.get('customer_email', '').strip()
+            phone = request.POST.get('customer_phone', '').strip()
+            with transaction.atomic():
+                if query:
+                    customer, _created = Customer.objects.get_or_create(name=customer_name)
+                    if query.contact_email:
+                        customer.email = query.contact_email
+                    if query.contact_phone:
+                        customer.phone = query.contact_phone
+                    customer.save(update_fields=['email', 'phone'])
+                    query.customer = customer
+                    query.status = 'quote_sent'
+                    query.save(update_fields=['customer', 'status'])
+                elif existing_customer:
+                    customer = existing_customer
+                    if email or phone:
+                        if email:
+                            customer.email = email
+                        if phone:
+                            customer.phone = phone
+                        customer.save(update_fields=['email', 'phone'])
+                else:
+                    customer, _created = Customer.objects.get_or_create(name=customer_name)
+                    if email:
+                        customer.email = email
+                    if phone:
+                        customer.phone = phone
+                    customer.save(update_fields=['email', 'phone'])
 
-    if customer.email:
-        _dispatch_quote_email(request, customer, quotation)
+                quotation = Quotation.objects.create(
+                    customer=customer, source_query=query, **form.cleaned_data,
+                )
+                for i, item_data in enumerate(formset.cleaned_data, start=1):
+                    product_type = item_data.pop('product_type', None)
+                    QuotationLineItem.objects.create(
+                        quotation=quotation, order=i, product_type=product_type, **item_data,
+                    )
+
+            if customer.email:
+                _dispatch_quote_email(request, customer, quotation)
+            else:
+                messages.warning(
+                    request,
+                    f"No email on file for {customer.name} — use “Copy Link” to share the quote form, "
+                    f"or download the quotation PDF below to send manually.",
+                )
+            return redirect('query_dashboard' if query else 'order_dashboard')
     else:
-        messages.warning(
-            request,
-            f"No email on file for {customer.name} — use “Copy Link” to share the quote form, "
-            f"or download the quotation PDF below to send manually.",
-        )
-    return redirect('query_dashboard')
+        item_initial = [{}]
+        if query:
+            item_initial = [{
+                'description': query.product_type.item_code if query.product_type else (query.grade or 'Item'),
+                'product_type': query.product_type_id,
+                'grade': query.grade,
+                'size': query.size,
+                'quantity': query.quantity or Decimal('1'),
+            }]
+        elif not existing_customer:
+            # A brand-new company — "Send Form to Them" on the Orders
+            # dashboard carries over whatever was already typed into its
+            # own Company Name/Email/Phone fields rather than losing it.
+            new_customer_initial = {
+                'name': request.GET.get('name', ''),
+                'email': request.GET.get('email', ''),
+                'phone': request.GET.get('phone', ''),
+            }
+        form = QuotationForm()
+        formset = QuotationLineItemFormSet(initial=item_initial, prefix='item')
+
+    return render(request, 'materials/quotation_form.html', {
+        'form': form,
+        'formset': formset,
+        'query': query,
+        'existing_customer': existing_customer,
+        'new_customer_initial': new_customer_initial,
+        'error': error,
+        'post': request.POST if error else {},
+    })
 
 
 def query_not_interested(request, pk):
@@ -1155,82 +1194,6 @@ def quote_form(request, token):
         'error': error,
         'post': request.POST if error else initial,
     })
-
-
-def send_quote_email(request, pk):
-    if not request.user.is_staff:
-        return redirect('home')
-    if request.method != 'POST':
-        return redirect('order_dashboard')
-
-    customer = get_object_or_404(Customer, pk=pk)
-
-    if not customer.email:
-        messages.error(request, f"No email address on file for {customer.name}.")
-        return redirect('order_dashboard')
-
-    rate_per_kg = _parse_rate_per_kg(request.POST.get('rate_per_kg'))
-    if rate_per_kg is None:
-        messages.error(request, "Enter a valid rate per kg before sending the quote.")
-        return redirect('order_dashboard')
-
-    try:
-        quotation = _create_quotation_with_single_item(
-            customer, None, rate_per_kg,
-            request.POST.get('product_type') or None,
-            request.POST.get('grade', '').strip(),
-            request.POST.get('size') or None,
-        )
-    except (InvalidOperation, ValueError, ValidationError):
-        messages.error(request, "Check that size is a valid number.")
-        return redirect('order_dashboard')
-
-    _dispatch_quote_email(request, customer, quotation)
-    return redirect('order_dashboard')
-
-
-def quick_send_quote(request):
-    """Create/update a customer from name+email+phone and immediately send the quote form link."""
-    if not request.user.is_staff:
-        return redirect('home')
-    if request.method != 'POST':
-        return redirect('order_dashboard')
-
-    name  = request.POST.get('name', '').strip()
-    email = request.POST.get('email', '').strip()
-    phone = request.POST.get('phone', '').strip()
-
-    if not name:
-        messages.error(request, "Company name is required.")
-        return redirect('order_dashboard')
-    if not email:
-        messages.error(request, "Email address is required to send the form.")
-        return redirect('order_dashboard')
-
-    rate_per_kg = _parse_rate_per_kg(request.POST.get('rate_per_kg'))
-    if rate_per_kg is None:
-        messages.error(request, "Enter a valid rate per kg before sending the quote.")
-        return redirect('order_dashboard')
-
-    customer, _ = Customer.objects.get_or_create(name=name)
-    customer.email = email
-    if phone:
-        customer.phone = phone
-    customer.save(update_fields=['email', 'phone'])
-
-    try:
-        quotation = _create_quotation_with_single_item(
-            customer, None, rate_per_kg,
-            request.POST.get('product_type') or None,
-            request.POST.get('grade', '').strip(),
-            request.POST.get('size') or None,
-        )
-    except (InvalidOperation, ValueError, ValidationError):
-        messages.error(request, "Check that size is a valid number.")
-        return redirect('order_dashboard')
-
-    _dispatch_quote_email(request, customer, quotation)
-    return redirect('order_dashboard')
 
 
 def _public_quote_base_url(request):
