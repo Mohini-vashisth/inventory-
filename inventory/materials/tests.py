@@ -30,6 +30,21 @@ from .views import (
 )
 
 
+def _quotation_item_post_data(**overrides):
+    """Minimal valid POST data for quotation_form's one-item formset —
+    every test that submits that form needs the management-form fields
+    plus a single valid item row, so this is shared rather than
+    reimplemented per test class."""
+    data = {
+        'item-TOTAL_FORMS': '1', 'item-INITIAL_FORMS': '0',
+        'item-MIN_NUM_FORMS': '0', 'item-MAX_NUM_FORMS': '1000',
+        'item-0-description': 'Steel Bar', 'item-0-quantity': '10',
+        'item-0-rate_per_kg': '85.50', 'item-0-unit': 'KGS',
+    }
+    data.update(overrides)
+    return data
+
+
 class ImportExcelTests(TestCase):
     """Uses a small synthetic spreadsheet rather than the real (gitignored) one,
     so this runs the same in CI as it does locally."""
@@ -2142,22 +2157,61 @@ class CustomerAutocompleteTests(TestCase):
         self.assertEqual(names, ['Acme Traders'])
 
 
-class QuoteEmailDispatchTests(TestCase):
+class QuotationFormDispatchTests(TestCase):
+    """quotation_form is the one page every Send Quote action funnels
+    into — this covers the ?customer=<pk> (existing customer, formerly
+    send_quote_email) and no-params (brand-new customer, formerly
+    quick_send_quote) paths. ?query=<pk> is covered separately in
+    QueryDashboardTests, since that path also has to juggle a Query."""
+
     def setUp(self):
         self.staff = User.objects.create_user('quote_email_staff', password='pw', is_staff=True)
         self.customer = Customer.objects.create(name='Email Test Co', email='client@example.com')
 
+    def _item_data(self, **overrides):
+        return _quotation_item_post_data(**overrides)
+
     def test_anonymous_cannot_send(self):
-        response = self.client.post(reverse('send_quote_email', kwargs={'pk': self.customer.pk}))
+        response = self.client.post(
+            f"{reverse('quotation_form')}?customer={self.customer.pk}", self._item_data(),
+        )
         self.assertRedirects(response, reverse('home'))
         self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(Quotation.objects.count(), 0)
+
+    def test_anonymous_cannot_view_form(self):
+        response = self.client.get(f"{reverse('quotation_form')}?customer={self.customer.pk}")
+        self.assertRedirects(response, reverse('home'))
 
     @override_settings(EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com')
-    def test_staff_send_quote_email_delivers_with_the_link(self):
+    def test_multiple_line_items_all_saved(self):
+        self.client.force_login(self.staff)
+        data = self._item_data()
+        data.update({
+            'item-TOTAL_FORMS': '2',
+            'item-1-description': 'Steel Chamfer', 'item-1-quantity': '500',
+            'item-1-rate_per_kg': '140.00', 'item-1-unit': 'KGS',
+        })
+        self.client.post(f"{reverse('quotation_form')}?customer={self.customer.pk}", data)
+        quotation = Quotation.objects.get(customer=self.customer)
+        self.assertEqual(quotation.line_items.count(), 2)
+        self.assertEqual(quotation.subtotal(), Decimal('10') * Decimal('85.50') + Decimal('500') * Decimal('140.00'))
+
+    def test_new_customer_form_prefilled_from_get_params(self):
+        """'Send Form to Them' on the Orders dashboard carries the already-
+        typed Company Name/Email/Phone into the URL rather than losing it."""
+        response = self.client.get(reverse('quotation_form'))  # anonymous — just checking the redirect first
+        self.assertRedirects(response, reverse('home'))
+        self.client.force_login(self.staff)
+        response = self.client.get(f"{reverse('quotation_form')}?name=Carried+Over+Co&email=co@example.com&phone=999")
+        self.assertContains(response, 'value="Carried Over Co"')
+        self.assertContains(response, 'value="co@example.com"')
+
+    @override_settings(EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com')
+    def test_staff_send_quote_delivers_with_the_link(self):
         self.client.force_login(self.staff)
         response = self.client.post(
-            reverse('send_quote_email', kwargs={'pk': self.customer.pk}),
-            {'rate_per_kg': '85.50'}, follow=True,
+            f"{reverse('quotation_form')}?customer={self.customer.pk}", self._item_data(), follow=True,
         )
         quotation = Quotation.objects.get(customer=self.customer)
         self.assertContains(response, f"Quotation {quotation.formatted_no()} sent to {self.customer.email}")
@@ -2171,31 +2225,31 @@ class QuoteEmailDispatchTests(TestCase):
         self.assertEqual(mimetype, 'application/pdf')
         self.assertTrue(content.startswith(b'%PDF'))
 
-    def test_send_quote_email_rejects_missing_rate(self):
+    def test_rejects_missing_rate(self):
         self.client.force_login(self.staff)
         response = self.client.post(
-            reverse('send_quote_email', kwargs={'pk': self.customer.pk}), follow=True,
+            f"{reverse('quotation_form')}?customer={self.customer.pk}",
+            self._item_data(**{'item-0-rate_per_kg': ''}), follow=True,
         )
-        self.assertContains(response, "Enter a valid rate per kg")
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(Quotation.objects.count(), 0)
         self.assertEqual(len(mail.outbox), 0)
 
-    def test_send_quote_email_rejects_zero_or_negative_rate(self):
+    def test_rejects_zero_or_negative_rate(self):
         self.client.force_login(self.staff)
         for bad_rate in ('0', '-5'):
-            response = self.client.post(
-                reverse('send_quote_email', kwargs={'pk': self.customer.pk}),
-                {'rate_per_kg': bad_rate}, follow=True,
+            self.client.post(
+                f"{reverse('quotation_form')}?customer={self.customer.pk}",
+                self._item_data(**{'item-0-rate_per_kg': bad_rate}), follow=True,
             )
-            self.assertContains(response, "Enter a valid rate per kg")
         self.assertEqual(Quotation.objects.count(), 0)
         self.assertEqual(len(mail.outbox), 0)
 
     @override_settings(EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com')
     def test_quotation_numbers_are_sequential(self):
         self.client.force_login(self.staff)
-        self.client.post(reverse('send_quote_email', kwargs={'pk': self.customer.pk}), {'rate_per_kg': '10'})
-        self.client.post(reverse('send_quote_email', kwargs={'pk': self.customer.pk}), {'rate_per_kg': '20'})
+        self.client.post(f"{reverse('quotation_form')}?customer={self.customer.pk}", self._item_data())
+        self.client.post(f"{reverse('quotation_form')}?customer={self.customer.pk}", self._item_data())
         numbers = list(Quotation.objects.order_by('quotation_no').values_list('quotation_no', flat=True))
         self.assertEqual(numbers, [numbers[0], numbers[0] + 1])
 
@@ -2209,8 +2263,7 @@ class QuoteEmailDispatchTests(TestCase):
         not link to that private address, which a real customer can't open."""
         self.client.force_login(self.staff)
         self.client.post(
-            reverse('send_quote_email', kwargs={'pk': self.customer.pk}),
-            {'rate_per_kg': '85.50'},
+            f"{reverse('quotation_form')}?customer={self.customer.pk}", self._item_data(),
             HTTP_HOST='mdw.tail2734e7.ts.net',
         )
         self.assertEqual(len(mail.outbox), 1)
@@ -2221,60 +2274,62 @@ class QuoteEmailDispatchTests(TestCase):
     @override_settings(EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com')
     def test_quote_link_falls_back_to_request_host_when_public_base_url_unset(self):
         self.client.force_login(self.staff)
-        self.client.post(reverse('send_quote_email', kwargs={'pk': self.customer.pk}), {'rate_per_kg': '85.50'})
+        self.client.post(f"{reverse('quotation_form')}?customer={self.customer.pk}", self._item_data())
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn(f"testserver/quote/{self.customer.quote_token}/", mail.outbox[0].body)
 
-    def test_send_quote_email_fails_gracefully_without_recipient_address(self):
+    def test_fails_gracefully_without_recipient_address(self):
         no_email_customer = Customer.objects.create(name='No Email Co')
         self.client.force_login(self.staff)
         response = self.client.post(
-            reverse('send_quote_email', kwargs={'pk': no_email_customer.pk}),
-            {'rate_per_kg': '85.50'}, follow=True,
+            f"{reverse('quotation_form')}?customer={no_email_customer.pk}", self._item_data(), follow=True,
         )
-        self.assertContains(response, f"No email address on file for {no_email_customer.name}")
+        self.assertContains(response, f"No email on file for {no_email_customer.name}")
         self.assertEqual(len(mail.outbox), 0)
+        # The Quotation record is still created even without an email on
+        # file, so the rate quoted is on file either way.
+        self.assertTrue(Quotation.objects.filter(customer=no_email_customer).exists())
 
     @override_settings(EMAIL_HOST_USER='')
-    def test_send_quote_email_shows_error_when_email_not_configured(self):
+    def test_shows_error_when_email_not_configured(self):
         self.client.force_login(self.staff)
         response = self.client.post(
-            reverse('send_quote_email', kwargs={'pk': self.customer.pk}),
-            {'rate_per_kg': '85.50'}, follow=True,
+            f"{reverse('quotation_form')}?customer={self.customer.pk}", self._item_data(), follow=True,
         )
         self.assertContains(response, "Email is not configured")
         self.assertEqual(len(mail.outbox), 0)
 
     @override_settings(EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com')
-    def test_quick_send_quote_creates_customer_and_sends(self):
+    def test_new_customer_creates_and_sends(self):
         self.client.force_login(self.staff)
-        response = self.client.post(reverse('quick_send_quote'), {
-            'name': 'Brand New Co', 'email': 'new@example.com', 'phone': '9999999999',
-            'rate_per_kg': '85.50',
-        }, follow=True)
+        response = self.client.post(reverse('quotation_form'), self._item_data(**{
+            'customer_name': 'Brand New Co', 'customer_email': 'new@example.com', 'customer_phone': '9999999999',
+        }), follow=True)
         customer = Customer.objects.get(name='Brand New Co')
         quotation = Quotation.objects.get(customer=customer)
         self.assertContains(response, f"Quotation {quotation.formatted_no()} sent to new@example.com")
         self.assertEqual(customer.email, 'new@example.com')
         self.assertEqual(len(mail.outbox), 1)
 
-    def test_quick_send_quote_requires_email(self):
+    def test_new_customer_requires_company_name(self):
         self.client.force_login(self.staff)
-        response = self.client.post(
-            reverse('quick_send_quote'), {'name': 'No Email Provided Co', 'rate_per_kg': '85.50'}, follow=True,
-        )
-        self.assertContains(response, "Email address is required")
-        self.assertFalse(Customer.objects.filter(name='No Email Provided Co').exists())
+        response = self.client.post(reverse('quotation_form'), self._item_data(**{
+            'customer_email': 'rateless@example.com',
+        }), follow=True)
+        self.assertContains(response, "Company name is required")
+        self.assertFalse(Customer.objects.filter(email='rateless@example.com').exists())
         self.assertEqual(len(mail.outbox), 0)
 
-    def test_quick_send_quote_requires_rate(self):
+    def test_new_customer_without_email_still_creates_quotation(self):
+        """No email on file is a valid state here too — same Copy Link/PDF
+        fallback as the existing-customer and query paths, not a hard
+        requirement like the old quick_send_quote enforced."""
         self.client.force_login(self.staff)
-        response = self.client.post(
-            reverse('quick_send_quote'),
-            {'name': 'Rateless Co', 'email': 'rateless@example.com'}, follow=True,
-        )
-        self.assertContains(response, "Enter a valid rate per kg")
-        self.assertFalse(Customer.objects.filter(name='Rateless Co').exists())
+        response = self.client.post(reverse('quotation_form'), self._item_data(**{
+            'customer_name': 'No Email Provided Co',
+        }), follow=True)
+        self.assertTrue(Customer.objects.filter(name='No Email Provided Co').exists())
+        self.assertContains(response, "No email on file for No Email Provided Co")
         self.assertEqual(len(mail.outbox), 0)
 
 
@@ -2415,7 +2470,8 @@ class QueryDashboardTests(TestCase):
         query = Query.objects.create(source='referral', company_name='Referral Co', contact_email='ref@example.com')
         self.client.force_login(self.staff)
         response = self.client.post(
-            reverse('query_send_quote', kwargs={'pk': query.pk}), {'rate_per_kg': '75.25'}, follow=True,
+            f"{reverse('quotation_form')}?query={query.pk}",
+            _quotation_item_post_data(**{'item-0-rate_per_kg': '75.25'}), follow=True,
         )
 
         query.refresh_from_db()
@@ -2433,7 +2489,8 @@ class QueryDashboardTests(TestCase):
         query = Query.objects.create(source='call', company_name='No Email Co', contact_phone='9999999999')
         self.client.force_login(self.staff)
         response = self.client.post(
-            reverse('query_send_quote', kwargs={'pk': query.pk}), {'rate_per_kg': '75.25'}, follow=True,
+            f"{reverse('quotation_form')}?query={query.pk}",
+            _quotation_item_post_data(**{'item-0-rate_per_kg': '75.25'}), follow=True,
         )
 
         query.refresh_from_db()
@@ -2444,21 +2501,38 @@ class QueryDashboardTests(TestCase):
     def test_send_quote_rejects_missing_rate(self):
         query = Query.objects.create(source='call', company_name='Rateless Co', contact_email='rateless@example.com')
         self.client.force_login(self.staff)
-        response = self.client.post(reverse('query_send_quote', kwargs={'pk': query.pk}), follow=True)
+        response = self.client.post(
+            f"{reverse('quotation_form')}?query={query.pk}",
+            _quotation_item_post_data(**{'item-0-rate_per_kg': ''}), follow=True,
+        )
 
         query.refresh_from_db()
         self.assertEqual(query.status, 'new')
-        self.assertContains(response, "Enter a valid rate per kg")
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(Quotation.objects.count(), 0)
         self.assertEqual(len(mail.outbox), 0)
 
-    def test_send_quote_prefills_grade_size_product_type_from_query(self):
+    def test_send_quote_form_prefills_grade_size_product_type_from_query(self):
+        """The GET-rendered form pre-fills the item row from the query —
+        submitting it unchanged (the normal path: a real browser submits
+        whatever's already in the pre-filled inputs) carries those values
+        through to the QuotationLineItem."""
         query = Query.objects.create(
             source='call', company_name='Prefill Rate Co', contact_email='prefill@example.com',
             product_type=self.product_type, grade='EN8D', size=Decimal('1.200'),
         )
         self.client.force_login(self.staff)
-        self.client.post(reverse('query_send_quote', kwargs={'pk': query.pk}), {'rate_per_kg': '60'})
+        get_response = self.client.get(f"{reverse('quotation_form')}?query={query.pk}")
+        self.assertContains(get_response, 'value="EN8D"')
+        self.assertContains(get_response, 'value="1.200"')
+
+        self.client.post(
+            f"{reverse('quotation_form')}?query={query.pk}",
+            _quotation_item_post_data(**{
+                'item-0-rate_per_kg': '60', 'item-0-grade': 'EN8D', 'item-0-size': '1.200',
+                'item-0-product_type': str(self.product_type.pk),
+            }),
+        )
 
         quotation = Quotation.objects.get(source_query=query)
         item = quotation.line_items.get()
@@ -2476,7 +2550,10 @@ class QueryDashboardTests(TestCase):
         host instead of PUBLIC_QUOTE_BASE_URL."""
         query = Query.objects.create(source='call', company_name='No Email Co', contact_phone='9999999999')
         self.client.force_login(self.staff)
-        self.client.post(reverse('query_send_quote', kwargs={'pk': query.pk}), {'rate_per_kg': '75.25'})
+        self.client.post(
+            f"{reverse('quotation_form')}?query={query.pk}",
+            _quotation_item_post_data(**{'item-0-rate_per_kg': '75.25'}),
+        )
         query.refresh_from_db()
 
         response = self.client.get(reverse('query_dashboard'), HTTP_HOST='mdw.tail2734e7.ts.net')
@@ -2581,7 +2658,10 @@ class QueryDashboardTests(TestCase):
     def test_send_quote_falls_back_to_phone_when_no_company_name(self):
         query = Query.objects.create(source='whatsapp', contact_phone='9998887776')
         self.client.force_login(self.staff)
-        self.client.post(reverse('query_send_quote', kwargs={'pk': query.pk}), {'rate_per_kg': '40'})
+        self.client.post(
+            f"{reverse('quotation_form')}?query={query.pk}",
+            _quotation_item_post_data(**{'item-0-rate_per_kg': '40'}),
+        )
 
         query.refresh_from_db()
         customer = Customer.objects.get(name='9998887776')
