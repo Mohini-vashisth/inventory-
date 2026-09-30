@@ -423,21 +423,36 @@ def _indian_number_to_words(n):
 
 class Quotation(models.Model):
     """A record of an official quotation actually sent to a customer —
-    created every time Send Quote fires, regardless of which entry point
-    triggered it (query_send_quote, send_quote_email, quick_send_quote all
-    funnel through _dispatch_quote_email). Immutable once created —
-    correcting anything means sending a new quotation, not editing history,
-    the same way Order itself is never silently rewritten.
+    created every time Send Quote fires, from quotation_form (materials/
+    views.py). Immutable once **sent** — correcting anything means sending
+    a new quotation, not editing history, the same way Order itself is
+    never silently rewritten. A quotation in 'draft' status is the one
+    exception: an explicitly incomplete, still-being-edited quote that
+    hasn't gone out yet, freely editable and discardable via quotation_form
+    (edit mode) / quotation_discard until it's actually sent.
+
+    quotation_no is only assigned when status flips to 'sent' (see save())
+    — a draft that's abandoned and deleted must never have consumed a
+    number, since QUO-#### is a permanent record of what was actually
+    quoted, the same "never renumbered, never reused" guarantee order_no
+    deliberately does NOT have (see Order.order_no's own docs).
 
     Mirrors the client's real, existing (previously non-app) quotation
     format: header fields (ref/rev numbers, sales person, subject), one or
     more QuotationLineItems, freight/P&F, and a same-state-driven GST split
     (CGST+SGST if the customer is in the same state as us, else IGST — see
     same_state_as_us and gst_total())."""
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('sent',  'Sent'),
+    ]
+
     customer         = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='quotations')
     source_query     = models.ForeignKey(Query, on_delete=models.SET_NULL, null=True, blank=True, related_name='quotations')
+    status           = models.CharField(max_length=10, choices=STATUS_CHOICES, default='draft')
     quotation_no     = models.PositiveIntegerField(unique=True, editable=False, null=True)
     created_at       = models.DateTimeField(auto_now_add=True)
+    updated_at       = models.DateTimeField(auto_now=True)
 
     # Header fields — all optional, matching the reference template.
     ref_no           = models.CharField(max_length=50, blank=True)
@@ -473,13 +488,21 @@ class Quotation(models.Model):
         ordering = ['-created_at']
 
     def save(self, *args, **kwargs):
-        if self.quotation_no is None:
+        # Only a *sent* quotation ever gets a permanent number — a draft
+        # that's edited/saved repeatedly, or abandoned and discarded, must
+        # never consume one.
+        if self.status == 'sent' and self.quotation_no is None:
             max_no = Quotation.objects.aggregate(models.Max('quotation_no'))['quotation_no__max'] or 0
             self.quotation_no = max_no + 1
         super().save(*args, **kwargs)
 
     def formatted_no(self):
+        if self.quotation_no is None:
+            return 'DRAFT'
         return f"QUO-{self.quotation_no:04d}"
+
+    def is_draft(self):
+        return self.status == 'draft'
 
     def subtotal(self):
         return sum((item.amount() for item in self.line_items.all()), Decimal('0'))
@@ -519,16 +542,23 @@ class QuotationLineItem(models.Model):
     """One priced item within a Quotation — a quote can cover several
     grade/size combinations at once (e.g. two different chamfer sizes),
     each with its own quantity, rate, HSN/SAC and GST%, matching the
-    client's real quotation format."""
+    client's real quotation format.
+
+    quantity/rate_per_kg are nullable specifically so a **draft**
+    quotation can hold a row that's still being figured out (a product
+    picked, rate not agreed yet) — quotation_form's full-validation path
+    (actually sending) still requires both via the form layer; this is a
+    DB-level relaxation for drafts only, not a sign either is optional
+    once a quotation is actually sent."""
     quotation    = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name='line_items')
     order        = models.PositiveIntegerField(default=1, help_text="Display order (Sr. No.) within the quotation.")
     description  = models.CharField(max_length=255)
     product_type = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)
     grade        = models.CharField(max_length=100, blank=True)
     size         = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
-    quantity     = models.DecimalField(max_digits=10, decimal_places=3)
+    quantity     = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     unit         = models.CharField(max_length=20, default='KGS')
-    rate_per_kg  = models.DecimalField(max_digits=10, decimal_places=2)
+    rate_per_kg  = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     discount_pct = models.DecimalField(max_digits=5, decimal_places=2, default=0, verbose_name="Discount %")
     hsn_sac      = models.CharField(max_length=20, blank=True, verbose_name="HSN/SAC")
     gst_pct      = models.DecimalField(max_digits=5, decimal_places=2, default=18, verbose_name="GST %")
@@ -539,6 +569,8 @@ class QuotationLineItem(models.Model):
         ordering = ['order']
 
     def gross_amount(self):
+        if self.quantity is None or self.rate_per_kg is None:
+            return Decimal('0')
         return self.quantity * self.rate_per_kg
 
     def discount_amount(self):

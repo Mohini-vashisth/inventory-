@@ -26,6 +26,9 @@ urlpatterns = [
     path('queries/<int:pk>/edit/', views.query_edit, name='query_edit'),
     path('queries/<int:pk>/not-interested/', views.query_not_interested, name='query_not_interested'),
     path('quotations/new/', views.quotation_form, name='quotation_form'),
+    path('quotations/drafts/', views.quotation_drafts, name='quotation_drafts'),
+    path('quotations/<int:pk>/edit/', views.quotation_form, name='quotation_edit'),
+    path('quotations/<int:pk>/discard/', views.quotation_discard, name='quotation_discard'),
     path('quotations/<int:pk>/pdf/', views.quotation_pdf, name='quotation_pdf'),
     # Public, unauthenticated — Meta's Cloud API calls this directly. Verified
     # via HMAC/verify-token inside the view, not Django auth. Reaches the

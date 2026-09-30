@@ -2333,6 +2333,194 @@ class QuotationFormDispatchTests(TestCase):
         self.assertEqual(len(mail.outbox), 0)
 
 
+class QuotationDraftTests(TestCase):
+    """Save Draft is deliberately lenient — no formset validation, quantity/
+    rate can be left blank, zero fully-formed items is fine — since a draft
+    is explicitly a work in progress. Sending is unchanged: full validation,
+    only then does it consume a quotation_no."""
+
+    def setUp(self):
+        self.staff = User.objects.create_user('draft_staff', password='pw', is_staff=True)
+
+    def _draft_item_data(self, **overrides):
+        data = {
+            'item-TOTAL_FORMS': '1', 'item-INITIAL_FORMS': '0',
+            'item-MIN_NUM_FORMS': '0', 'item-MAX_NUM_FORMS': '1000',
+            'item-0-description': 'Steel Bar', 'item-0-unit': 'KGS',
+            'action': 'save_draft',
+        }
+        data.update(overrides)
+        return data
+
+    def test_save_draft_creates_no_quotation_number_and_sends_no_email(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse('quotation_form'), self._draft_item_data(**{
+            'customer_name': 'Draft Co',
+        }), follow=True)
+        quotation = Quotation.objects.get(customer__name='Draft Co')
+        self.assertEqual(quotation.status, 'draft')
+        self.assertIsNone(quotation.quotation_no)
+        self.assertEqual(quotation.formatted_no(), 'DRAFT')
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertContains(response, "Draft saved for Draft Co")
+
+    def test_draft_allows_incomplete_line_item(self):
+        """A row with a description but no quantity/rate yet still saves —
+        that's the whole point of a draft."""
+        self.client.force_login(self.staff)
+        self.client.post(reverse('quotation_form'), self._draft_item_data(**{
+            'customer_name': 'Incomplete Item Co',
+        }))
+        item = Quotation.objects.get(customer__name='Incomplete Item Co').line_items.get()
+        self.assertEqual(item.description, 'Steel Bar')
+        self.assertIsNone(item.quantity)
+        self.assertIsNone(item.rate_per_kg)
+
+    def test_draft_allows_zero_line_items(self):
+        """A totally blank item row (no description) is just dropped, not
+        rejected — a draft can exist with nothing filled in on it yet."""
+        self.client.force_login(self.staff)
+        data = self._draft_item_data(**{'customer_name': 'Blank Item Co', 'item-0-description': ''})
+        self.client.post(reverse('quotation_form'), data)
+        quotation = Quotation.objects.get(customer__name='Blank Item Co')
+        self.assertEqual(quotation.line_items.count(), 0)
+
+    def test_save_draft_still_requires_company_name(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse('quotation_form'), self._draft_item_data(), follow=True)
+        self.assertContains(response, "Company name is required")
+        self.assertEqual(Quotation.objects.count(), 0)
+
+    def test_draft_from_query_does_not_flip_query_status(self):
+        """A draft hasn't gone out to anyone — the Query must stay 'new'
+        until the quotation is actually sent, not just saved as a draft."""
+        query = Query.objects.create(source='call', company_name='Draft Query Co', contact_email='q@example.com')
+        self.client.force_login(self.staff)
+        self.client.post(f"{reverse('quotation_form')}?query={query.pk}", self._draft_item_data())
+        query.refresh_from_db()
+        self.assertEqual(query.status, 'new')
+        self.assertIsNone(query.customer)
+
+    def test_resume_draft_get_prefills_from_saved_data(self):
+        self.client.force_login(self.staff)
+        self.client.post(reverse('quotation_form'), self._draft_item_data(**{
+            'customer_name': 'Resume Co', 'item-0-quantity': '250', 'item-0-rate_per_kg': '99.50',
+        }))
+        draft = Quotation.objects.get(customer__name='Resume Co')
+        response = self.client.get(reverse('quotation_edit', kwargs={'pk': draft.pk}))
+        self.assertContains(response, 'Edit Draft Quotation')
+        self.assertContains(response, 'value="250.000"')
+        self.assertContains(response, 'value="99.50"')
+        self.assertContains(response, 'Resume Co')
+
+    def test_saving_a_resumed_draft_again_updates_in_place(self):
+        self.client.force_login(self.staff)
+        self.client.post(reverse('quotation_form'), self._draft_item_data(**{'customer_name': 'Update Co'}))
+        draft = Quotation.objects.get(customer__name='Update Co')
+
+        self.client.post(reverse('quotation_edit', kwargs={'pk': draft.pk}), self._draft_item_data(**{
+            'item-0-description': 'Updated Description',
+        }))
+        self.assertEqual(Quotation.objects.filter(customer__name='Update Co').count(), 1)
+        draft.refresh_from_db()
+        self.assertEqual(draft.line_items.get().description, 'Updated Description')
+        self.assertEqual(draft.status, 'draft')
+        self.assertIsNone(draft.quotation_no)
+
+    @override_settings(EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com')
+    def test_sending_a_resumed_draft_finalizes_it_in_place(self):
+        self.client.force_login(self.staff)
+        self.client.post(reverse('quotation_form'), self._draft_item_data(**{'customer_name': 'Finalize Co'}))
+        draft = Quotation.objects.get(customer__name='Finalize Co')
+
+        self.client.post(reverse('quotation_edit', kwargs={'pk': draft.pk}), _quotation_item_post_data(**{
+            'customer_name': 'Finalize Co', 'customer_email': 'finalize@example.com', 'action': 'send',
+        }))
+        draft.refresh_from_db()
+        self.assertEqual(draft.status, 'sent')
+        self.assertIsNotNone(draft.quotation_no)
+        self.assertEqual(Quotation.objects.filter(customer__name='Finalize Co').count(), 1)
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_finalizing_a_draft_from_a_query_flips_query_status(self):
+        query = Query.objects.create(source='call', company_name='Finalize Query Co', contact_email='fq@example.com')
+        self.client.force_login(self.staff)
+        self.client.post(f"{reverse('quotation_form')}?query={query.pk}", self._draft_item_data())
+        draft = Quotation.objects.get(source_query=query)
+
+        self.client.post(reverse('quotation_edit', kwargs={'pk': draft.pk}), _quotation_item_post_data(**{
+            'action': 'send',
+        }))
+        query.refresh_from_db()
+        self.assertEqual(query.status, 'quote_sent')
+        self.assertIsNotNone(query.customer)
+
+    def test_cannot_edit_an_already_sent_quotation(self):
+        customer = Customer.objects.create(name='Sent Already Co')
+        sent = Quotation.objects.create(customer=customer, status='sent')
+        self.client.force_login(self.staff)
+        response = self.client.get(reverse('quotation_edit', kwargs={'pk': sent.pk}))
+        self.assertEqual(response.status_code, 404)
+
+    def test_discarding_a_draft_deletes_it(self):
+        self.client.force_login(self.staff)
+        self.client.post(reverse('quotation_form'), self._draft_item_data(**{'customer_name': 'Discard Co'}))
+        draft = Quotation.objects.get(customer__name='Discard Co')
+
+        self.client.post(reverse('quotation_discard', kwargs={'pk': draft.pk}), follow=True)
+        self.assertFalse(Quotation.objects.filter(pk=draft.pk).exists())
+
+    def test_anonymous_cannot_discard_a_draft(self):
+        customer = Customer.objects.create(name='Guard Draft Co')
+        draft = Quotation.objects.create(customer=customer, status='draft')
+        response = self.client.post(reverse('quotation_discard', kwargs={'pk': draft.pk}))
+        self.assertRedirects(response, reverse('home'))
+        self.assertTrue(Quotation.objects.filter(pk=draft.pk).exists())
+
+    def test_discarded_drafts_leave_no_gap_in_quotation_numbering(self):
+        """Drafts never consume a quotation_no in the first place, so
+        discarding one can't leave a gap — this just confirms the first
+        real Send still lands on QUO-0001, not QUO-0003, after two drafts
+        were created and discarded first."""
+        self.client.force_login(self.staff)
+        for i in range(2):
+            self.client.post(reverse('quotation_form'), self._draft_item_data(**{'customer_name': f'Scratch Co {i}'}))
+        for draft in Quotation.objects.filter(status='draft'):
+            self.client.post(reverse('quotation_discard', kwargs={'pk': draft.pk}))
+
+        self.client.post(reverse('quotation_form'), _quotation_item_post_data(**{
+            'customer_name': 'Real Co', 'action': 'send',
+        }))
+        quotation = Quotation.objects.get(customer__name='Real Co')
+        self.assertEqual(quotation.quotation_no, 1)
+
+    def test_anonymous_cannot_view_drafts_list(self):
+        response = self.client.get(reverse('quotation_drafts'))
+        self.assertRedirects(response, reverse('home'))
+
+    def test_drafts_list_shows_drafts_with_resume_and_discard(self):
+        self.client.force_login(self.staff)
+        self.client.post(reverse('quotation_form'), self._draft_item_data(**{'customer_name': 'Listed Co'}))
+        draft = Quotation.objects.get(customer__name='Listed Co')
+
+        response = self.client.get(reverse('quotation_drafts'))
+        self.assertContains(response, 'Listed Co')
+        self.assertContains(response, reverse('quotation_edit', kwargs={'pk': draft.pk}))
+
+    def test_sent_quotations_do_not_appear_in_drafts_list(self):
+        self.client.force_login(self.staff)
+        # customer_email set so no "No email on file" warning gets queued
+        # in the session — that message would otherwise surface on the
+        # *next* page rendering messages (the drafts list, right below),
+        # not the send action's own redirect target, and confuse this
+        # assertion about something unrelated to draft filtering.
+        self.client.post(reverse('quotation_form'), _quotation_item_post_data(**{
+            'customer_name': 'Sent Not Draft Co', 'customer_email': 'sent@example.com', 'action': 'send',
+        }))
+        response = self.client.get(reverse('quotation_drafts'))
+        self.assertNotContains(response, 'Sent Not Draft Co')
+
+
 class QuotationPdfTests(TestCase):
     def _make_quotation(self, customer, rate_per_kg, grade='', size=None):
         quotation = Quotation.objects.create(customer=customer)
