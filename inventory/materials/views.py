@@ -4,7 +4,8 @@ from django.contrib import messages
 from django.core.mail import EmailMessage
 from django.conf import settings
 from django.urls import reverse
-from django.db import transaction
+from django.db import transaction, connections
+from django.core.files.base import ContentFile
 from django.db.models import Count, DecimalField, F, Sum, Value
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse, HttpResponse, HttpResponseForbidden
@@ -1390,16 +1391,15 @@ WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE = "en"
 # Fixed intake order — the next question is whichever of these is still
 # blank on the Query, so there's no separate "stage" field to drift out of
 # sync with the actual data.
-WHATSAPP_QUERY_FIELDS = ['company_name', 'contact_email', 'grade', 'size']
+WHATSAPP_QUERY_FIELDS = ['company_name', 'contact_email', 'grade', 'size', 'drawing', 'notes']
 WHATSAPP_QUERY_QUESTIONS = {
     'contact_email': "Thanks! What's the best email address to send your quote to?",
     'grade': "Got it. Which grade do you need (e.g. EN8D, EN9)?",
     'size': "And what size do you need (in mm), e.g. 1.2?",
+    'drawing': "Do you have a drawing for the final product? You can send a photo or PDF here, or just reply 'no' if you don't have one.",
+    'notes': "Got it. Any other special requirements we should know about? Reply 'no' if none.",
 }
-WHATSAPP_CLOSING_MESSAGE = (
-    "Thanks - that's everything we need for now. Our team will get back to "
-    "you shortly with your quote."
-)
+WHATSAPP_CLOSING_MESSAGE = "Thanks! We'll reach out to you shortly."
 
 
 class WhatsAppSendError(Exception):
@@ -1470,14 +1470,20 @@ def _send_whatsapp_text_message_background(phone, text):
 
 
 def _next_expected_query_field(query):
-    """The next blank field in the fixed intake order, or None once
-    company_name/contact_email/grade/size are all filled."""
+    """The next blank field in the fixed intake order, or None once every
+    field is filled. 'drawing' is special: a FileField alone can't tell
+    "not asked yet" apart from "asked, customer had none" — drawing_notes
+    (set either way, see _process_whatsapp_answer/
+    _process_whatsapp_drawing_media_background) is what actually marks
+    that question answered, whether or not a file came with it."""
     for field in WHATSAPP_QUERY_FIELDS:
-        value = getattr(query, field)
         if field == 'size':
-            if value is None:
+            if query.size is None:
                 return field
-        elif not value:
+        elif field == 'drawing':
+            if not query.drawing and not query.drawing_notes:
+                return field
+        elif not getattr(query, field):
             return field
     return None
 
@@ -1589,7 +1595,11 @@ def _valid_whatsapp_signature(raw_body, signature_header):
 def _process_whatsapp_change(value):
     """Meta posts both inbound messages and delivery-status receipts
     (`value['statuses']`) to this same webhook — only the former should
-    ever touch a Query."""
+    ever touch a Query. Text messages are handled inline; an image/document
+    reply is only meaningful when 'drawing' is actually the field being
+    asked for right now, and downloading one is slow enough to need
+    backgrounding (see _route_whatsapp_media) — every other message type
+    (audio/video/location/etc.) is still not handled."""
     incoming_messages = value.get("messages")
     if not incoming_messages:
         return
@@ -1601,10 +1611,16 @@ def _process_whatsapp_change(value):
         phone = msg.get("from", "")
         if not phone:
             continue
-        text = (msg.get("text") or {}).get("body", "").strip()
-        if not text:
-            continue  # non-text message types (image/audio/etc.) — not handled yet
-        _route_whatsapp_message(phone, text, profile_name)
+        msg_type = msg.get("type")
+        if msg_type == "text":
+            text = (msg.get("text") or {}).get("body", "").strip()
+            if text:
+                _route_whatsapp_message(phone, text, profile_name)
+        elif msg_type in ("image", "document"):
+            media = msg.get(msg_type) or {}
+            media_id = media.get("id")
+            if media_id:
+                _route_whatsapp_media(phone, media_id, media.get("mime_type", ""))
 
 
 def _route_whatsapp_message(phone, text, profile_name):
@@ -1625,6 +1641,109 @@ def _route_whatsapp_message(phone, text, profile_name):
         _process_whatsapp_answer(query.pk, text)
     else:
         Query.objects.create(source='whatsapp', company_name=profile_name, contact_phone=phone, notes=text)
+
+
+def _route_whatsapp_media(phone, media_id, mime_type):
+    """Same lookup as _route_whatsapp_message, but for an image/document
+    reply — only meaningful when 'drawing' is actually the field being
+    asked for right now; otherwise there's no in-progress query expecting
+    a file, so it's dropped, the same as any other message type this flow
+    doesn't interpret. Unlike a cold text message, a cold image isn't
+    turned into a bare Query either — there's no caption text to put in
+    notes, so there'd be nothing useful to record."""
+    phone = _normalize_phone(phone)
+    query = (
+        Query.objects
+        .filter(contact_phone=phone)
+        .exclude(status__in=['converted', 'not_interested'])
+        .order_by('-created_at')
+        .first()
+    )
+    if not query or _next_expected_query_field(query) != 'drawing':
+        return
+    _process_whatsapp_drawing_media_background(query.pk, media_id, mime_type)
+
+
+_WHATSAPP_MIME_EXTENSIONS = {
+    'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp',
+    'application/pdf': '.pdf',
+}
+
+
+def _extension_for_mime_type(mime_type):
+    return _WHATSAPP_MIME_EXTENSIONS.get((mime_type or '').split(';')[0].strip(), '')
+
+
+def _download_whatsapp_media(media_id):
+    """Two-step Graph API fetch: resolve the media id to a short-lived
+    signed URL + mime type, then download the actual bytes from that URL —
+    both steps need the access token, per Meta's documented media-download
+    flow. Raises WhatsAppSendError on any failure — reused rather than a
+    separate exception class, since it's the same "something about talking
+    to the Graph API failed" shape every other helper here already uses."""
+    access_token = settings.WHATSAPP_ACCESS_TOKEN
+    if not access_token:
+        raise WhatsAppSendError("WhatsApp sending is not configured (missing access token).")
+
+    meta_req = urllib.request.Request(
+        f"https://graph.facebook.com/{WHATSAPP_GRAPH_API_VERSION}/{media_id}",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    try:
+        with urllib.request.urlopen(meta_req, timeout=10) as resp:
+            meta = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        raise WhatsAppSendError(f"Could not resolve WhatsApp media {media_id}: {e}") from e
+
+    media_url = meta.get("url")
+    mime_type = meta.get("mime_type", "")
+    if not media_url:
+        raise WhatsAppSendError(f"WhatsApp media {media_id} had no download URL")
+
+    data_req = urllib.request.Request(media_url, headers={"Authorization": f"Bearer {access_token}"})
+    try:
+        with urllib.request.urlopen(data_req, timeout=20) as resp:
+            content = resp.read()
+    except (urllib.error.URLError, OSError) as e:
+        raise WhatsAppSendError(f"Could not download WhatsApp media {media_id}: {e}") from e
+
+    return content, mime_type
+
+
+def _process_whatsapp_drawing_media_background(query_pk, media_id, mime_type):
+    """Downloading a WhatsApp media file takes two external HTTP round
+    trips (resolve id -> signed URL, then download the bytes) — backgrounded
+    for the same reason outbound follow-up sends are: Meta expects a fast
+    ack on the webhook itself, well before either of those calls would
+    finish. The whole thing (download, save, advance the sequence) runs in
+    the thread; the webhook has already returned 200 by the time this does
+    anything. connections.close_all() at the end avoids leaking a DB
+    connection this thread opened on its own — Django only cleans those up
+    automatically at the end of a request/response cycle, which this isn't."""
+    def _work():
+        try:
+            content, resolved_mime = _download_whatsapp_media(media_id)
+        except WhatsAppSendError as e:
+            logger.warning("WhatsApp media download for query %s failed: %s", query_pk, e)
+            return
+        try:
+            with transaction.atomic():
+                try:
+                    query = Query.objects.select_for_update().get(pk=query_pk)
+                except Query.DoesNotExist:
+                    return
+                if _next_expected_query_field(query) != 'drawing':
+                    return  # already answered some other way (e.g. a race with a text reply)
+                filename = f"drawing{_extension_for_mime_type(resolved_mime or mime_type)}"
+                query.drawing.save(filename, ContentFile(content), save=False)
+                query.drawing_notes = "Drawing attached via WhatsApp"
+                query.save(update_fields=['drawing', 'drawing_notes'])
+                _advance_whatsapp_query(query)
+        finally:
+            connections.close_all()
+    thread = threading.Thread(target=_work, daemon=True)
+    thread.start()
+    return thread
 
 
 def _process_whatsapp_answer(query_pk, text):
@@ -1656,23 +1775,46 @@ def _process_whatsapp_answer(query_pk, text):
                 _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_QUERY_QUESTIONS['size'])
                 return
             query.size = parsed
+            changed = ['size']
         elif field == 'contact_email':
             candidate = text.strip()
             if not _is_valid_whatsapp_email(candidate):
                 _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_QUERY_QUESTIONS['contact_email'])
                 return
             query.contact_email = candidate
+            changed = ['contact_email']
+        elif field == 'drawing':
+            # A text reply here means no attachment came with it — "no",
+            # or a short description instead of a photo/PDF. An actual
+            # image/document reply is handled separately, in the
+            # background, by _process_whatsapp_drawing_media_background.
+            query.drawing_notes = text.strip()
+            changed = ['drawing_notes']
         else:
             setattr(query, field, text.strip())
-        query.save(update_fields=[field])
+            changed = [field]
+        query.save(update_fields=changed)
 
-        next_field = _next_expected_query_field(query)
-        if next_field:
-            _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_QUERY_QUESTIONS[next_field])
-        else:
-            if query.grade and query.size is not None:
-                match = ProductType.objects.filter(grade__iexact=query.grade, size=query.size).first()
-                if match:
-                    query.product_type = match
-                    query.save(update_fields=['product_type'])
-            _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_CLOSING_MESSAGE)
+        _advance_whatsapp_query(query)
+
+
+def _advance_whatsapp_query(query):
+    """Sends the next question in the intake sequence, or the closing
+    message once it's complete. Tries to auto-match an existing
+    ProductType as soon as grade+size are both known — not only once the
+    whole sequence finishes, since drawing/notes come after size now and
+    waiting for those too would just delay a match that's already
+    possible. Shared by the text-answer path above and the drawing-media
+    path (_process_whatsapp_drawing_media_background), since both need to
+    advance the same way once their field is saved."""
+    if query.grade and query.size is not None and not query.product_type_id:
+        match = ProductType.objects.filter(grade__iexact=query.grade, size=query.size).first()
+        if match:
+            query.product_type = match
+            query.save(update_fields=['product_type'])
+
+    next_field = _next_expected_query_field(query)
+    if next_field:
+        _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_QUERY_QUESTIONS[next_field])
+    else:
+        _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_CLOSING_MESSAGE)

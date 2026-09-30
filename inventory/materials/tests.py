@@ -3,7 +3,7 @@ import hmac
 import json
 import tempfile
 from decimal import Decimal
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pandas as pd
 from django.conf import settings
@@ -12,7 +12,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.core import mail
 from django.db import IntegrityError, transaction
-from django.test import TestCase, override_settings
+from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -2876,9 +2876,13 @@ class WhatsAppWebhookTests(TestCase):
         )
 
     def _message_payload(self, phone, text, profile_name=None):
-        value = {'messages': [{'from': phone, 'text': {'body': text}}]}
+        value = {'messages': [{'from': phone, 'type': 'text', 'text': {'body': text}}]}
         if profile_name is not None:
             value['contacts'] = [{'profile': {'name': profile_name}}]
+        return {'entry': [{'changes': [{'value': value}]}]}
+
+    def _media_payload(self, phone, media_type, media_id, mime_type='image/jpeg'):
+        value = {'messages': [{'from': phone, 'type': media_type, media_type: {'id': media_id, 'mime_type': mime_type}}]}
         return {'entry': [{'changes': [{'value': value}]}]}
 
     def test_get_handshake_succeeds_with_correct_verify_token(self):
@@ -2959,7 +2963,7 @@ class WhatsAppWebhookTests(TestCase):
         mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['size'])
 
     @patch('materials.views._send_whatsapp_text_message_background')
-    def test_inbound_size_answer_completes_sequence_and_sends_closing(self, mock_send):
+    def test_inbound_size_answer_asks_for_drawing_next(self, mock_send):
         Query.objects.create(
             source='call', contact_phone='919876543210', company_name='Ramesh Traders',
             contact_email='ramesh@example.com', grade='EN8D',
@@ -2969,7 +2973,59 @@ class WhatsAppWebhookTests(TestCase):
 
         query = Query.objects.get(contact_phone='919876543210')
         self.assertEqual(query.size, Decimal('1.2'))
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['drawing'])
+
+    @patch('materials.views._send_whatsapp_text_message_background')
+    def test_text_reply_to_drawing_question_saves_as_drawing_notes_and_asks_for_notes_next(self, mock_send):
+        Query.objects.create(
+            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
+            contact_email='ramesh@example.com', grade='EN8D', size=Decimal('1.2'),
+        )
+        self._post_payload(self._message_payload('919876543210', 'no'))
+
+        query = Query.objects.get(contact_phone='919876543210')
+        self.assertEqual(query.drawing_notes, 'no')
+        self.assertFalse(query.drawing)
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['notes'])
+
+    @patch('materials.views._send_whatsapp_text_message_background')
+    def test_notes_answer_completes_sequence_and_sends_closing(self, mock_send):
+        Query.objects.create(
+            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
+            contact_email='ramesh@example.com', grade='EN8D', size=Decimal('1.2'), drawing_notes='no',
+        )
+        self._post_payload(self._message_payload('919876543210', 'needs to be corrosion resistant'))
+
+        query = Query.objects.get(contact_phone='919876543210')
+        self.assertEqual(query.notes, 'needs to be corrosion resistant')
         mock_send.assert_called_once_with('919876543210', WHATSAPP_CLOSING_MESSAGE)
+
+    @patch('materials.views._send_whatsapp_text_message_background')
+    def test_image_reply_to_drawing_question_is_routed_for_download(self, mock_send):
+        """The actual download happens in a background thread — this just
+        confirms the webhook recognizes an image reply as answering the
+        drawing question and hands it off, without touching drawing_notes
+        (a text reply would) or advancing past 'drawing' synchronously."""
+        Query.objects.create(
+            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
+            contact_email='ramesh@example.com', grade='EN8D', size=Decimal('1.2'),
+        )
+        with patch('materials.views._process_whatsapp_drawing_media_background') as mock_bg:
+            self._post_payload(self._media_payload('919876543210', 'image', 'media-id-123', 'image/jpeg'))
+            mock_bg.assert_called_once()
+            args = mock_bg.call_args[0]
+            self.assertEqual(args[1], 'media-id-123')
+            self.assertEqual(args[2], 'image/jpeg')
+        query = Query.objects.get(contact_phone='919876543210')
+        self.assertEqual(query.drawing_notes, '')
+        mock_send.assert_not_called()
+
+    @patch('materials.views._send_whatsapp_text_message_background')
+    def test_image_reply_outside_drawing_question_is_ignored(self, mock_send):
+        Query.objects.create(source='call', contact_phone='919876543210', company_name='Ramesh Traders')
+        with patch('materials.views._process_whatsapp_drawing_media_background') as mock_bg:
+            self._post_payload(self._media_payload('919876543210', 'image', 'media-id-456'))
+            mock_bg.assert_not_called()
 
     @patch('materials.views._send_whatsapp_text_message_background')
     def test_inbound_size_with_units_is_parsed(self, mock_send):
@@ -3058,11 +3114,13 @@ class WhatsAppWebhookTests(TestCase):
         Query.objects.create(
             source='call', contact_phone='919876543210', company_name='Ramesh Traders',
             contact_email='ramesh@example.com', grade='EN8D', size=Decimal('1.2'),
+            drawing_notes='no', notes='standard requirement',
         )
         self._post_payload(self._message_payload('919876543210', 'also need it urgently'))
 
         query = Query.objects.get(contact_phone='919876543210')
         self.assertIn('also need it urgently', query.notes)
+        self.assertIn('standard requirement', query.notes)
         mock_send.assert_not_called()
 
     @patch('materials.views._send_whatsapp_text_message')
@@ -3139,3 +3197,137 @@ class WhatsAppWebhookTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Query.objects.count(), 0)
+
+
+class WhatsAppDrawingMediaTests(TransactionTestCase):
+    """The background thread that actually downloads a drawing image/PDF
+    and saves it to Query.drawing — run synchronously in these tests via
+    threading.Thread.join(), since the thread itself is real (only the
+    network calls inside it are mocked). TransactionTestCase, not TestCase:
+    a real background thread opens its own DB connection and does a real
+    write, which deadlocks against TestCase's outer held-open transaction
+    on SQLite ("database table is locked") — TransactionTestCase commits
+    per-operation instead, so the thread's own connection can actually see
+    and write the row."""
+
+    def setUp(self):
+        # Real writes land on disk under TransactionTestCase (no rollback
+        # to undo them) — isolate to a temp dir instead of the project's
+        # own local media/ folder.
+        self._media_tmp = tempfile.TemporaryDirectory()
+        self._media_override = override_settings(MEDIA_ROOT=self._media_tmp.name)
+        self._media_override.enable()
+        self.addCleanup(self._media_override.disable)
+        self.addCleanup(self._media_tmp.cleanup)
+
+    def _run_and_wait(self, query_pk, media_id, mime_type):
+        thread = views._process_whatsapp_drawing_media_background(query_pk, media_id, mime_type)
+        thread.join(timeout=5)
+
+    @override_settings(WHATSAPP_ACCESS_TOKEN='test-token', WHATSAPP_PHONE_NUMBER_ID='123')
+    @patch('materials.views._send_whatsapp_text_message')
+    @patch('materials.views._download_whatsapp_media')
+    def test_downloads_and_saves_drawing_then_advances(self, mock_download, mock_send):
+        mock_download.return_value = (b'%PDF-1.4 fake pdf bytes', 'application/pdf')
+        query = Query.objects.create(
+            source='whatsapp', contact_phone='919876543210', company_name='Drawing Co',
+            contact_email='drawing@example.com', grade='EN8D', size=Decimal('1.2'),
+        )
+
+        self._run_and_wait(query.pk, 'media-id-1', 'application/pdf')
+
+        query.refresh_from_db()
+        self.assertTrue(query.drawing)
+        self.assertTrue(query.drawing.name.endswith('.pdf'))
+        self.assertEqual(query.drawing.read()[:4], b'%PDF')
+        self.assertEqual(query.drawing_notes, 'Drawing attached via WhatsApp')
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['notes'])
+        query.drawing.delete(save=False)
+
+    @patch('materials.views._send_whatsapp_text_message')
+    @patch('materials.views._download_whatsapp_media')
+    def test_download_failure_leaves_query_untouched(self, mock_download, mock_send):
+        mock_download.side_effect = WhatsAppSendError("network boom")
+        query = Query.objects.create(
+            source='whatsapp', contact_phone='919876543210', company_name='Failed Drawing Co',
+            grade='EN8D', size=Decimal('1.2'),
+        )
+
+        self._run_and_wait(query.pk, 'media-id-2', 'application/pdf')
+
+        query.refresh_from_db()
+        self.assertFalse(query.drawing)
+        self.assertEqual(query.drawing_notes, '')
+        mock_send.assert_not_called()
+
+    @patch('materials.views._send_whatsapp_text_message')
+    @patch('materials.views._download_whatsapp_media')
+    def test_does_not_overwrite_if_already_answered_by_text(self, mock_download, mock_send):
+        """A race: the customer replies 'no' by text right as an earlier
+        image they sent finishes downloading — the text answer (already
+        saved by the time this background thread gets the lock) must win,
+        not get silently overwritten by the late-arriving image."""
+        mock_download.return_value = (b'\xff\xd8\xff fake jpeg bytes', 'image/jpeg')
+        query = Query.objects.create(
+            source='whatsapp', contact_phone='919876543210', company_name='Race Co',
+            grade='EN8D', size=Decimal('1.2'), drawing_notes='no',
+        )
+
+        self._run_and_wait(query.pk, 'media-id-3', 'image/jpeg')
+
+        query.refresh_from_db()
+        self.assertFalse(query.drawing)
+        self.assertEqual(query.drawing_notes, 'no')
+        mock_send.assert_not_called()
+
+
+class WhatsAppMediaDownloadTests(TestCase):
+    """_download_whatsapp_media itself — the two-step Graph API fetch
+    (resolve media id -> signed URL, then download the bytes)."""
+
+    @override_settings(WHATSAPP_ACCESS_TOKEN='')
+    def test_raises_when_access_token_unset(self):
+        with self.assertRaises(WhatsAppSendError):
+            views._download_whatsapp_media('media-id')
+
+    @override_settings(WHATSAPP_ACCESS_TOKEN='test-token')
+    @patch('materials.views.urllib.request.urlopen')
+    def test_downloads_bytes_from_resolved_url(self, mock_urlopen):
+        meta_response = MagicMock()
+        meta_response.read.return_value = json.dumps({
+            'url': 'https://lookaside.fbsbx.com/whatsapp_media/fake',
+            'mime_type': 'image/jpeg',
+        }).encode('utf-8')
+        meta_response.__enter__ = lambda self: meta_response
+        meta_response.__exit__ = lambda self, *a: None
+
+        data_response = MagicMock()
+        data_response.read.return_value = b'\xff\xd8\xff real-looking jpeg bytes'
+        data_response.__enter__ = lambda self: data_response
+        data_response.__exit__ = lambda self, *a: None
+
+        mock_urlopen.side_effect = [meta_response, data_response]
+
+        content, mime_type = views._download_whatsapp_media('media-id-abc')
+        self.assertEqual(content, b'\xff\xd8\xff real-looking jpeg bytes')
+        self.assertEqual(mime_type, 'image/jpeg')
+        self.assertEqual(mock_urlopen.call_count, 2)
+
+    @override_settings(WHATSAPP_ACCESS_TOKEN='test-token')
+    @patch('materials.views.urllib.request.urlopen')
+    def test_missing_url_in_metadata_raises(self, mock_urlopen):
+        meta_response = MagicMock()
+        meta_response.read.return_value = json.dumps({'mime_type': 'image/jpeg'}).encode('utf-8')
+        meta_response.__enter__ = lambda self: meta_response
+        meta_response.__exit__ = lambda self, *a: None
+        mock_urlopen.return_value = meta_response
+
+        with self.assertRaises(WhatsAppSendError):
+            views._download_whatsapp_media('media-id-def')
+
+    def test_extension_for_mime_type(self):
+        self.assertEqual(views._extension_for_mime_type('application/pdf'), '.pdf')
+        self.assertEqual(views._extension_for_mime_type('image/jpeg'), '.jpg')
+        self.assertEqual(views._extension_for_mime_type('image/jpeg; charset=binary'), '.jpg')
+        self.assertEqual(views._extension_for_mime_type('application/octet-stream'), '')
+        self.assertEqual(views._extension_for_mime_type(''), '')

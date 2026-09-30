@@ -365,6 +365,15 @@ class Query(models.Model):
     grade         = models.CharField(max_length=100, blank=True)
     size          = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     quantity      = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    # Both optional, gathered by the WhatsApp intake bot after size — an
+    # image/PDF the customer sends is saved here; drawing_notes holds
+    # either their reply if they didn't attach one (typically "no") or a
+    # short text description if they described it instead of attaching.
+    # drawing_notes doubles as the "this question was actually asked and
+    # answered" marker for _next_expected_query_field, since a FileField
+    # alone can't distinguish "not asked yet" from "asked, no drawing".
+    drawing       = models.FileField(upload_to='query_drawings/%Y/%m/', blank=True, null=True)
+    drawing_notes = models.CharField(max_length=255, blank=True)
     notes         = models.TextField(blank=True)
     status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new', db_index=True)
     # Set only once a quote is actually sent — before that, a query is just

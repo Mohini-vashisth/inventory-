@@ -457,14 +457,26 @@ class CustomerAdmin(admin.ModelAdmin):
 
 @admin.register(Query)
 class QueryAdmin(admin.ModelAdmin):
-    list_display  = ['display_name', 'source', 'status', 'product_type', 'created_at']
+    list_display  = ['display_name', 'source', 'status', 'product_type', 'has_drawing', 'created_at']
     list_filter   = ['source', 'status']
     search_fields = ['company_name', 'contact_email', 'contact_phone']
     ordering      = ['-created_at']
+    readonly_fields = ['drawing_link']
+    exclude       = ['drawing']  # shown via drawing_link instead of a raw re-upload widget
 
     @admin.display(description='Company / Contact')
     def display_name(self, obj):
         return obj.company_name or obj.contact_phone or f"Query #{obj.pk}"
+
+    @admin.display(description='Drawing', boolean=True)
+    def has_drawing(self, obj):
+        return bool(obj.drawing)
+
+    def drawing_link(self, obj):
+        if not obj.drawing:
+            return obj.drawing_notes or 'No drawing provided'
+        return format_html('<a href="{}" target="_blank">Download drawing</a>', obj.drawing.url)
+    drawing_link.short_description = 'Drawing'
 
 
 @admin.register(Order)

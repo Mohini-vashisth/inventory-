@@ -199,6 +199,9 @@
           <td>
             {% if query.product_type %}{{ query.product_type.item_code }}<br>{% endif %}
             <span class="muted">{{ query.grade|default:"" }}{% if query.grade and query.size %}, {% endif %}{{ query.size|default:"" }}{% if query.size %} mm{% endif %}</span>
+            {% if query.drawing %}
+            <br><a href="{{ query.drawing.url }}" target="_blank" class="muted" style="color:#4e73df;">📎 Drawing</a>
+            {% endif %}
           </td>
           <td>
             {% if query.notes %}
