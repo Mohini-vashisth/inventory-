@@ -532,14 +532,17 @@ class QuotationLineItemInline(admin.TabularInline):
 @admin.register(Quotation)
 class QuotationAdmin(admin.ModelAdmin):
     """Read-only history of what's actually been quoted — a Quotation is
-    never edited after creation, so there's no manual-entry screen here."""
-    list_display  = ['formatted_no', 'customer', 'subtotal', 'total_amount', 'created_at']
-    list_filter   = ['same_state_as_us', 'created_at']
+    never edited after creation (once sent), so there's no manual-entry
+    screen here. Drafts show up too (status='draft', quotation_no blank)
+    but are only really editable through the app's own quotation_form
+    (edit mode) / quotation_drafts pages, not here."""
+    list_display  = ['formatted_no', 'customer', 'status', 'subtotal', 'total_amount', 'updated_at']
+    list_filter   = ['status', 'same_state_as_us', 'created_at']
     search_fields = ['customer__name', 'quotation_no', 'ref_no']
-    ordering      = ['-created_at']
+    ordering      = ['-updated_at']
     inlines       = [QuotationLineItemInline]
     readonly_fields = [
-        'quotation_no', 'customer', 'source_query', 'created_at',
+        'quotation_no', 'status', 'customer', 'source_query', 'created_at', 'updated_at',
         'ref_no', 'rev_no', 'rev_date', 'sales_person', 'kind_attn', 'subject', 'customer_address',
         'same_state_as_us', 'freight_amount', 'pf_amount',
         'price_basis', 'gst_terms', 'insurance_terms', 'freight_terms',

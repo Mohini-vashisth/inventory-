@@ -43,6 +43,14 @@
       font-size: 0.87rem; margin-bottom: 1rem;
     }
 
+    .alert {
+      padding: 0.75rem 1rem; border-radius: 8px;
+      font-size: 0.88rem; margin-bottom: 1.25rem;
+    }
+    .alert-success { background: #dcfce7; color: #166534; }
+    .alert-error   { background: #fee2e2; color: #991b1b; }
+    .alert-warning { background: #fef3c7; color: #92400e; }
+
     .form-row { display: grid; gap: 0.75rem; margin-bottom: 0.75rem; }
     .cols-2 { grid-template-columns: 1fr 1fr; }
     .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
@@ -93,6 +101,21 @@
       border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: 600;
     }
     .btn-primary:hover { background: #3a5ec0; }
+    .btn-secondary {
+      padding: 0.75rem 1.5rem; background: white; color: #4e73df;
+      border: 1px solid #4e73df; border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: 600;
+    }
+    .btn-secondary:hover { background: #eff2ff; }
+    .btn-discard {
+      padding: 0.55rem 1.1rem; background: #fee2e2; color: #991b1b;
+      border: 1px solid #fecaca; border-radius: 8px; font-size: 0.85rem; cursor: pointer; font-weight: 600;
+    }
+    .btn-discard:hover { background: #fecaca; }
+    .draft-banner {
+      background: #fef3c7; color: #92400e; padding: 0.75rem 1.5rem;
+      border-radius: 8px; font-size: 0.88rem; margin-bottom: 1.25rem;
+      display: flex; justify-content: space-between; align-items: center;
+    }
 
     @media (max-width: 720px) {
       .cols-2, .cols-3, .cols-4, .cols-5 { grid-template-columns: 1fr; }
@@ -104,11 +127,28 @@
 <body>
 
 <header>
-  <h1>New Quotation</h1>
-  <a href="{% if query %}{% url 'query_dashboard' %}{% else %}{% url 'order_dashboard' %}{% endif %}" class="back-link">← Cancel</a>
+  <h1>{% if draft %}Edit Draft Quotation{% else %}New Quotation{% endif %}</h1>
+  <a href="{% if query %}{% url 'query_dashboard' %}{% elif draft %}{% url 'quotation_drafts' %}{% else %}{% url 'order_dashboard' %}{% endif %}" class="back-link">← Cancel</a>
 </header>
 
 <div class="content">
+  {% if draft %}
+  <div class="draft-banner">
+    <span>📝 Editing a saved draft — nothing was sent yet.</span>
+    <form method="post" action="{% url 'quotation_discard' draft.pk %}" onsubmit="return confirm('Discard this draft? This cannot be undone.');">
+      {% csrf_token %}
+      <button type="submit" class="btn-discard">✕ Discard Draft</button>
+    </form>
+  </div>
+  {% endif %}
+  {% for msg in messages %}
+  <div class="alert
+    {% if msg.tags == 'success' %}alert-success
+    {% elif msg.tags == 'warning' %}alert-warning
+    {% else %}alert-error{% endif %}">
+    {{ msg }}
+  </div>
+  {% endfor %}
   {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
 
   <form method="post" id="quotation-form">
@@ -334,7 +374,10 @@
     </div>
 
     <div class="submit-row">
-      <button type="submit" class="btn-primary">Create &amp; Send Quotation →</button>
+      <button type="submit" name="action" value="save_draft" formnovalidate class="btn-secondary">💾 Save Draft</button>
+      <button type="submit" name="action" value="send" class="btn-primary">
+        {% if draft %}Send Quotation →{% else %}Create &amp; Send Quotation →{% endif %}
+      </button>
     </div>
   </form>
 </div>

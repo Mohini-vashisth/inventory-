@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Draft Quotations</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; background: #f4f6f9; color: #333; }
+
+    header {
+      background: #4e73df; color: white;
+      padding: 1rem 2rem;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    header h1 { font-size: 1.3rem; }
+    .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; }
+    .back-link:hover { color: white; }
+
+    .content { max-width: 900px; margin: 2rem auto; padding: 0 1.5rem; }
+
+    .card {
+      background: white; border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0;
+      font-size: 1rem; font-weight: 600;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .card-header span { color: #aaa; font-size: 0.85rem; font-weight: 400; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th {
+      background: #f8f9fb; padding: 0.65rem 1rem; text-align: left;
+      font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
+      color: #888; font-weight: 600;
+    }
+    td { padding: 0.75rem 1rem; border-top: 1px solid #f0f0f0; font-size: 0.88rem; vertical-align: middle; }
+    tr:hover td { background: #fafbff; }
+    .muted { color: #aaa; font-size: 0.82rem; }
+
+    .icon-btn {
+      background: #f3f4f6; border: 1px solid #ddd;
+      border-radius: 6px; padding: 0.3rem 0.7rem;
+      font-size: 0.78rem; cursor: pointer; color: #4e73df;
+      display: inline-block; text-decoration: none;
+    }
+    .icon-btn:hover { background: #eff2ff; }
+    .icon-btn.red { background: #fee2e2; border-color: #fecaca; color: #991b1b; margin-left: 6px; }
+    .icon-btn.red:hover { background: #fecaca; }
+
+    .empty-row td { text-align: center; color: #bbb; padding: 3rem; }
+
+    .alert {
+      padding: 0.75rem 1rem; border-radius: 8px;
+      font-size: 0.88rem; margin-bottom: 1.25rem;
+    }
+    .alert-success { background: #dcfce7; color: #166534; }
+    .alert-error   { background: #fee2e2; color: #991b1b; }
+    .alert-warning { background: #fef3c7; color: #92400e; }
+
+    @media (max-width: 640px) {
+      header { padding: 1rem; }
+      .content { padding: 0 0.85rem; margin: 1rem auto; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Draft Quotations</h1>
+  <a href="{% url 'order_dashboard' %}" class="back-link">← Back to Orders</a>
+</header>
+
+<div class="content">
+  {% for msg in messages %}
+  <div class="alert
+    {% if msg.tags == 'success' %}alert-success
+    {% elif msg.tags == 'warning' %}alert-warning
+    {% else %}alert-error{% endif %}">
+    {{ msg }}
+  </div>
+  {% endfor %}
+  <div class="card">
+    <div class="card-header">
+      In Progress
+      <span>{{ drafts|length }} draft{{ drafts|length|pluralize }}</span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Company</th>
+          <th>Items</th>
+          <th>Last Saved</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for draft in drafts %}
+        <tr>
+          <td style="font-weight:600;">{{ draft.customer.name }}</td>
+          <td class="muted">{{ draft.line_items.count }} item{{ draft.line_items.count|pluralize }}</td>
+          <td class="muted">{{ draft.updated_at|date:"d M Y, H:i" }}</td>
+          <td>
+            <a href="{% url 'quotation_edit' draft.pk %}" class="icon-btn">✏️ Resume</a>
+            <form method="post" action="{% url 'quotation_discard' draft.pk %}" style="display:inline;"
+                  onsubmit="return confirm('Discard this draft? This cannot be undone.');">
+              {% csrf_token %}
+              <button type="submit" class="icon-btn red">✕ Discard</button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr class="empty-row"><td colspan="4">No drafts in progress.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+</body>
+</html>
