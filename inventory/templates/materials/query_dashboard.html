@@ -221,6 +221,7 @@
                 <button type="submit" class="icon-btn red">✕ Not Interested</button>
               </form>
             {% elif query.status == 'quote_sent' and query.customer %}
+              <a href="{% url 'quotation_form' %}?query={{ query.pk }}" class="icon-btn green">📧 Send Quote</a>
               <button class="icon-btn"
                       onclick="copyLink('{{ quote_base_url }}{% url 'quote_form' query.customer.quote_token %}', this)">
                 📋 Copy Link
@@ -230,10 +231,6 @@
               <a href="{% url 'quotation_pdf' latest_quotation.pk %}" class="icon-btn">📄 PDF</a>
               {% endif %}
               {% endwith %}
-              <form method="post" action="{% url 'query_not_interested' query.pk %}" style="display:inline;">
-                {% csrf_token %}
-                <button type="submit" class="icon-btn red">✕ Not Interested</button>
-              </form>
             {% elif query.status == 'converted' %}
               <span class="muted">✅ Order placed</span>
             {% else %}
