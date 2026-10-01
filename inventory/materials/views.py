@@ -1399,7 +1399,10 @@ WHATSAPP_QUERY_QUESTIONS = {
     'drawing': "Do you have a drawing for the final product? You can send a photo or PDF here, or just reply 'no' if you don't have one.",
     'notes': "Got it. Any other special requirements we should know about? Reply 'no' if none.",
 }
-WHATSAPP_CLOSING_MESSAGE = "Thanks! We'll reach out to you shortly."
+WHATSAPP_CLOSING_MESSAGE = (
+    "Thanks! We'll reach out to you shortly. If you have any other questions in "
+    "the meantime, feel free to message us here and we'll get back to you."
+)
 
 
 class WhatsAppSendError(Exception):
