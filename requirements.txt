@@ -1,16 +1,13 @@
 asgiref==3.11.1
-pandas
-openpyxl==3.1.5
 Django==4.2.30
 pillow==11.3.0
 qrcode==8.2
 sqlparse==0.5.5
 typing_extensions==4.15.0
 django-jazzmin==3.0.1
-python-dotenv
+python-dotenv==1.2.3
 djangorestframework==3.16.1
 whitenoise==6.11.0
 gunicorn==23.0.0; sys_platform != 'win32'
 waitress==3.0.2; sys_platform == 'win32'
 reportlab==4.4.4
-

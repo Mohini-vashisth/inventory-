@@ -1475,7 +1475,7 @@ class OrderNumberingTests(TestCase):
         self.assertEqual(first.order_no, 1)
 
     def test_next_order_after_a_delete_continues_from_the_compacted_sequence(self):
-        first = Order.objects.create(customer=self.customer, quantity=10)
+        Order.objects.create(customer=self.customer, quantity=10)
         second = Order.objects.create(customer=self.customer, quantity=10)
         second.delete()
 
@@ -1603,7 +1603,7 @@ class OrderConfirmStockWarningTests(TestCase):
 
     def test_dashboard_shows_persistent_low_stock_badge(self):
         Material.objects.create(quantity=50, grade='EN8D', size='1.200')
-        order = Order.objects.create(
+        Order.objects.create(
             customer=self.customer, product_type=self.product_type, quantity=400, status='confirmed',
         )
         self.client.force_login(self.staff)
@@ -1614,7 +1614,7 @@ class OrderConfirmStockWarningTests(TestCase):
         """The check is only actionable once an order is actually
         committed to production — a pending order hasn't been accepted yet."""
         Material.objects.create(quantity=50, grade='EN8D', size='1.200')
-        order = Order.objects.create(
+        Order.objects.create(
             customer=self.customer, product_type=self.product_type, quantity=400, status='pending',
         )
         self.client.force_login(self.staff)
@@ -1623,7 +1623,7 @@ class OrderConfirmStockWarningTests(TestCase):
 
     def test_dashboard_hides_badge_when_stock_is_sufficient(self):
         Material.objects.create(quantity=500, grade='EN8D', size='1.200')
-        order = Order.objects.create(
+        Order.objects.create(
             customer=self.customer, product_type=self.product_type, quantity=400, status='confirmed',
         )
         self.client.force_login(self.staff)
@@ -1811,7 +1811,7 @@ class EmployeePortalPageTests(TestCase):
     def test_production_board_shows_only_in_production_orders(self):
         customer = Customer.objects.create(name='Board Co')
         product_type = ProductType.objects.create(item_code='Bar', grade='EN8D', size='1.200')
-        step = ProcessStep.objects.create(product_type=product_type, name='Cutting', order=1)
+        ProcessStep.objects.create(product_type=product_type, name='Cutting', order=1)
 
         in_prod_order = Order.objects.create(customer=customer, quantity=10, status='in_production')
         coil = Material.objects.create(quantity=500)
@@ -2600,7 +2600,7 @@ class QueryDashboardTests(TestCase):
         self.client.post(reverse('query_dashboard'), {
             'source': 'call', 'contact_phone': '+91 98765 43210',
         })
-        query = Query.objects.get(contact_phone='919876543210')
+        Query.objects.get(contact_phone='919876543210')
         mock_send.assert_called_once_with(
             '919876543210', WHATSAPP_QUERY_INTAKE_TEMPLATE, language=WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE,
         )
@@ -3407,7 +3407,9 @@ class EmployeeLoginThrottleTests(TestCase):
 
 class EmployeePinSettingTests(SimpleTestCase):
     def _import_settings(self, **env):
-        import os, subprocess, sys
+        import os
+        import subprocess
+        import sys
         base_env = {k: v for k, v in os.environ.items()
                     if k not in ('EMPLOYEE_PIN', 'DJANGO_DEBUG', 'DJANGO_SECRET_KEY')}
         # Explicit empty values, not absent ones: load_dotenv fills in absent
@@ -3456,7 +3458,8 @@ class MaterialsRouteGuardTests(TestCase):
 
     @staticmethod
     def _url_for(pattern):
-        import re, uuid
+        import re
+        import uuid
         route = re.sub(r'<int:\w+>', '1', str(pattern.pattern))
         route = re.sub(r'<uuid:\w+>', str(uuid.uuid4()), route)
         route = re.sub(r'<path:\w+>', 'purchase_orders/x.pdf', route)

@@ -8,7 +8,10 @@ Material fields are read; blank rows are skipped entirely.
 import re
 from decimal import Decimal, InvalidOperation
 
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:  # only in requirements-import.txt, not the runtime requirements
+    pd = None
 from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 from materials.models import Material
@@ -65,6 +68,8 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        if pd is None:
+            raise CommandError("import_excel needs pandas/openpyxl: pip install -r requirements-import.txt")
         file_path = options['file']
 
         if options['list_sheets']:

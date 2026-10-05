@@ -214,7 +214,7 @@ class ProductionJobAdmin(admin.ModelAdmin):
 
         # Group prefetched logs by step, newest first
         logs_by_step = {}
-        for log in sorted(obj.step_logs.all(), key=lambda l: l.timestamp, reverse=True):
+        for log in sorted(obj.step_logs.all(), key=lambda entry: entry.timestamp, reverse=True):
             logs_by_step.setdefault(log.step_id, log)
 
         completed = 0
