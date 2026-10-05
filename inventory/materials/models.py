@@ -176,6 +176,8 @@ class ProductType(models.Model):
 
     class Meta:
         unique_together = ['grade', 'size']
+        verbose_name = 'product code'
+        verbose_name_plural = 'product codes'
 
     def __str__(self):
         return self.item_code
@@ -442,6 +444,27 @@ class Query(models.Model):
     def manual_source_choices(cls):
         return [choice for choice in cls.SOURCE_CHOICES if choice[0] in cls.MANUAL_SOURCES]
 
+    # ── Quote tracking. Sending a quote again for the same query means the quote
+    # was updated; every send is its own immutable Quotation, and these read
+    # them back oldest-first (honouring the dashboard's prefetch) as revisions.
+    def sent_quotations(self):
+        return sorted((q for q in self.quotations.all() if q.status == 'sent'), key=lambda q: q.quotation_no)
+
+    def latest_sent_quotation(self):
+        sent = self.sent_quotations()
+        return sent[-1] if sent else None
+
+    def quote_revision(self):
+        """0 for the original quote, then 1, 2, ... for each time it was updated and re-sent."""
+        return max(len(self.sent_quotations()) - 1, 0)
+
+    def quotation_history(self):
+        """[{'quotation', 'revision'}], newest first: drafts (revision None), then every sent
+        quote with its revision number (0 = the original)."""
+        drafts = [{'quotation': q, 'revision': None} for q in self.quotations.all() if q.status == 'draft']
+        sent = [{'quotation': q, 'revision': i} for i, q in enumerate(self.sent_quotations())]
+        return drafts + list(reversed(sent))
+
     GST_FIELDS = ('gst_number', 'gst_address')
 
     def gst_rows(self):
@@ -529,6 +552,9 @@ class Quotation(models.Model):
     quotation_no     = models.PositiveIntegerField(unique=True, editable=False, null=True)
     created_at       = models.DateTimeField(auto_now_add=True)
     updated_at       = models.DateTimeField(auto_now=True)
+    # When it was actually sent (draft -> sent), set once and never changed —
+    # created_at is when the draft was first started, updated_at moves on any save.
+    sent_at          = models.DateTimeField(null=True, blank=True, editable=False)
 
     # Header fields — all optional, matching the reference template.
     ref_no           = models.CharField(max_length=50, blank=True)
@@ -570,6 +596,8 @@ class Quotation(models.Model):
         if self.status == 'sent' and self.quotation_no is None:
             max_no = Quotation.objects.aggregate(models.Max('quotation_no'))['quotation_no__max'] or 0
             self.quotation_no = max_no + 1
+        if self.status == 'sent' and self.sent_at is None:
+            self.sent_at = timezone.now()
         super().save(*args, **kwargs)
 
     def formatted_no(self):
@@ -692,7 +720,7 @@ class Order(models.Model):
     )
     customer              = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='orders')
     source_query          = models.ForeignKey(Query, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
-    product_type          = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Type")
+    product_type          = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Code")
     # 1. Drawing / dimensions
     drawing_dimensions    = models.TextField(blank=True, verbose_name="Drawing / Dimensions")
     # 2. Grade & size (autofilled from product type, editable)

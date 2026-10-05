@@ -6,6 +6,7 @@ from django.contrib.auth.models import User
 from django.core import mail
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 from unittest.mock import patch
 
 from ..models import Customer, Order, ProductType, Query, Quotation
@@ -551,3 +552,89 @@ class QuerySourceTests(TestCase):
         self.client.post(other_url, {**base, 'contact_phone': '9000000011', 'source_detail': 'Walk-in'})
         other.refresh_from_db()
         self.assertEqual(other.source_detail, 'Walk-in')
+
+
+class QuoteTrackingTests(TestCase):
+    """Every send is its own immutable Quotation; sending again for the same
+    query means the quote was updated, so the dashboard shows when it was
+    sent and which revision it is, and all earlier quotes stay reachable."""
+
+    def setUp(self):
+        self.staff = User.objects.create_user('tracking_staff', password='pw', is_staff=True)
+        self.client.force_login(self.staff)
+        self.query = Query.objects.create(source='indiamart', company_name='Tracked Co', contact_phone='9123456780')
+
+    def _send(self):
+        with patch('materials.views.quotations._dispatch_quote_email'):
+            return self.client.post(f"{reverse('quotation_form')}?query={self.query.pk}", quotation_item_post_data())
+
+    def test_sent_at_is_set_when_a_quotation_is_sent_and_never_moves(self):
+        customer = Customer.objects.create(name='Tracked Co')
+        draft = Quotation.objects.create(customer=customer, status='draft')
+        self.assertIsNone(draft.sent_at)
+        draft.status = 'sent'
+        draft.save()
+        first = draft.sent_at
+        self.assertIsNotNone(first)
+        draft.ref_no = 'EDITED'
+        draft.save()
+        draft.refresh_from_db()
+        self.assertEqual(draft.sent_at, first)
+
+    def test_a_query_with_no_quotes_has_no_history(self):
+        self.assertIsNone(self.query.latest_sent_quotation())
+        self.assertEqual(self.query.quote_revision(), 0)
+        self.assertEqual(self.query.quotation_history(), [])
+
+    def test_each_send_is_a_new_quotation_and_counts_as_a_revision(self):
+        self._send()
+        self.assertEqual(Quotation.objects.filter(source_query=self.query, status='sent').count(), 1)
+        self.assertEqual(self.query.quote_revision(), 0)
+        self._send()
+        self._send()
+        quotes = list(Quotation.objects.filter(source_query=self.query, status='sent').order_by('quotation_no'))
+        self.assertEqual(len(quotes), 3)
+        self.assertEqual(len({q.quotation_no for q in quotes}), 3)   # none overwritten or renumbered
+        query = Query.objects.get(pk=self.query.pk)
+        self.assertEqual(query.quote_revision(), 2)
+        self.assertEqual(query.latest_sent_quotation(), quotes[-1])
+
+    def test_history_is_newest_first_with_revisions_and_drafts_on_top(self):
+        self._send()
+        self._send()
+        draft = Quotation.objects.create(customer=Customer.objects.get(name='Tracked Co'), source_query=self.query, status='draft')
+        history = Query.objects.get(pk=self.query.pk).quotation_history()
+        self.assertEqual([row['revision'] for row in history], [None, 1, 0])
+        self.assertEqual(history[0]['quotation'], draft)
+
+    def test_dashboard_shows_when_the_quote_was_sent_and_the_revision(self):
+        self._send()
+        html = self.client.get(reverse('query_dashboard')).content.decode()
+        self.assertIn('Quote sent', html)
+        self.assertNotIn('Rev ', html)
+        self.assertNotIn('View all', html)
+        self._send()
+        html = self.client.get(reverse('query_dashboard')).content.decode()
+        self.assertIn('Rev 1', html)
+        self.assertIn('View all 2 quotes', html)
+        self.assertIn(f"{reverse('query_detail', kwargs={'pk': self.query.pk})}#quotations", html)
+
+    def test_detail_page_lists_every_quote_with_its_revision_and_pdf(self):
+        self._send()
+        self._send()
+        html = self.client.get(reverse('query_detail', kwargs={'pk': self.query.pk})).content.decode()
+        self.assertIn('Quotation history', html)
+        self.assertIn('Original', html)
+        self.assertIn('Rev 1', html)
+        for quotation in Quotation.objects.filter(source_query=self.query):
+            with self.subTest(quotation=quotation.formatted_no()):
+                self.assertIn(quotation.formatted_no(), html)
+                self.assertIn(reverse('quotation_pdf', kwargs={'pk': quotation.pk}), html)
+
+    def test_the_quote_form_prefills_the_revision_when_resending(self):
+        first = self.client.get(f"{reverse('quotation_form')}?query={self.query.pk}").context['form'].initial
+        self.assertNotIn('rev_no', first)
+        self._send()
+        second = self.client.get(f"{reverse('quotation_form')}?query={self.query.pk}").context['form'].initial
+        self.assertEqual(second['rev_no'], 1)
+        self.assertEqual(second['rev_date'], timezone.localdate())

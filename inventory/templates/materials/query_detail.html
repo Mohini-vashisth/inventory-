@@ -143,17 +143,21 @@
   </div>
   {% endif %}
 
-  {% if quotations %}
-  <div class="card">
-    <div class="card-header">Quotations</div>
+  {% if history %}
+  <div class="card" id="quotations">
+    <div class="card-header">Quotation history<span class="muted">newest first</span></div>
     <div class="card-body">
       <dl class="rows">
-        {% for quotation in quotations %}
-        <dt>{{ quotation.formatted_no }}</dt>
+        {% for row in history %}
+        <dt>{{ row.quotation.formatted_no }}</dt>
         <dd>
-          {{ quotation.get_status_display }} · {{ quotation.updated_at|date:"d M Y" }}
-          {% if quotation.status == 'sent' %}· <a href="{% url 'quotation_pdf' quotation.pk %}" class="link">📄 PDF</a>
-          {% else %}· <a href="{% url 'quotation_edit' quotation.pk %}" class="link">Resume draft</a>{% endif %}
+          {% if row.revision is None %}
+            Draft · updated {{ row.quotation.updated_at|date:"d M Y" }} · <a href="{% url 'quotation_edit' row.quotation.pk %}" class="link">Resume draft</a>
+          {% else %}
+            <strong>{% if row.revision %}Rev {{ row.revision }}{% else %}Original{% endif %}</strong>
+            · sent {{ row.quotation.sent_at|date:"d M Y, H:i" }}
+            · <a href="{% url 'quotation_pdf' row.quotation.pk %}" class="link">📄 PDF</a>
+          {% endif %}
         </dd>
         {% endfor %}
       </dl>
