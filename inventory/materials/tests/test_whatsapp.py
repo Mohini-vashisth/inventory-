@@ -13,12 +13,41 @@ from unittest.mock import patch, MagicMock
 
 from ..models import ProductType, Query
 from ..views import whatsapp
-from ..views.whatsapp import WhatsAppSendError, WHATSAPP_QUERY_QUESTIONS, WHATSAPP_CLOSING_MESSAGE
+from ..views.whatsapp import (
+    WhatsAppSendError, WHATSAPP_CLOSING_MESSAGE, WHATSAPP_GST_INVALID_MESSAGE,
+    WHATSAPP_QUERY_FIELDS, WHATSAPP_QUERY_QUESTIONS,
+)
 
 
 def _sign_whatsapp_payload(body_bytes, secret):
     digest = hmac.new(secret.encode('utf-8'), body_bytes, hashlib.sha256).hexdigest()
     return f"sha256={digest}"
+
+
+# A plausible reply to every question, in the order the bot asks them.
+ANSWERS = {
+    'company_name': 'Ramesh Traders', 'contact_email': 'ramesh@example.com',
+    'gst_number': '22AAAAA0000A1Z5', 'gst_address': '12 Industrial Area, Faridabad',
+    'product_description': 'Round bar', 'drawing': 'no', 'grade': 'EN8D', 'make': 'no',
+    'mechanical_properties': 'tensile 600 MPa', 'process_required': 'no',
+    'end_use': 'automotive shafts', 'delivery_form': 'coil', 'quantity_text': '2 tons',
+    'frequency': 'monthly',
+}
+
+
+def _answered_field(field):
+    return 'drawing_notes' if field == 'drawing' else field
+
+
+def _query_awaiting(field, phone='919876543210'):
+    """A Query that has answered every question before `field`, so `field`
+    is the one the bot is waiting on. Pass None for a fully answered one."""
+    values = {}
+    for name in WHATSAPP_QUERY_FIELDS:
+        if name == field:
+            break
+        values[_answered_field(name)] = ANSWERS[name]
+    return Query.objects.create(source='call', contact_phone=phone, **values)
 
 
 @override_settings(WHATSAPP_VERIFY_TOKEN='test-verify-token', WHATSAPP_APP_SECRET='test-app-secret')
@@ -99,66 +128,83 @@ class WhatsAppWebhookTests(TestCase):
         self.assertEqual(query.company_name, 'Ramesh Traders')
         mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['contact_email'])
 
+    def test_intake_sequence_is_in_the_requested_order(self):
+        self.assertEqual(WHATSAPP_QUERY_FIELDS, [
+            'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_description',
+            'drawing', 'grade', 'make', 'mechanical_properties', 'process_required',
+            'end_use', 'delivery_form', 'quantity_text', 'frequency',
+        ])
+
+    def test_every_question_after_company_name_has_wording(self):
+        # company_name is asked by the opening template, not by this table.
+        self.assertEqual(set(WHATSAPP_QUERY_QUESTIONS), set(WHATSAPP_QUERY_FIELDS) - {'company_name'})
+
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_inbound_answer_captures_email_then_asks_grade(self, mock_send):
-        Query.objects.create(source='call', contact_phone='919876543210', company_name='Ramesh Traders')
-        payload = self._message_payload('919876543210', 'ramesh@example.com')
-        self._post_payload(payload)
+    def test_each_answer_is_saved_and_the_next_question_asked(self, mock_send):
+        fields = WHATSAPP_QUERY_FIELDS
+        for index, field in enumerate(fields[1:], start=1):
+            with self.subTest(field=field):
+                mock_send.reset_mock()
+                phone = f'9198765432{index:02d}'
+                _query_awaiting(field, phone=phone)
+                reply = ANSWERS[field] if field in ('contact_email', 'gst_number') else f'reply for {field}'
+                self._post_payload(self._message_payload(phone, reply))
+
+                query = Query.objects.get(contact_phone=phone)
+                self.assertEqual(getattr(query, _answered_field(field)), reply)
+                following = fields[index + 1] if index + 1 < len(fields) else None
+                expected = WHATSAPP_QUERY_QUESTIONS[following] if following else WHATSAPP_CLOSING_MESSAGE
+                mock_send.assert_called_once_with(phone, expected)
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_gst_number_is_normalised(self, mock_send):
+        for index, reply in enumerate(['22aaaaa0000a1z5', ' 22 AAAAA 0000 A 1Z5 ']):
+            with self.subTest(reply=reply):
+                phone = f'9198000000{index:02d}'
+                _query_awaiting('gst_number', phone=phone)
+                self._post_payload(self._message_payload(phone, reply))
+                self.assertEqual(Query.objects.get(contact_phone=phone).gst_number, '22AAAAA0000A1Z5')
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_unregistered_customer_can_answer_na(self, mock_send):
+        for index, reply in enumerate(['NA', 'n/a', 'No', 'none', 'Not registered']):
+            with self.subTest(reply=reply):
+                mock_send.reset_mock()
+                phone = f'9198100000{index:02d}'
+                _query_awaiting('gst_number', phone=phone)
+                self._post_payload(self._message_payload(phone, reply))
+                self.assertEqual(Query.objects.get(contact_phone=phone).gst_number, 'NA')
+                mock_send.assert_called_once_with(phone, WHATSAPP_QUERY_QUESTIONS['gst_address'])
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_invalid_gst_number_reasks_without_saving(self, mock_send):
+        for index, reply in enumerate(['GST pending', '22AAAAA0000A1Z', '1234567890ABCDE', 'my number is 22AAAAA0000A1Z5']):
+            with self.subTest(reply=reply):
+                mock_send.reset_mock()
+                phone = f'9198200000{index:02d}'
+                _query_awaiting('gst_number', phone=phone)
+                self._post_payload(self._message_payload(phone, reply))
+                self.assertEqual(Query.objects.get(contact_phone=phone).gst_number, '')
+                mock_send.assert_called_once_with(phone, WHATSAPP_GST_INVALID_MESSAGE)
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_no_is_a_real_answer_that_advances_the_sequence(self, mock_send):
+        _query_awaiting('mechanical_properties')
+        self._post_payload(self._message_payload('919876543210', 'no'))
 
         query = Query.objects.get(contact_phone='919876543210')
-        self.assertEqual(query.contact_email, 'ramesh@example.com')
-        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['grade'])
+        self.assertEqual(query.mechanical_properties, 'no')
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['process_required'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_inbound_answer_captures_grade_then_asks_size(self, mock_send):
-        Query.objects.create(
-            source='call', contact_phone='919876543210',
-            company_name='Ramesh Traders', contact_email='ramesh@example.com',
-        )
-        payload = self._message_payload('919876543210', 'EN8D')
-        self._post_payload(payload)
-
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertEqual(query.grade, 'EN8D')
-        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['size'])
-
-    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_inbound_size_answer_asks_for_drawing_next(self, mock_send):
-        Query.objects.create(
-            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
-            contact_email='ramesh@example.com', grade='EN8D',
-        )
-        payload = self._message_payload('919876543210', '1.2')
-        self._post_payload(payload)
-
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertEqual(query.size, Decimal('1.2'))
-        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['drawing'])
-
-    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_text_reply_to_drawing_question_saves_as_drawing_notes_and_asks_for_notes_next(self, mock_send):
-        Query.objects.create(
-            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
-            contact_email='ramesh@example.com', grade='EN8D', size=Decimal('1.2'),
-        )
+    def test_text_reply_to_drawing_question_saves_as_drawing_notes_and_asks_for_grade_next(self, mock_send):
+        _query_awaiting('drawing')
         self._post_payload(self._message_payload('919876543210', 'no'))
 
         query = Query.objects.get(contact_phone='919876543210')
         self.assertEqual(query.drawing_notes, 'no')
         self.assertFalse(query.drawing)
-        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['notes'])
-
-    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_notes_answer_completes_sequence_and_sends_closing(self, mock_send):
-        Query.objects.create(
-            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
-            contact_email='ramesh@example.com', grade='EN8D', size=Decimal('1.2'), drawing_notes='no',
-        )
-        self._post_payload(self._message_payload('919876543210', 'needs to be corrosion resistant'))
-
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertEqual(query.notes, 'needs to be corrosion resistant')
-        mock_send.assert_called_once_with('919876543210', WHATSAPP_CLOSING_MESSAGE)
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['grade'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_image_reply_to_drawing_question_is_routed_for_download(self, mock_send):
@@ -166,10 +212,7 @@ class WhatsAppWebhookTests(TestCase):
         confirms the webhook recognizes an image reply as answering the
         drawing question and hands it off, without touching drawing_notes
         (a text reply would) or advancing past 'drawing' synchronously."""
-        Query.objects.create(
-            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
-            contact_email='ramesh@example.com', grade='EN8D', size=Decimal('1.2'),
-        )
+        _query_awaiting('drawing')
         with patch('materials.views.whatsapp._process_whatsapp_drawing_media_background') as mock_bg:
             self._post_payload(self._media_payload('919876543210', 'image', 'media-id-123', 'image/jpeg'))
             mock_bg.assert_called_once()
@@ -182,49 +225,14 @@ class WhatsAppWebhookTests(TestCase):
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_image_reply_outside_drawing_question_is_ignored(self, mock_send):
-        Query.objects.create(source='call', contact_phone='919876543210', company_name='Ramesh Traders')
+        _query_awaiting('contact_email')
         with patch('materials.views.whatsapp._process_whatsapp_drawing_media_background') as mock_bg:
             self._post_payload(self._media_payload('919876543210', 'image', 'media-id-456'))
             mock_bg.assert_not_called()
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_inbound_size_with_units_is_parsed(self, mock_send):
-        Query.objects.create(
-            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
-            contact_email='ramesh@example.com', grade='EN8D',
-        )
-        self._post_payload(self._message_payload('919876543210', '1.2mm'))
-
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertEqual(query.size, Decimal('1.2'))
-
-    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_inbound_unparseable_size_reasks_without_saving(self, mock_send):
-        Query.objects.create(
-            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
-            contact_email='ramesh@example.com', grade='EN8D',
-        )
-        self._post_payload(self._message_payload('919876543210', 'not sure'))
-
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertIsNone(query.size)
-        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['size'])
-
-    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_inbound_negative_size_reasks_without_saving(self, mock_send):
-        Query.objects.create(
-            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
-            contact_email='ramesh@example.com', grade='EN8D',
-        )
-        self._post_payload(self._message_payload('919876543210', '-1.2'))
-
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertIsNone(query.size)
-        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['size'])
-
-    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_inbound_invalid_email_reasks_without_saving(self, mock_send):
-        Query.objects.create(source='call', contact_phone='919876543210', company_name='Ramesh Traders')
+        _query_awaiting('contact_email')
         self._post_payload(self._message_payload('919876543210', 'not an email'))
 
         query = Query.objects.get(contact_phone='919876543210')
@@ -232,50 +240,25 @@ class WhatsAppWebhookTests(TestCase):
         mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['contact_email'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_size_completion_matches_existing_product_type(self, mock_send):
-        product_type = ProductType.objects.create(item_code='Matched Bar', grade='EN8D', size='1.200')
-        Query.objects.create(
-            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
-            contact_email='ramesh@example.com', grade='en8d',
-        )
-        self._post_payload(self._message_payload('919876543210', '1.2'))
+    def test_completing_the_sequence_does_not_auto_match_a_product_type(self, mock_send):
+        """Size isn't asked any more, so the bot can't match a catalogue
+        product from grade+size; choosing standard vs customised is staff's
+        call. Even a query that already has both (entered by staff) isn't
+        matched behind their back."""
+        ProductType.objects.create(item_code='Catalogue Bar', grade='EN8D', size='1.200')
+        query = _query_awaiting('frequency')
+        query.size = Decimal('1.2')
+        query.save(update_fields=['size'])
+        self._post_payload(self._message_payload('919876543210', 'monthly'))
 
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertEqual(query.product_type, product_type)
-
-    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_size_completion_leaves_product_type_null_when_no_match(self, mock_send):
-        Query.objects.create(
-            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
-            contact_email='ramesh@example.com', grade='EN8D',
-        )
-        self._post_payload(self._message_payload('919876543210', '9.9'))
-
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertIsNone(query.product_type)
-
-    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_size_completion_requires_both_grade_and_size_to_match(self, mock_send):
-        # Same grade, different size — and same size, different grade —
-        # must NOT match; only a ProductType agreeing on both should link.
-        ProductType.objects.create(item_code='Wrong Size Bar', grade='EN8D', size='2.500')
-        ProductType.objects.create(item_code='Wrong Grade Bar', grade='SS304', size='1.200')
-        Query.objects.create(
-            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
-            contact_email='ramesh@example.com', grade='EN8D',
-        )
-        self._post_payload(self._message_payload('919876543210', '1.2'))
-
-        query = Query.objects.get(contact_phone='919876543210')
+        query.refresh_from_db()
         self.assertIsNone(query.product_type)
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_message_after_sequence_complete_is_appended_to_notes(self, mock_send):
-        Query.objects.create(
-            source='call', contact_phone='919876543210', company_name='Ramesh Traders',
-            contact_email='ramesh@example.com', grade='EN8D', size=Decimal('1.2'),
-            drawing_notes='no', notes='standard requirement',
-        )
+        query = _query_awaiting(None)
+        query.notes = 'standard requirement'
+        query.save(update_fields=['notes'])
         self._post_payload(self._message_payload('919876543210', 'also need it urgently'))
 
         query = Query.objects.get(contact_phone='919876543210')
@@ -389,10 +372,7 @@ class WhatsAppDrawingMediaTests(TransactionTestCase):
     @patch('materials.views.whatsapp._download_whatsapp_media')
     def test_downloads_and_saves_drawing_then_advances(self, mock_download, mock_send):
         mock_download.return_value = (b'%PDF-1.4 fake pdf bytes', 'application/pdf')
-        query = Query.objects.create(
-            source='whatsapp', contact_phone='919876543210', company_name='Drawing Co',
-            contact_email='drawing@example.com', grade='EN8D', size=Decimal('1.2'),
-        )
+        query = _query_awaiting('drawing')
 
         self._run_and_wait(query.pk, 'media-id-1', 'application/pdf')
 
@@ -401,17 +381,14 @@ class WhatsAppDrawingMediaTests(TransactionTestCase):
         self.assertTrue(query.drawing.name.endswith('.pdf'))
         self.assertEqual(query.drawing.read()[:4], b'%PDF')
         self.assertEqual(query.drawing_notes, 'Drawing attached via WhatsApp')
-        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['notes'])
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['grade'])
         query.drawing.delete(save=False)
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message')
     @patch('materials.views.whatsapp._download_whatsapp_media')
     def test_download_failure_leaves_query_untouched(self, mock_download, mock_send):
         mock_download.side_effect = WhatsAppSendError("network boom")
-        query = Query.objects.create(
-            source='whatsapp', contact_phone='919876543210', company_name='Failed Drawing Co',
-            grade='EN8D', size=Decimal('1.2'),
-        )
+        query = _query_awaiting('drawing')
 
         self._run_and_wait(query.pk, 'media-id-2', 'application/pdf')
 
@@ -428,10 +405,7 @@ class WhatsAppDrawingMediaTests(TransactionTestCase):
         saved by the time this background thread gets the lock) must win,
         not get silently overwritten by the late-arriving image."""
         mock_download.return_value = (b'\xff\xd8\xff fake jpeg bytes', 'image/jpeg')
-        query = Query.objects.create(
-            source='whatsapp', contact_phone='919876543210', company_name='Race Co',
-            grade='EN8D', size=Decimal('1.2'), drawing_notes='no',
-        )
+        query = _query_awaiting('grade')  # drawing already answered by text
 
         self._run_and_wait(query.pk, 'media-id-3', 'image/jpeg')
 

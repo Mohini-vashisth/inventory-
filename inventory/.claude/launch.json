@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "inventory-dev",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["manage.py", "runserver"],
+      "port": 8000
+    }
+  ]
+}

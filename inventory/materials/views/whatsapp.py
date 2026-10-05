@@ -17,11 +17,10 @@ from django.utils.crypto import constant_time_compare
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
-from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
-from ..models import ProductType, Query
+from ..models import Query
 
 logger = logging.getLogger(__name__)
 
@@ -42,17 +41,43 @@ WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE = "en"
 
 # Fixed intake order — the next question is whichever of these is still
 # blank on the Query, so there's no separate "stage" field to drift out of
-# sync with the actual data.
-WHATSAPP_QUERY_FIELDS = ['company_name', 'contact_email', 'grade', 'size', 'drawing', 'notes']
+# sync with the actual data (and a field filled some other way, e.g. a staff
+# edit, is simply skipped). The first reply, to the opening template, is the
+# company name.
+WHATSAPP_QUERY_FIELDS = [
+    'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_description',
+    'drawing', 'grade', 'make', 'mechanical_properties', 'process_required',
+    'end_use', 'delivery_form', 'quantity_text', 'frequency',
+]
 
 
 WHATSAPP_QUERY_QUESTIONS = {
     'contact_email': "Thanks! What's the best email address to send your quote to?",
-    'grade': "Got it. Which grade do you need (e.g. EN8D, EN9)?",
-    'size': "And what size do you need (in mm), e.g. 1.2?",
-    'drawing': "Do you have a drawing for the final product? You can send a photo or PDF here, or just reply 'no' if you don't have one.",
-    'notes': "Got it. Any other special requirements we should know about? Reply 'no' if none.",
+    'gst_number': "Please share your GST number (GSTIN). If you don't have one, reply NA.",
+    'gst_address': "And the address registered under your GST? (If you don't have a GST number, your billing address.)",
+    'product_description': "What product do you need?",
+    'drawing': "Please attach a drawing with detailed dimensions, or a photo of a sample. You can send an image or PDF here, or reply 'no' if you don't have one.",
+    'grade': "Which grade of material do you require?",
+    'make': "Do you need any particular make (brand/manufacturer)? Reply 'no' if no preference.",
+    'mechanical_properties': "Are any mechanical properties required, for example tensile strength, hardness, yield strength or elongation? Please share the values, or reply 'no' if none.",
+    'process_required': "Is any process to be carried out on the material? Please describe it, or reply 'no' if none.",
+    'end_use': "What is the end use of the material?",
+    'delivery_form': "In what form do you need the material delivered, for example coil, straight lengths or cut pieces?",
+    'quantity_text': "What quantity do you require? (for example 2 tons)",
+    'frequency': "How often will you need it: a one-time requirement, or regular (for example monthly)?",
 }
+
+
+WHATSAPP_GST_INVALID_MESSAGE = (
+    "That doesn't look like a valid 15-character GST number (for example 22AAAAA0000A1Z5). "
+    "Please check and send it again, or reply NA if you don't have one."
+)
+
+
+# Format check only (state code, PAN, entity number, 'Z', checksum character) —
+# not the checksum itself, which would need the GST portal to verify.
+_GSTIN_PATTERN = re.compile(r'^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$')
+_NO_GST_ANSWERS = {'na', 'n/a', 'no', 'none', 'nil', 'not applicable', 'not registered', 'unregistered'}
 
 
 WHATSAPP_CLOSING_MESSAGE = (
@@ -136,10 +161,7 @@ def _next_expected_query_field(query):
     _process_whatsapp_drawing_media_background) is what actually marks
     that question answered, whether or not a file came with it."""
     for field in WHATSAPP_QUERY_FIELDS:
-        if field == 'size':
-            if query.size is None:
-                return field
-        elif field == 'drawing':
+        if field == 'drawing':
             if not query.drawing and not query.drawing_notes:
                 return field
         elif not getattr(query, field):
@@ -155,19 +177,16 @@ def _normalize_phone(phone):
     return re.sub(r'\D', '', phone or '')
 
 
-def _parse_whatsapp_size(text):
-    """Lenient size parsing — "1.2", "1.2mm", "1.2 mm" all become
-    Decimal('1.2'); anything with no usable digits, or a zero/negative
-    result, returns None so the caller can re-ask instead of saving a
-    coil size that could never be real."""
-    cleaned = re.sub(r'[^0-9.\-]', '', text or '')
-    if not cleaned:
-        return None
-    try:
-        value = Decimal(cleaned)
-    except InvalidOperation:
-        return None
-    return value if value > 0 else None
+def _parse_whatsapp_gstin(text):
+    """A well-formed GSTIN (spaces and case ignored) comes back normalised;
+    "NA"/"no"/... for an unregistered customer comes back as "NA"; anything
+    else is None so the caller can re-ask rather than save a typo."""
+    candidate = re.sub(r'\s+', '', text or '').upper()
+    if _GSTIN_PATTERN.match(candidate):
+        return candidate
+    if (text or '').strip().lower() in _NO_GST_ANSWERS:
+        return 'NA'
+    return None
 
 
 def _is_valid_whatsapp_email(text):
@@ -408,9 +427,9 @@ def _process_whatsapp_drawing_media_background(query_pk, media_id, mime_type):
 def _process_whatsapp_answer(query_pk, text):
     """Save this message as the answer to whichever question is next in
     the intake sequence, then send the following question — or, once the
-    sequence is complete, try to auto-match an existing ProductType and
-    send the closing message. A message that arrives after the sequence
-    is already done is just appended to notes, not mistaken for an answer.
+    sequence is complete, the closing message. A message that arrives after
+    the sequence is already done is just appended to notes, not mistaken
+    for an answer.
 
     Re-fetches and locks the row inside a transaction (select_for_update)
     rather than trusting the caller's already-read Query instance — Meta
@@ -428,13 +447,13 @@ def _process_whatsapp_answer(query_pk, text):
             query.save(update_fields=['notes'])
             return
 
-        if field == 'size':
-            parsed = _parse_whatsapp_size(text)
+        if field == 'gst_number':
+            parsed = _parse_whatsapp_gstin(text)
             if parsed is None:
-                _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_QUERY_QUESTIONS['size'])
+                _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_GST_INVALID_MESSAGE)
                 return
-            query.size = parsed
-            changed = ['size']
+            query.gst_number = parsed
+            changed = ['gst_number']
         elif field == 'contact_email':
             candidate = text.strip()
             if not _is_valid_whatsapp_email(candidate):
@@ -459,19 +478,9 @@ def _process_whatsapp_answer(query_pk, text):
 
 def _advance_whatsapp_query(query):
     """Sends the next question in the intake sequence, or the closing
-    message once it's complete. Tries to auto-match an existing
-    ProductType as soon as grade+size are both known — not only once the
-    whole sequence finishes, since drawing/notes come after size now and
-    waiting for those too would just delay a match that's already
-    possible. Shared by the text-answer path above and the drawing-media
-    path (_process_whatsapp_drawing_media_background), since both need to
-    advance the same way once their field is saved."""
-    if query.grade and query.size is not None and not query.product_type_id:
-        match = ProductType.objects.filter(grade__iexact=query.grade, size=query.size).first()
-        if match:
-            query.product_type = match
-            query.save(update_fields=['product_type'])
-
+    message once it's complete. Shared by the text-answer path above and the
+    drawing-media path (_process_whatsapp_drawing_media_background), since
+    both need to advance the same way once their field is saved."""
     next_field = _next_expected_query_field(query)
     if next_field:
         _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_QUERY_QUESTIONS[next_field])
