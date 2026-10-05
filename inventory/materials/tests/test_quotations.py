@@ -640,5 +640,6 @@ class QuotationPdfCustomerDetailsTests(TestCase):
         self.assertLess(theirs.index('2 Their Road'), theirs.index('22AAAAA0000A1Z5'))
 
     def test_the_customer_name_prints_without_an_ms_prefix(self):
-        self.assertNotIn('M/s', self._text(customer_address='12 Industrial Area'))
-        self.assertIn('Pdf Details Co', self._text())
+        text = self._text(customer_address='12 Industrial Area')
+        self.assertNotIn('M/s', text)
+        self.assertIn('Pdf Details Co', text)
