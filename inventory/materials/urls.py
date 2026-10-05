@@ -23,6 +23,7 @@ urlpatterns = [
     path('scan-job/', production.select_job_for_coil, name='select_job_for_coil'),
     path('job/<int:pk>/', production.job_detail, name='job_detail'),
     path('queries/', queries.query_dashboard, name='query_dashboard'),
+    path('queries/<int:pk>/', queries.query_detail, name='query_detail'),
     path('queries/<int:pk>/edit/', queries.query_edit, name='query_edit'),
     path('queries/<int:pk>/not-interested/', queries.query_not_interested, name='query_not_interested'),
     path('quotations/new/', quotations.quotation_form, name='quotation_form'),

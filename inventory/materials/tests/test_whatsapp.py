@@ -196,16 +196,20 @@ class WhatsAppWebhookTests(TestCase):
         mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['product_description'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_unregistered_customer_can_answer_na_alone_or_with_an_address(self, mock_send):
-        for index, reply in enumerate(['NA', 'n/a', 'No', 'none', 'Not registered']):
+    def test_na_is_not_accepted_because_every_company_has_a_gst_number(self, mock_send):
+        replies = ['NA', 'n/a', 'No', 'none', 'Not registered', 'NA, 45 Mall Road']
+        for index, reply in enumerate(replies):
             with self.subTest(reply=reply):
                 query = self._gst_reply(mock_send, reply, phone=f'9198100000{index:02d}')
-                self.assertEqual(query.gst_number, 'NA')
+                self.assertEqual(query.gst_number, '')
                 self.assertEqual(query.gst_address, '')
-                mock_send.assert_called_once_with(query.contact_phone, WHATSAPP_QUERY_QUESTIONS['gst_address'])
-        query = self._gst_reply(mock_send, 'NA, 45 Mall Road', phone='919810000099')
-        self.assertEqual((query.gst_number, query.gst_address), ('NA', '45 Mall Road'))
-        mock_send.assert_called_once_with('919810000099', WHATSAPP_QUERY_QUESTIONS['product_description'])
+                mock_send.assert_called_once_with(query.contact_phone, WHATSAPP_GST_INVALID_MESSAGE)
+
+    def test_gst_question_does_not_say_one_message_or_offer_na(self):
+        for text in (WHATSAPP_QUERY_QUESTIONS['gst_number'], WHATSAPP_QUERY_QUESTIONS['gst_address'], WHATSAPP_GST_INVALID_MESSAGE):
+            with self.subTest(text=text):
+                self.assertNotIn('one message', text)
+                self.assertNotRegex(text, r'\bNA\b')
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_invalid_gst_reply_reasks_without_saving(self, mock_send):

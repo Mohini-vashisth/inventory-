@@ -1,0 +1,161 @@
+{% extends "materials/base.html" %}
+
+{% block title %}Query – {{ query.company_name|default:query.contact_phone }}{% endblock %}
+
+{% block css %}
+    body { font-family: Arial, Helvetica, sans-serif; background: #f4f6f9; color: #333; }
+
+    header {
+      background: #4e73df; color: white;
+      padding: 1rem 2rem;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    header h1 { font-size: 1.3rem; }
+    .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; margin-left: 1.25rem; }
+
+    .content { max-width: 760px; margin: 2rem auto; padding: 0 1.5rem; }
+
+    .card {
+      background: white; border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      overflow: hidden; margin-bottom: 1.25rem;
+    }
+    .card-header {
+      padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0;
+      font-size: 1rem; font-weight: 600;
+      display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
+    }
+    .card-body { padding: 1.25rem 1.5rem; }
+
+    .rows { display: grid; grid-template-columns: 12rem 1fr; gap: 0.7rem 1rem; font-size: 0.9rem; }
+    .rows dt {
+      font-size: 0.72rem; color: #888; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.04em; padding-top: 0.15rem;
+    }
+    .rows dd { word-break: break-word; }
+    .pre { white-space: pre-wrap; }
+    .rows .blank { color: #bbb; }
+
+    .badge {
+      display: inline-block; padding: 0.25rem 0.65rem;
+      border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap;
+    }
+    .badge-new             { background: #dbeafe; color: #1e40af; }
+    .badge-quote_sent      { background: #fef3c7; color: #92400e; }
+    .badge-converted       { background: #dcfce7; color: #166534; }
+    .badge-not_interested  { background: #f3f4f6; color: #6b7280; }
+
+    .icon-btn {
+      background: #f3f4f6; border: 1px solid #ddd;
+      border-radius: 6px; padding: 0.25rem 0.65rem;
+      font-size: 0.75rem; cursor: pointer; color: #4e73df;
+      display: inline-block; text-decoration: none;
+    }
+    .icon-btn.green { background: #dcfce7; border-color: #bbf7d0; color: #166534; margin-left: 4px; }
+    .icon-btn.green:hover { background: #bbf7d0; }
+    .icon-btn.red { background: #fee2e2; border-color: #fecaca; color: #991b1b; margin-left: 4px; }
+    .icon-btn.red:hover { background: #fecaca; }
+    .muted { color: #888; }
+    .link { color: #4e73df; text-decoration: none; }
+
+    @media (max-width: 640px) {
+      header { padding: 1rem; flex-wrap: wrap; gap: 0.5rem; }
+      .content { padding: 0 0.85rem; margin: 1rem auto; }
+      .card-body { padding: 1.1rem; }
+      .rows { grid-template-columns: 1fr; gap: 0.15rem; }
+      .rows dd { margin-bottom: 0.6rem; }
+    }
+{% endblock %}
+
+{% block content %}
+<header>
+  <h1>Query Details</h1>
+  <div>
+    <a href="{% url 'query_dashboard' %}" class="back-link">← Back to Query Dashboard</a>
+  </div>
+</header>
+
+<div class="content">
+  <div class="card">
+    <div class="card-header">
+      <span>{{ query.company_name|default:query.contact_phone }}</span>
+      <span class="badge badge-{{ query.status }}">{{ query.get_status_display }}</span>
+    </div>
+    <div class="card-body">
+      {% include "materials/_query_actions.html" %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Contact</div>
+    <div class="card-body">
+      <dl class="rows">
+        <dt>Company</dt><dd>{{ query.company_name|default:"—" }}</dd>
+        <dt>Phone</dt><dd>{{ query.contact_phone|default:"—" }}</dd>
+        <dt>Email</dt><dd>{{ query.contact_email|default:"—" }}</dd>
+        <dt>Source</dt><dd>{{ query.get_source_display }}</dd>
+        <dt>Received</dt><dd>{{ query.created_at|date:"d M Y, H:i" }}</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">GST</div>
+    <div class="card-body">
+      <dl class="rows">
+        {% for label, value in query.gst_rows %}
+        <dt>{{ label }}</dt><dd>{% if value %}<span class="pre">{{ value }}</span>{% else %}<span class="blank">—</span>{% endif %}</dd>
+        {% endfor %}
+      </dl>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Product &amp; requirements</div>
+    <div class="card-body">
+      <dl class="rows">
+        <dt>Product type</dt><dd>{% if query.product_type %}{{ query.product_type.item_code }}{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Grade</dt><dd>{{ query.grade|default:"—" }}</dd>
+        <dt>Size</dt><dd>{% if query.size %}{{ query.size }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Quantity (kg)</dt><dd>{{ query.quantity|default:"—" }}</dd>
+        {% for label, value in query.requirement_rows %}
+        <dt>{{ label }}</dt><dd>{% if value %}<span class="pre">{{ value }}</span>{% else %}<span class="blank">—</span>{% endif %}</dd>
+        {% endfor %}
+        <dt>Drawing / sample</dt>
+        <dd>
+          {% if query.drawing %}<a href="{{ query.drawing.url }}" target="_blank" class="link">📎 Open drawing</a>{% endif %}
+          {% if query.drawing_notes %}<span class="muted">{{ query.drawing_notes }}</span>{% endif %}
+          {% if not query.drawing and not query.drawing_notes %}<span class="blank">—</span>{% endif %}
+        </dd>
+      </dl>
+    </div>
+  </div>
+
+  {% if query.notes %}
+  <div class="card">
+    <div class="card-header">Notes</div>
+    <div class="card-body"><div style="white-space:pre-wrap; font-size:0.9rem;">{{ query.notes }}</div></div>
+  </div>
+  {% endif %}
+
+  {% if quotations %}
+  <div class="card">
+    <div class="card-header">Quotations</div>
+    <div class="card-body">
+      <dl class="rows">
+        {% for quotation in quotations %}
+        <dt>{{ quotation.formatted_no }}</dt>
+        <dd>
+          {{ quotation.get_status_display }} · {{ quotation.updated_at|date:"d M Y" }}
+          {% if quotation.status == 'sent' %}· <a href="{% url 'quotation_pdf' quotation.pk %}" class="link">📄 PDF</a>
+          {% else %}· <a href="{% url 'quotation_edit' quotation.pk %}" class="link">Resume draft</a>{% endif %}
+        </dd>
+        {% endfor %}
+      </dl>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{% include "materials/_copy_link_script.html" %}
+{% endblock %}

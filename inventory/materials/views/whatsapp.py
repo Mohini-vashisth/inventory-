@@ -20,7 +20,7 @@ from django.views.decorators.http import require_http_methods
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
-from ..models import Query
+from ..models import GSTIN_PATTERN, Query
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +54,9 @@ WHATSAPP_QUERY_FIELDS = [
 
 WHATSAPP_QUERY_QUESTIONS = {
     'contact_email': "Thanks! What's the best email address to send your quote to?",
-    'gst_number': "Please share your GST number (GSTIN) and the address registered under it, in one message. If you don't have a GST number, reply NA followed by your billing address.",
-    'gst_address': "Thanks! And the address registered under your GST (or your billing address)?",
-    'product_description': "What product do you need?",
+    'gst_number': "Please share your GST details: your GST number (GSTIN) and the address registered under it.",
+    'gst_address': "Thanks! And the address registered under your GST?",
+    'product_description': "Your requirements, please.",
     'drawing': "Please attach a drawing with detailed dimensions, or a photo of a sample. You can send an image or PDF here, or reply 'no' if you don't have one.",
     'grade': "Which grade of material do you require?",
     'technical_requirements': "Any particular make (brand), mechanical properties (for example tensile strength, hardness, yield strength, elongation) or process to be carried out on the material? Please share the details, or reply 'no' if none.",
@@ -67,23 +67,16 @@ WHATSAPP_QUERY_QUESTIONS = {
 
 WHATSAPP_GST_INVALID_MESSAGE = (
     "I couldn't find a valid 15-character GST number in that (for example 22AAAAA0000A1Z5). "
-    "Please send your GST number and address together, or reply NA followed by your billing address "
-    "if you don't have a GST number."
+    "Please send your GST number along with your registered address."
 )
 
 
-# Format check only (state code, PAN, entity number, 'Z', checksum character) —
-# not the checksum itself, which would need the GST portal to verify.
-_GSTIN_PATTERN = re.compile(r'^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$')
-# The same shape found inside a longer message, bounded so it can't be carved
-# out of the middle of some other alphanumeric string.
-_GSTIN_IN_TEXT = re.compile(r'(?<![A-Za-z0-9])\d{2}[A-Za-z]{5}\d{4}[A-Za-z][1-9A-Za-z][Zz][0-9A-Za-z](?![A-Za-z0-9])')
+# The same GSTIN shape as the model's validator, found inside a longer message
+# and bounded so it can't be carved out of the middle of some other
+# alphanumeric string.
+_GSTIN_ONLY = re.compile(rf'^{GSTIN_PATTERN}$', re.IGNORECASE)
+_GSTIN_IN_TEXT = re.compile(rf'(?<![A-Za-z0-9]){GSTIN_PATTERN}(?![A-Za-z0-9])', re.IGNORECASE)
 _GST_LABEL_AT_END = re.compile(r'(?i)(?:gstin|gst\s*(?:no\.?|number)?)\s*[:\-\u2013]?\s*$')
-# "NA, 12 Industrial Area". A bare leading "no" is deliberately not treated as
-# NA here, since "No. 5 Mall Road" is an address; a reply that is *only* "no"
-# is still NA (see _NO_GST_ANSWERS).
-_NA_PREFIX = re.compile(r'(?is)^\s*(?:na|n/a|nil|none|not\s+registered|unregistered|not\s+applicable)\b[\s,;:\-\u2013.]*(.*)$')
-_NO_GST_ANSWERS = {'na', 'n/a', 'no', 'none', 'nil', 'not applicable', 'not registered', 'unregistered'}
 
 
 WHATSAPP_CLOSING_MESSAGE = (
@@ -189,25 +182,21 @@ def _clean_address(text):
 
 def _parse_whatsapp_gst_details(text):
     """Splits a reply to the GST question into (gst_number, address), or None
-    if there's neither a valid GSTIN nor an NA — so the caller can re-ask
-    rather than save a typo. gst_number is a normalised GSTIN or "NA"; address
-    is whatever else the customer wrote ("" if nothing, in which case the
+    if there's no valid GSTIN in it — so the caller can re-ask rather than
+    save a typo. A GST number is compulsory for every company, so there is no
+    "NA". gst_number comes back normalised (upper-case, no spaces); address is
+    whatever else the customer wrote ("" if nothing, in which case the
     sequence asks for it separately). Accepts the number alone (any case,
-    spaces ignored), "NA"/"no"/"none"/... alone, a GSTIN anywhere in a longer
-    message (before or after the address, with or without a "GSTIN:" label),
-    or NA followed by an address."""
+    spaces ignored), or a GSTIN anywhere in a longer message — before or after
+    the address, with or without a "GSTIN:" label."""
     text = (text or '').strip()
-    if _GSTIN_PATTERN.match(re.sub(r'\s+', '', text).upper()):
-        return re.sub(r'\s+', '', text).upper(), ''
-    if text.lower() in _NO_GST_ANSWERS:
-        return 'NA', ''
+    compact = re.sub(r'\s+', '', text).upper()
+    if _GSTIN_ONLY.match(compact):
+        return compact, ''
     found = _GSTIN_IN_TEXT.search(text)
     if found:
         before = _GST_LABEL_AT_END.sub('', text[:found.start()])
         return found.group(0).upper(), _clean_address(f"{before} {text[found.end():]}")
-    na = _NA_PREFIX.match(text)
-    if na:
-        return 'NA', _clean_address(na.group(1))
     return None
 
 

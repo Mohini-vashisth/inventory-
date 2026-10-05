@@ -76,6 +76,20 @@ def query_not_interested(request, pk):
     return redirect('query_dashboard')
 
 
+@staff_required(on_denied=redirect_to_admin_login)
+def query_detail(request, pk):
+    """Everything known about one query on a single page — the dashboard only
+    shows name and number, so this is where the rest lives. Read-only; edits
+    go through query_edit, and the same status-dependent actions as the
+    dashboard (send quote, copy link, ...) are offered here too."""
+    query = get_object_or_404(Query.objects.select_related('product_type', 'customer'), pk=pk)
+    return render(request, 'materials/query_detail.html', {
+        'query': query,
+        'quotations': query.quotations.order_by('-updated_at'),
+        'quote_base_url': _public_quote_base_url(request),
+    })
+
+
 @staff_required
 def query_edit(request, pk):
     """Fix a wrong/incomplete field on a query directly from the dashboard —
