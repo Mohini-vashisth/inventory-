@@ -3641,3 +3641,60 @@ class BackupMediaMirrorTests(SimpleTestCase):
         output = self._backup()
         self.assertIn("Backed up to", output)
         self.assertFalse(self.mirror.exists())
+
+
+class AdminSmokeTests(TestCase):
+    """Every registered admin page must render. Added for the Django 5.2
+    upgrade: django-jazzmin only lists support through Django 5.0, and nothing
+    else in the suite touches the admin. Sample records are loaded so the
+    custom list_display columns / readonly methods actually execute."""
+
+    @classmethod
+    def setUpTestData(cls):
+        from django.contrib.auth import get_user_model
+        from django.core.files.base import ContentFile
+        cls.admin_user = get_user_model().objects.create_superuser('root', 'r@example.com', 'pw')
+        cls._media = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls._media.cleanup)
+        with override_settings(MEDIA_ROOT=Path(cls._media.name)):
+            customer = Customer.objects.create(name='Admin Smoke Co', email='a@example.com')
+            product = ProductType.objects.create(item_code='Smoke Bar', grade='EN8D', size='1.200')
+            ProcessStep.objects.create(product_type=product, name='Cutting', order=1)
+            AllowedCoilSpec.objects.create(product_type=product, grade='EN8D', size='1.200')
+            GradeOption.objects.create(name='EN8D')
+            SizeOption.objects.create(value='1.200')
+            gate = GateEntry.objects.create(vendor='V', vehicle_no='HR26AB1234', total_weight=1000)
+            lot = GateEntryLot.objects.create(gate_entry=gate, company='Tata', grade='EN8D', size='1.200', no_of_coils=2)
+            coil = Material.objects.create(quantity=500, grade='EN8D', size='1.2', lot=lot)
+            order = Order.objects.create(customer=customer, product_type=product, quantity=100, status='in_production')
+            pick = OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=50)
+            job = ProductionJob.objects.create(pick=pick, product_type=product, job_no='SMOKE-1', order=order)
+            StepLog.objects.create(job=job, step=product.steps.first(), status='completed')
+            query = Query.objects.create(source='whatsapp', contact_phone='919876543210', company_name='Smoke Co')
+            query.drawing.save('d.pdf', ContentFile(b'%PDF-1.4'), save=True)
+            quotation = Quotation.objects.create(customer=customer, source_query=query, status='sent')
+            QuotationLineItem.objects.create(quotation=quotation, order=1, description='Bar', quantity=10, rate_per_kg=90)
+            Quotation.objects.create(customer=customer, status='draft')
+
+    def setUp(self):
+        self.client.force_login(self.admin_user)
+
+    def test_admin_index_and_every_registered_model_page_renders(self):
+        from django.contrib import admin
+        from django.urls import reverse
+        from django.test import RequestFactory
+        self.assertEqual(self.client.get('/admin/').status_code, 200)
+        request = RequestFactory().get('/admin/')
+        request.user = self.admin_user
+        checked = 0
+        for model, model_admin in admin.site._registry.items():
+            info = (model._meta.app_label, model._meta.model_name)
+            urls = [reverse('admin:%s_%s_changelist' % info)]
+            if model_admin.has_add_permission(request):  # some admins deliberately block adds
+                urls.append(reverse('admin:%s_%s_add' % info))
+            urls += [reverse('admin:%s_%s_change' % info, args=[obj.pk]) for obj in model.objects.all()[:3]]
+            for url in urls:
+                with self.subTest(url=url):
+                    self.assertEqual(self.client.get(url).status_code, 200)
+                    checked += 1
+        self.assertGreater(checked, 40)  # the sweep itself must not silently shrink to nothing
