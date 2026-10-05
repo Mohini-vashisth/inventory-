@@ -1,0 +1,9 @@
+<script>
+  function copyLink(url, btn) {
+    navigator.clipboard.writeText(url).then(function() {
+      const orig = btn.textContent;
+      btn.textContent = '✓ Copied!';
+      setTimeout(function() { btn.textContent = orig; }, 1500);
+    });
+  }
+</script>

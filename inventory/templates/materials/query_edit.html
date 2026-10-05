@@ -131,7 +131,7 @@
           <div class="form-group">
             <label>{{ label }}</label>
             {% if name == 'gst_number' %}
-            <input type="text" name="{{ name }}" maxlength="15" value="{{ value }}" placeholder="15-character GSTIN, or NA">
+            <input type="text" name="{{ name }}" maxlength="15" value="{{ value }}" placeholder="15-character GSTIN">
             {% else %}
             <textarea name="{{ name }}" rows="2">{{ value }}</textarea>
             {% endif %}

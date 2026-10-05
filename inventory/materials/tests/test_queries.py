@@ -308,52 +308,85 @@ class QueryDashboardTests(TestCase):
 
 
 class QueryIntakeDetailsTests(TestCase):
-    """What the WhatsApp bot collects (GST, product, make, ...) must be
-    visible to staff, editable, and useful when they go on to quote."""
+    """What the WhatsApp bot collects (GST, product, make, ...) lives on the
+    query's detail page, is editable, and is useful when staff go on to
+    quote. The dashboard itself only shows name and number."""
 
     def setUp(self):
         self.staff = User.objects.create_user('intake_staff', password='pw', is_staff=True)
         self.client.force_login(self.staff)
         self.query = Query.objects.create(
             source='whatsapp', contact_phone='919876543210', company_name='Intake Co',
+            contact_email='intake@example.com', grade='EN8D', quantity=Decimal('500'),
             gst_number='22AAAAA0000A1Z5', gst_address='12 Industrial Area, Faridabad',
-            product_description='Round bar, 12 mm\nwith chamfer', technical_requirements='Tata make', quantity_text='2 tons monthly',
+            product_description='Round bar, 12 mm\nwith chamfer', technical_requirements='Tata make',
+            quantity_text='2 tons monthly',
         )
 
-    def test_gst_and_requirement_details_are_kept_apart_and_in_asking_order(self):
-        self.assertEqual(self.query.gst_details(), [
+    def test_gst_and_requirement_rows_are_kept_apart_and_in_asking_order(self):
+        self.assertEqual(self.query.gst_rows(), [
             ('GST number', '22AAAAA0000A1Z5'),
             ('GST address', '12 Industrial Area, Faridabad'),
         ])
-        self.assertEqual(self.query.requirement_details(), [
-            ('Product', 'Round bar, 12 mm\nwith chamfer'),
+        self.assertEqual(self.query.requirement_rows(), [
+            ('Requirements', 'Round bar, 12 mm\nwith chamfer'),
             ('Make / properties / process', 'Tata make'),
+            ('End use & delivery form', ''),  # blank rows are kept so the detail page can show a dash
             ('Quantity & frequency', '2 tons monthly'),
         ])
 
-    def test_dashboard_shows_gst_with_the_company_and_only_product_details_under_requirements(self):
-        import re
-        Query.objects.create(source='call', contact_phone='9000000000', company_name='Bare Co')
+    def test_dashboard_shows_only_name_and_number(self):
         html = self.client.get(reverse('query_dashboard')).content.decode()
+        self.assertIn('Intake Co', html)
+        self.assertIn('919876543210', html)
+        for hidden in ('intake@example.com', 'GST number', '22AAAAA0000A1Z5', '12 Industrial Area',
+                       'Tata make', 'Round bar', 'EN8D', '<details'):
+            with self.subTest(hidden=hidden):
+                self.assertNotIn(hidden, html)
+        self.assertNotIn('<th>Product</th>', html)
+        self.assertNotIn('<th>Notes</th>', html)
 
-        requirements = re.findall(r'<details.*?</details>', html, re.S)
-        self.assertEqual(len(requirements), 1)  # only the query that has product details gets one
-        self.assertIn('Tata make', requirements[0])
-        self.assertIn('Round bar', requirements[0])
-        self.assertNotIn('GST', requirements[0])
-        self.assertNotIn('22AAAAA0000A1Z5', requirements[0])
+    def test_dashboard_links_each_query_to_its_detail_page(self):
+        detail_url = reverse('query_detail', kwargs={'pk': self.query.pk})
+        self.assertContains(self.client.get(reverse('query_dashboard')), f'href="{detail_url}"', count=2)  # name + Details button
 
-        company_cell = re.search(r'Intake Co.*?</td>', html, re.S).group(0)
-        self.assertIn('GST number:', company_cell)
-        self.assertIn('22AAAAA0000A1Z5', company_cell)
-        self.assertIn('12 Industrial Area, Faridabad', company_cell)
+    def test_detail_page_shows_everything(self):
+        response = self.client.get(reverse('query_detail', kwargs={'pk': self.query.pk}))
+        self.assertEqual(response.status_code, 200)
+        for text in ('Intake Co', '919876543210', 'intake@example.com', 'WhatsApp', 'EN8D', '22AAAAA0000A1Z5',
+                     '12 Industrial Area, Faridabad', 'Round bar, 12 mm', 'Tata make', '2 tons monthly'):
+            with self.subTest(text=text):
+                self.assertContains(response, text)
 
-    def test_gst_shows_even_when_there_are_no_product_details(self):
-        Query.objects.all().delete()
-        Query.objects.create(source='whatsapp', contact_phone='9111111111', company_name='Gst Only Co', gst_number='NA')
-        html = self.client.get(reverse('query_dashboard')).content.decode()
-        self.assertIn('GST number:', html)
-        self.assertNotIn('<details', html)
+    def test_detail_page_shows_a_dash_for_unanswered_fields(self):
+        bare = Query.objects.create(source='call', contact_phone='9000000000')
+        response = self.client.get(reverse('query_detail', kwargs={'pk': bare.pk}))
+        self.assertContains(response, 'GST number')
+        self.assertContains(response, 'Make / properties / process')
+        self.assertContains(response, '—')
+        self.assertNotContains(response, 'Quotations')  # no quotations yet, so no empty card
+
+    def test_detail_page_offers_the_same_actions_as_the_dashboard(self):
+        response = self.client.get(reverse('query_detail', kwargs={'pk': self.query.pk}))
+        self.assertContains(response, reverse('query_edit', kwargs={'pk': self.query.pk}))
+        self.assertContains(response, f"{reverse('quotation_form')}?query={self.query.pk}")
+        self.assertContains(response, reverse('query_not_interested', kwargs={'pk': self.query.pk}))
+
+    def test_detail_page_lists_quotations_with_a_pdf_link_and_the_copy_link_once_quoted(self):
+        customer = Customer.objects.create(name='Intake Co')
+        self.query.customer = customer
+        self.query.status = 'quote_sent'
+        self.query.save(update_fields=['customer', 'status'])
+        quotation = Quotation.objects.create(customer=customer, source_query=self.query, status='sent')
+        response = self.client.get(reverse('query_detail', kwargs={'pk': self.query.pk}))
+        self.assertContains(response, quotation.formatted_no())
+        self.assertContains(response, reverse('quotation_pdf', kwargs={'pk': quotation.pk}))
+        self.assertContains(response, 'Copy Link')
+
+    def test_detail_page_requires_staff(self):
+        self.client.logout()
+        url = reverse('query_detail', kwargs={'pk': self.query.pk})
+        self.assertRedirects(self.client.get(url), f"{reverse('admin_login')}?next={url}")
 
     def test_edit_form_shows_the_collected_answers(self):
         response = self.client.get(reverse('query_edit', kwargs={'pk': self.query.pk}))
@@ -378,24 +411,24 @@ class QueryIntakeDetailsTests(TestCase):
         self.assertEqual(self.query.end_use_delivery, 'shafts, coil')
         self.assertEqual(self.query.technical_requirements, 'polishing')
 
-    def test_edit_rejects_an_overlong_gst_number_and_saves_nothing(self):
-        response = self._edit(gst_number='X' * 20, end_use_delivery='should not be saved')
-        self.assertContains(response, 'error-msg')
-        self.query.refresh_from_db()
-        self.assertEqual(self.query.gst_number, '22AAAAA0000A1Z5')
-        self.assertEqual(self.query.end_use_delivery, '')
+    def test_edit_rejects_a_malformed_gst_number_and_saves_nothing(self):
+        for bad in ('X' * 20, 'NA', '22AAAAA0000A1Z', 'not a gstin'):
+            with self.subTest(gst_number=bad):
+                response = self._edit(gst_number=bad, end_use_delivery='should not be saved')
+                self.assertContains(response, 'error-msg')
+                self.query.refresh_from_db()
+                self.assertEqual(self.query.gst_number, '22AAAAA0000A1Z5')
+                self.assertEqual(self.query.end_use_delivery, '')
+
+    def test_edit_can_leave_the_gst_number_blank(self):
+        # Blank just means "not collected yet" (e.g. a phone-call lead); it can't be NA.
+        self.assertRedirects(self._edit(gst_number=''), reverse('query_dashboard'))
 
     def test_quote_form_prefills_address_gstin_and_product_description(self):
         response = self.client.get(f"{reverse('quotation_form')}?query={self.query.pk}")
         form_initial = response.context['form'].initial
         self.assertEqual(form_initial['customer_address'], '12 Industrial Area, Faridabad\nGSTIN: 22AAAAA0000A1Z5')
         self.assertContains(response, 'value="Round bar, 12 mm"')  # first line only, in the item description
-
-    def test_quote_form_leaves_gstin_out_for_an_unregistered_customer(self):
-        self.query.gst_number = 'NA'
-        self.query.save(update_fields=['gst_number'])
-        response = self.client.get(f"{reverse('quotation_form')}?query={self.query.pk}")
-        self.assertEqual(response.context['form'].initial['customer_address'], '12 Industrial Area, Faridabad')
 
     def test_quote_form_has_no_address_prefill_without_gst_details(self):
         bare = Query.objects.create(source='call', contact_phone='9000000001', company_name='Bare Co')

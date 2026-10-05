@@ -13,7 +13,9 @@ class TemplateStructureTests(TestCase):
     def test_every_page_template_extends_base_html(self):
         templates_dir = Path(settings.BASE_DIR) / 'templates'
         not_pages = {'base.html', '_base.css'}
-        pages = [p for p in templates_dir.rglob('*') if p.is_file() and p.name not in not_pages]
+        # files starting with '_' are partials ({% include %}d into pages), not pages
+        pages = [p for p in templates_dir.rglob('*')
+                 if p.is_file() and p.name not in not_pages and not p.name.startswith('_')]
         self.assertGreater(len(pages), 20)  # the scan itself must not silently find nothing
         missing = [str(p.relative_to(templates_dir)) for p in pages
                    if not p.read_text().lstrip().startswith('{% extends "materials/base.html" %}')]

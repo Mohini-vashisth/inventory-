@@ -228,7 +228,7 @@ def quotation_form(request, pk=None):
                     'phone': request.GET.get('phone', ''),
                 }
             address = query.gst_address if query else ''
-            if query and query.gst_number and query.gst_number != 'NA':
+            if query and query.gst_number:
                 address = f"{address}\nGSTIN: {query.gst_number}".strip()
             form = QuotationForm(initial={'customer_address': address} if address else None)
         formset = QuotationLineItemFormSet(initial=item_initial, prefix='item')

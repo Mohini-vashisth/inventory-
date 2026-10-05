@@ -162,8 +162,6 @@
         <tr>
           <th>Source</th>
           <th>Company / Contact</th>
-          <th>Product</th>
-          <th>Notes</th>
           <th>Status</th>
           <th>Received</th>
           <th></th>
@@ -174,68 +172,18 @@
         <tr>
           <td class="muted">{{ query.get_source_display }}</td>
           <td>
-            <div style="font-weight:600;">{{ query.company_name|default:query.contact_phone }}</div>
-            <div class="muted">{{ query.contact_email|default:"" }}{% if query.contact_email and query.contact_phone %} · {% endif %}{{ query.contact_phone|default:"" }}</div>
-            {% for label, value in query.gst_details %}
-            <div class="muted" style="font-size:0.85em; max-width:260px;"><strong>{{ label }}:</strong> <span style="white-space:pre-wrap;">{{ value }}</span></div>
-            {% endfor %}
-          </td>
-          <td>
-            {% if query.product_type %}{{ query.product_type.item_code }}<br>{% endif %}
-            <span class="muted">{{ query.grade|default:"" }}{% if query.grade and query.size %}, {% endif %}{{ query.size|default:"" }}{% if query.size %} mm{% endif %}</span>
-            {% if query.drawing %}
-            <br><a href="{{ query.drawing.url }}" target="_blank" class="muted" style="color:#4e73df;">📎 Drawing</a>
-            {% endif %}
-            {% with details=query.requirement_details %}
-            {% if details %}
-            <details style="margin-top:0.35rem;">
-              <summary class="muted" style="cursor:pointer;">Requirements</summary>
-              <div class="muted" style="font-size:0.85em; max-width:260px;">
-                {% for label, value in details %}
-                <div><strong>{{ label }}:</strong> <span style="white-space:pre-wrap;">{{ value }}</span></div>
-                {% endfor %}
-              </div>
-            </details>
-            {% endif %}
-            {% endwith %}
-          </td>
-          <td>
-            {% if query.notes %}
-            <div style="max-height:4.5em; overflow-y:auto; white-space:pre-wrap; font-size:0.85em; max-width:220px;" class="muted">{{ query.notes|truncatechars:300 }}</div>
-            {% else %}
-            <span class="muted">—</span>
-            {% endif %}
+            <a href="{% url 'query_detail' query.pk %}" style="font-weight:600; color:inherit; text-decoration:none;">{{ query.company_name|default:query.contact_phone }}</a>
+            {% if query.company_name %}<div class="muted">{{ query.contact_phone }}</div>{% endif %}
           </td>
           <td><span class="badge badge-{{ query.status }}">{{ query.get_status_display }}</span></td>
           <td class="muted">{{ query.created_at|date:"d M Y" }}</td>
           <td>
-            <a href="{% url 'query_edit' query.pk %}" class="icon-btn">✏️ Edit</a>
-            {% if query.status == 'new' %}
-              <a href="{% url 'quotation_form' %}?query={{ query.pk }}" class="icon-btn green">📧 Send Quote</a>
-              <form method="post" action="{% url 'query_not_interested' query.pk %}" style="display:inline;">
-                {% csrf_token %}
-                <button type="submit" class="icon-btn red">✕ Not Interested</button>
-              </form>
-            {% elif query.status == 'quote_sent' and query.customer %}
-              <a href="{% url 'quotation_form' %}?query={{ query.pk }}" class="icon-btn green">📧 Send Quote</a>
-              <button class="icon-btn"
-                      onclick="copyLink('{{ quote_base_url }}{% url 'quote_form' query.customer.quote_token %}', this)">
-                📋 Copy Link
-              </button>
-              {% with latest_quotation=query.quotations.first %}
-              {% if latest_quotation %}
-              <a href="{% url 'quotation_pdf' latest_quotation.pk %}" class="icon-btn">📄 PDF</a>
-              {% endif %}
-              {% endwith %}
-            {% elif query.status == 'converted' %}
-              <span class="muted">✅ Order placed</span>
-            {% else %}
-              <span class="muted">—</span>
-            {% endif %}
+            <a href="{% url 'query_detail' query.pk %}" class="icon-btn">👁 Details</a>
+            {% include "materials/_query_actions.html" %}
           </td>
         </tr>
         {% empty %}
-        <tr class="empty-row"><td colspan="7">No queries logged yet.</td></tr>
+        <tr class="empty-row"><td colspan="5">No queries logged yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -244,13 +192,5 @@
 
 </div>
 
-<script>
-  function copyLink(url, btn) {
-    navigator.clipboard.writeText(url).then(function() {
-      const orig = btn.textContent;
-      btn.textContent = '✓ Copied!';
-      setTimeout(function() { btn.textContent = orig; }, 1500);
-    });
-  }
-</script>
+{% include "materials/_copy_link_script.html" %}
 {% endblock %}

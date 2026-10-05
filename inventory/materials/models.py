@@ -1,6 +1,7 @@
 import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
+from django.core.validators import RegexValidator
 from django.db import models
 from django.contrib.auth.models import User
 from django.db.models.functions import Coalesce
@@ -336,6 +337,11 @@ class Customer(models.Model):
         return self.name
 
 
+# Shape of a GSTIN: state code, PAN, entity number, 'Z', checksum character.
+# Format only — the checksum would need the GST portal to verify.
+GSTIN_PATTERN = r'\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]'
+
+
 class Query(models.Model):
     """An inbound sales inquiry, logged before any quote/order exists —
     phone calls, referrals, IndiaMART messages, WhatsApp, etc. Staff decide
@@ -379,9 +385,13 @@ class Query(models.Model):
     drawing       = models.FileField(upload_to='query_drawings/%Y/%m/', blank=True, null=True)
     drawing_notes = models.CharField(max_length=255, blank=True)
     # A reply of "no" is a real answer and is kept: a non-blank value is what
-    # marks each question answered. gst_number is the one validated field —
-    # a well-formed 15-character GSTIN, or "NA" for an unregistered customer.
-    gst_number             = models.CharField(max_length=15, blank=True)
+    # marks each question answered. gst_number is the one validated field: a
+    # well-formed 15-character GSTIN is compulsory for every company, so there
+    # is no "NA" (blank only means it hasn't been collected yet).
+    gst_number             = models.CharField(
+        max_length=15, blank=True,
+        validators=[RegexValidator(rf'^{GSTIN_PATTERN}$', 'Enter a valid 15-character GST number.')],
+    )
     gst_address            = models.TextField(blank=True)
     product_description    = models.TextField(blank=True)
     technical_requirements = models.TextField(blank=True)  # particular make, mechanical properties, process
@@ -403,7 +413,7 @@ class Query(models.Model):
     INTAKE_TEXT_FIELDS = [
         ('gst_number', 'GST number'),
         ('gst_address', 'GST address'),
-        ('product_description', 'Product'),
+        ('product_description', 'Requirements'),
         ('technical_requirements', 'Make / properties / process'),
         ('end_use_delivery', 'End use & delivery form'),
         ('quantity_text', 'Quantity & frequency'),
@@ -412,17 +422,15 @@ class Query(models.Model):
     class Meta:
         ordering = ['-created_at']
 
-    def _answered(self, fields):
-        return [(label, getattr(self, field)) for field, label in self.INTAKE_TEXT_FIELDS
-                if field in fields and getattr(self, field)]
+    GST_FIELDS = ('gst_number', 'gst_address')
 
-    def gst_details(self):
-        """[(label, value)] of the GST answers given — shown with the company on the dashboard."""
-        return self._answered({'gst_number', 'gst_address'})
+    def gst_rows(self):
+        """[(label, value)] for the GST answers, blank ones included (the detail page shows a dash)."""
+        return [(label, getattr(self, f)) for f, label in self.INTAKE_TEXT_FIELDS if f in self.GST_FIELDS]
 
-    def requirement_details(self):
-        """[(label, value)] of the product-related answers given (everything except GST)."""
-        return self._answered({field for field, _ in self.INTAKE_TEXT_FIELDS} - {'gst_number', 'gst_address'})
+    def requirement_rows(self):
+        """[(label, value)] for the product-related answers (everything except GST), blank ones included."""
+        return [(label, getattr(self, f)) for f, label in self.INTAKE_TEXT_FIELDS if f not in self.GST_FIELDS]
 
     def __str__(self):
         label = self.company_name or self.contact_phone or f"Query #{self.pk}"
