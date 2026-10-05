@@ -444,8 +444,12 @@ class QueryIntakeDetailsTests(TestCase):
 
     def test_quote_form_prefills_address_gstin_and_product_description(self):
         response = self.client.get(f"{reverse('quotation_form')}?query={self.query.pk}")
-        form_initial = response.context['form'].initial
-        self.assertEqual(form_initial['customer_address'], '12 Industrial Area, Faridabad\nGSTIN: 22AAAAA0000A1Z5')
+        initial = response.context['form'].initial
+        self.assertEqual(initial['customer_address'], '12 Industrial Area, Faridabad')
+        self.assertEqual(initial['customer_gstin'], '22AAAAA0000A1Z5')   # its own field, not mixed into the address
+        html = response.content.decode()
+        self.assertIn('12 Industrial Area, Faridabad</textarea>', html)    # and actually on the page
+        self.assertIn('name="customer_gstin" maxlength="20" value="22AAAAA0000A1Z5"', html)
         self.assertContains(response, 'value="Round bar, 12 mm"')  # first line only, in the item description
 
     def test_quote_form_has_no_address_prefill_without_gst_details(self):

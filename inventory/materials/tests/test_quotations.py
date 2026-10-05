@@ -528,3 +528,93 @@ class ProductCodeMatchingTests(TestCase):
         html = self.client.get(reverse('quotation_form')).content.decode()
         self.assertIn('<label>Product Type</label>', html)
         self.assertIn('<label>Product Code</label>', html)
+
+
+class QuotationHeaderValuesTests(TestCase):
+    """The header fields ("More details") must show what was saved or prefilled -
+    the page used to read them from an empty dict and show every one blank."""
+
+    def setUp(self):
+        self.staff = User.objects.create_user('header_staff', password='pw', is_staff=True)
+        self.client.force_login(self.staff)
+        self.customer = Customer.objects.create(name='Header Co', email='h@example.com')
+
+    def _html(self, url):
+        return self.client.get(url).content.decode()
+
+    def test_resuming_a_draft_shows_its_saved_header_values(self):
+        import datetime
+        draft = Quotation.objects.create(
+            customer=self.customer, status='draft', ref_no='REF-77', rev_no=2, rev_date=datetime.date(2026, 10, 7),
+            sales_person='Sam', kind_attn='Mr Rao', subject='Chamfer', customer_address='12 Draft Road',
+            customer_gstin='22AAAAA0000A1Z5', freight_amount=150, payment_terms='50% advance',
+            same_state_as_us=False,
+        )
+        html = self._html(reverse('quotation_edit', kwargs={'pk': draft.pk}))
+        for fragment in ('value="REF-77"', 'value="2"', 'value="2026-10-07"', 'value="Sam"', 'value="Mr Rao"',
+                         'value="Chamfer"', '12 Draft Road</textarea>', 'value="22AAAAA0000A1Z5"',
+                         'value="150.00"', 'value="50% advance"'):
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, html)
+        self.assertNotRegex(html, r'id="same_state_as_us"[^>]*checked')   # saved as out-of-state
+
+    def test_a_new_quotation_starts_in_state_with_the_standard_terms(self):
+        html = self._html(reverse('quotation_form'))
+        self.assertRegex(html, r'id="same_state_as_us"[^>]*checked')
+        self.assertIn('value="100% Advance"', html)
+
+    def test_a_returning_customer_gets_the_address_and_gstin_from_their_last_quote(self):
+        Quotation.objects.create(customer=self.customer, status='sent', customer_address='7 Repeat Lane', customer_gstin='27BBBBB1111B1Z6')
+        html = self._html(f"{reverse('quotation_form')}?customer={self.customer.pk}")
+        self.assertIn('7 Repeat Lane</textarea>', html)
+        self.assertIn('value="27BBBBB1111B1Z6"', html)
+
+    def test_a_resent_quote_shows_the_prefilled_revision_on_the_page(self):
+        import datetime
+        from django.utils import timezone
+        query = Query.objects.create(source='indiamart', contact_phone='9123456780', company_name='Header Co')
+        Quotation.objects.create(customer=self.customer, source_query=query, status='sent')
+        html = self._html(f"{reverse('quotation_form')}?query={query.pk}")
+        self.assertIn('name="rev_no" value="1"', html)
+        self.assertIn(f'name="rev_date" value="{timezone.localdate().isoformat()}"', html)
+        self.assertIsInstance(timezone.localdate(), datetime.date)
+
+    def _send(self, **header):
+        with patch('materials.views.quotations._dispatch_quote_email'):
+            return self.client.post(f"{reverse('quotation_form')}?customer={self.customer.pk}",
+                                    quotation_item_post_data(**{'action': 'send', **header}))
+
+    def test_the_customer_gstin_is_normalised_and_saved(self):
+        self._send(customer_gstin=' 22 aaaaa 0000 a1z5 ', customer_address='1 Road')
+        quotation = Quotation.objects.get(customer=self.customer)
+        self.assertEqual((quotation.customer_gstin, quotation.customer_address), ('22AAAAA0000A1Z5', '1 Road'))
+
+    def test_an_invalid_gstin_is_rejected_and_nothing_is_sent(self):
+        response = self._send(customer_gstin='NOTAGSTIN')
+        self.assertContains(response, 'valid 15-character GST number')
+        self.assertFalse(Quotation.objects.filter(customer=self.customer).exists())
+
+    def test_the_gstin_is_optional(self):
+        self._send(customer_gstin='')
+        self.assertEqual(Quotation.objects.get(customer=self.customer).customer_gstin, '')
+
+
+class QuotationPdfCustomerDetailsTests(TestCase):
+    def _text(self, **fields):
+        import re
+        customer = Customer.objects.create(name='Pdf Details Co')
+        quotation = Quotation.objects.create(customer=customer, status='sent', **fields)
+        QuotationLineItem.objects.create(quotation=quotation, order=1, description='Bar', quantity=10, rate_per_kg=90)
+        with patch('reportlab.rl_config.pageCompression', 0):
+            data = generate_quotation_pdf(quotation)
+        return b' '.join(re.findall(rb'\((.*?)\)\s*Tj', data)).decode('latin-1')
+
+    def test_the_customers_address_and_gstin_print_in_the_quotation_to_box(self):
+        text = self._text(customer_address='12 Industrial Area', customer_gstin='22AAAAA0000A1Z5')
+        self.assertIn('12 Industrial Area', text)
+        self.assertIn('22AAAAA0000A1Z5', text)
+
+    def test_no_gstin_row_when_there_isnt_one(self):
+        text = self._text(customer_address='12 Industrial Area')
+        self.assertIn('12 Industrial Area', text)
+        self.assertNotIn('22AAAAA0000A1Z5', text)

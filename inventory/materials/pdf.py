@@ -165,6 +165,8 @@ def generate_quotation_pdf(quotation):
     to_rows = [("Quotation to", Paragraph(f"<b>M/s. {_esc(customer.name)}</b>", styles['box_value']))]
     if quotation.customer_address:
         to_rows.append(("Address", Paragraph(_esc(quotation.customer_address), styles['box_value'])))
+    if quotation.customer_gstin:
+        to_rows.append(("GSTIN", Paragraph(_esc(quotation.customer_gstin), styles['box_value'])))
     if customer.email:
         to_rows.append(("Email", Paragraph(_esc(customer.email), styles['box_value'])))
     if customer.phone:
