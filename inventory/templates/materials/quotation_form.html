@@ -134,7 +134,9 @@
     {{ msg }}
   </div>
   {% endfor %}
-  {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
+  {% if error %}<div class="error-msg">{{ error }}
+    {% for missing in missing_codes %}{% if missing.url %}<div style="margin-top:0.4rem;"><a href="{{ missing.url }}" target="_blank" rel="noopener">➕ Add product code: {{ missing.label }}</a></div>{% endif %}{% endfor %}
+  </div>{% endif %}
 
   <form method="post" id="quotation-form">
     {% csrf_token %}
@@ -229,7 +231,7 @@
             <div class="form-row cols-5">
               <div class="form-group">
                 <label>Grade</label>
-                <input type="text" name="item-{{ forloop.counter0 }}-grade" value="{{ item_form.grade.value|default:'' }}" placeholder="EN8D">
+                <input type="text" name="item-{{ forloop.counter0 }}-grade" value="{{ item_form.grade.value|default:'' }}" placeholder="Start typing…" list="grade-options" autocomplete="off">
               </div>
               <div class="form-group">
                 <label>Size (mm)</label>
@@ -438,7 +440,7 @@
           '<select name="item-' + index + '-product_type">' + document.querySelector('[name="item-0-product_type"]').innerHTML + '</select></div>' +
       '</div>' +
       '<div class="form-row cols-5">' +
-        '<div class="form-group"><label>Grade</label><input type="text" name="item-' + index + '-grade" placeholder="EN8D"></div>' +
+        '<div class="form-group"><label>Grade</label><input type="text" name="item-' + index + '-grade" placeholder="Start typing…" list="grade-options" autocomplete="off"></div>' +
         '<div class="form-group"><label>Size (mm)</label><input type="number" step="0.001" name="item-' + index + '-size"></div>' +
         '<div class="form-group"><label>Quantity *</label><input type="number" step="0.001" min="0.001" name="item-' + index + '-quantity"></div>' +
         '<div class="form-group"><label>Unit</label><input type="text" name="item-' + index + '-unit" value="KGS"></div>' +
@@ -460,6 +462,8 @@
     updateRemoveButtonsVisibility();
   });
 </script>
+
+<datalist id="grade-options">{% for grade in grade_options %}<option value="{{ grade }}">{% endfor %}</datalist>
 
 {{ product_code_map|json_script:"product-code-map" }}
 <script>
@@ -494,8 +498,18 @@
           .then(function (response) { return response.json(); })
           .then(function (data) {
             if (select.value) { hint.textContent = ''; return; }
-            hint.className = 'code-hint' + (data.item_code ? '' : ' code-hint-warn');
-            hint.textContent = data.item_code ? 'New code ' + data.item_code + ' will be created when you send' : (data.reason || '');
+            // No code exists for this type + grade + size. Quotes don't create them: the admin
+            // adds it first (the link opens the admin form with these values filled in).
+            hint.className = 'code-hint code-hint-warn';
+            hint.textContent = (data.reason || 'No product code for this yet.') + ' ';
+            if (data.add_url) {
+              var link = document.createElement('a');
+              link.href = data.add_url;
+              link.target = '_blank';
+              link.rel = 'noopener';
+              link.textContent = 'Add it in the admin before sending';
+              hint.appendChild(link);
+            }
           })
           .catch(function () { hint.textContent = ''; });
       }, 250));
@@ -522,8 +536,22 @@
     container.addEventListener('input', function (event) {
       if (/-(grade|size)$/.test(event.target.name || '')) matchRow(event.target.closest('.item-row'));
     });
+    // Typing "en8d" where the list has "EN8D" settles on the listed spelling, so one grade
+    // isn't written several ways (each would get its own grade number in product codes).
+    function canonicalGrade(input) {
+      var typed = input.value.trim().toLowerCase();
+      var listed = Array.prototype.find.call(document.querySelectorAll('#grade-options option'), function (option) {
+        return option.value.toLowerCase() === typed;
+      });
+      if (listed && listed.value !== input.value) {
+        input.value = listed.value;
+        input.dispatchEvent(new Event('input', {bubbles: true}));
+      }
+    }
+
     container.addEventListener('change', function (event) {
       var name = event.target.name || '';
+      if (/-grade$/.test(name)) canonicalGrade(event.target);
       if (/-product_type$/.test(name)) event.target.dataset.auto = '';
       if (/-category$/.test(name)) matchRow(event.target.closest('.item-row'));
     });

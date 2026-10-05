@@ -150,6 +150,10 @@ class QuotationLineItemForm(forms.Form):
         self.fields['category'].queryset = ProductCategory.objects.all()
         self.fields['product_type'].queryset = ProductType.objects.order_by('item_code')
 
+    def clean_grade(self):
+        from .product_codes import canonical_grade
+        return canonical_grade(self.cleaned_data.get('grade'))
+
     def clean_unit(self):
         return self.cleaned_data.get('unit') or 'KGS'
 
