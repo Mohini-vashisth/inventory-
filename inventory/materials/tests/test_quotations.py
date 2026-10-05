@@ -625,3 +625,16 @@ class QuotationPdfCustomerDetailsTests(TestCase):
         text = self._text(customer_address='12 Industrial Area')
         self.assertIn('12 Industrial Area', text)
         self.assertNotIn('22AAAAA0000A1Z5', text)
+
+    def test_both_boxes_list_their_rows_in_the_same_order(self):
+        from django.test import override_settings
+        with override_settings(COMPANY_ADDRESS='1 Our Road', COMPANY_GST='06OURGST0000A1Z5', COMPANY_EMAIL='us@example.com',
+                               COMPANY_PHONE='111-OURS', COMPANY_WEBSITE='ours.example'):
+            text = self._text(customer_address='2 Their Road', customer_gstin='22AAAAA0000A1Z5')
+        # "Our" box comes first on the page, then theirs; each must run address -> GSTIN -> email -> phone.
+        ours, theirs = text.split('Quotation to', 1)
+        self.assertLess(ours.index('1 Our Road'), ours.index('06OURGST0000A1Z5'))
+        self.assertLess(ours.index('06OURGST0000A1Z5'), ours.index('us@example.com'))
+        self.assertLess(ours.index('us@example.com'), ours.index('111-OURS'))
+        self.assertLess(ours.index('111-OURS'), ours.index('ours.example'))
+        self.assertLess(theirs.index('2 Their Road'), theirs.index('22AAAAA0000A1Z5'))
