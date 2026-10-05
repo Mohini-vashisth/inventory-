@@ -8,7 +8,9 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from ..models import AllowedCoilSpec, Customer, Material, Order, OrderCoilPick, ProductType
+from ..models import (
+    AllowedCoilSpec, Customer, Material, Order, OrderCoilPick, ProductType, Query, Quotation, QuotationLineItem,
+)
 
 
 class OrderNumberingTests(TestCase):
@@ -349,3 +351,186 @@ class CustomerAutocompleteTests(TestCase):
         response = self.client.get(reverse('customer_autocomplete'), {'q': 'acme'})
         names = [r['name'] for r in response.json()]
         self.assertEqual(names, ['Acme Traders'])
+
+
+class CustomerOrderFormTests(TestCase):
+    """The customer's order form: product code, grade and size come from the
+    quote and are locked; each quoted item becomes its own order."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(name='Order Form Co', email='of@example.com')
+        self.code_a = ProductType.objects.create(item_code='CODE-A', grade='EN8D', size='1.200')
+        self.code_b = ProductType.objects.create(item_code='CODE-B', grade='SS304', size='2.500')
+        self.quotation = Quotation.objects.create(customer=self.customer, status='sent')
+        self.item_a = QuotationLineItem.objects.create(
+            quotation=self.quotation, order=1, description='Bar A', product_type=self.code_a,
+            grade='EN8D', size=Decimal('1.200'), quantity=Decimal('500'), rate_per_kg=90)
+        self.item_b = QuotationLineItem.objects.create(
+            quotation=self.quotation, order=2, description='Bar B', product_type=self.code_b,
+            grade='SS304', size=Decimal('2.500'), quantity=Decimal('300'), rate_per_kg=120)
+        self.url = reverse('quote_form', kwargs={'token': self.customer.quote_token})
+
+    def _post_data(self, items=None, **overrides):
+        items = items if items is not None else [self.item_a, self.item_b]
+        data = {'item-TOTAL_FORMS': str(len(items)), 'item-INITIAL_FORMS': str(len(items)),
+                'item-MIN_NUM_FORMS': '0', 'item-MAX_NUM_FORMS': '1000'}
+        for index, item in enumerate(items):
+            data[f'item-{index}-line_item'] = str(item.pk)
+            data[f'item-{index}-quantity'] = str(item.quantity)
+        data.update(overrides)
+        return data
+
+    def test_each_quoted_item_is_shown_with_its_code_grade_and_size_locked(self):
+        html = self.client.get(self.url).content.decode()
+        for text in ('CODE-A', 'EN8D', '1.200', 'CODE-B', 'SS304', '2.500', 'Bar A', 'Bar B'):
+            with self.subTest(text=text):
+                self.assertIn(text, html)
+        for name in ('product_type', 'grade', 'size'):
+            with self.subTest(field=name):
+                self.assertNotIn(f'name="{name}"', html)
+                self.assertNotIn(f'-{name}"', html)  # no item-N-product_type / -grade / -size inputs either
+
+    def test_quantity_is_prefilled_from_the_quote(self):
+        html = self.client.get(self.url).content.decode()
+        self.assertIn('value="500.000"', html)
+        self.assertIn('value="300.000"', html)
+
+    def test_submitting_creates_one_order_per_quoted_item_with_the_quoted_code_grade_size(self):
+        self.client.post(self.url, self._post_data())
+        orders = Order.objects.filter(customer=self.customer).order_by('pk')
+        self.assertEqual(orders.count(), 2)
+        first, second = orders
+        self.assertEqual((first.product_type, first.grade, first.size, first.quantity),
+                         (self.code_a, 'EN8D', Decimal('1.200'), Decimal('500')))
+        self.assertEqual((second.product_type, second.grade, second.size, second.quantity),
+                         (self.code_b, 'SS304', Decimal('2.500'), Decimal('300')))
+        self.assertTrue(all(o.status == 'pending' for o in orders))
+
+    def test_posted_code_grade_and_size_are_ignored(self):
+        data = self._post_data(**{
+            'item-0-product_type': str(self.code_b.pk), 'item-0-grade': 'HACKED', 'item-0-size': '9.999',
+            'product_type': str(self.code_b.pk), 'grade': 'HACKED', 'size': '9.999',
+        })
+        self.client.post(self.url, data)
+        first = Order.objects.filter(customer=self.customer).order_by('pk').first()
+        self.assertEqual((first.product_type, first.grade, first.size), (self.code_a, 'EN8D', Decimal('1.200')))
+
+    def test_customer_can_change_quantity_and_add_details_per_item(self):
+        data = self._post_data(**{'item-0-quantity': '650', 'item-0-end_usage': 'shafts',
+                                  'item-1-frequency': 'monthly', 'item-1-delivery_form': 'coil'})
+        self.client.post(self.url, data)
+        first, second = Order.objects.filter(customer=self.customer).order_by('pk')
+        self.assertEqual((first.quantity, first.end_usage), (Decimal('650'), 'shafts'))
+        self.assertEqual((second.frequency, second.delivery_form), ('monthly', 'coil'))
+
+    def test_an_item_with_no_catalogue_code_gets_none_and_one_matching_its_spec_is_matched(self):
+        self.item_a.product_type = None
+        self.item_a.save()
+        self.item_b.grade, self.item_b.size = 'UNKNOWN', Decimal('7.000')
+        self.item_b.product_type = None
+        self.item_b.save()
+        self.client.post(self.url, self._post_data())
+        first, second = Order.objects.filter(customer=self.customer).order_by('pk')
+        self.assertEqual(first.product_type, self.code_a)   # matched from EN8D / 1.200 at order time
+        self.assertIsNone(second.product_type)              # no catalogue code: assigned at confirmation
+
+    def test_quantity_is_required_for_every_item_and_nothing_is_created_on_error(self):
+        token_before = self.customer.quote_token
+        response = self.client.post(self.url, self._post_data(**{'item-1-quantity': ''}))
+        self.assertContains(response, 'error-msg')
+        self.assertEqual(Order.objects.filter(customer=self.customer).count(), 0)
+        self.customer.refresh_from_db()
+        self.assertEqual(self.customer.quote_token, token_before)  # a failed submission doesn't burn the link
+
+    def test_an_out_of_date_or_tampered_form_is_rejected(self):
+        other = Customer.objects.create(name='Someone Else')
+        foreign_quote = Quotation.objects.create(customer=other, status='sent')
+        foreign_item = QuotationLineItem.objects.create(
+            quotation=foreign_quote, order=1, description='Not yours', quantity=1, rate_per_kg=1)
+        cases = {
+            'wrong item id': self._post_data(**{'item-1-line_item': str(foreign_item.pk)}),
+            'items swapped': self._post_data(items=[self.item_b, self.item_a]),
+            'item dropped': self._post_data(items=[self.item_a]),
+            'blank forms': {'item-TOTAL_FORMS': '2', 'item-INITIAL_FORMS': '0',
+                            'item-MIN_NUM_FORMS': '0', 'item-MAX_NUM_FORMS': '1000'},
+        }
+        for label, data in cases.items():
+            with self.subTest(case=label):
+                response = self.client.post(self.url, data)
+                self.assertContains(response, 'error-msg')
+                self.assertEqual(Order.objects.filter(customer=self.customer).count(), 0)
+
+    def test_the_purchase_order_is_attached_to_every_order(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        with tempfile.TemporaryDirectory() as tmp, override_settings(MEDIA_ROOT=tmp):
+            po = SimpleUploadedFile('one_po.pdf', b'%PDF-1.4 shared po', content_type='application/pdf')
+            self.client.post(self.url, {**self._post_data(), 'purchase_order': po})
+            orders = list(Order.objects.filter(customer=self.customer))
+            self.assertEqual(len(orders), 2)
+            for order in orders:
+                with self.subTest(order=order.pk):
+                    self.assertIn('one_po', order.purchase_order.name)
+                    self.assertEqual(order.purchase_order.read(), b'%PDF-1.4 shared po')
+
+    def test_submitting_converts_the_query_links_the_orders_and_burns_the_link(self):
+        query = Query.objects.create(source='indiamart', company_name='Order Form Co',
+                                     customer=self.customer, status='quote_sent')
+        old_token = self.customer.quote_token
+        self.client.post(self.url, self._post_data())
+        query.refresh_from_db()
+        self.customer.refresh_from_db()
+        self.assertEqual(query.status, 'converted')
+        self.assertTrue(all(o.source_query == query for o in Order.objects.filter(customer=self.customer)))
+        self.assertNotEqual(self.customer.quote_token, old_token)
+        self.assertEqual(self.client.get(self.url).status_code, 404)
+
+    def test_the_latest_sent_quotation_is_used_and_drafts_are_ignored(self):
+        newer = Quotation.objects.create(customer=self.customer, status='sent')
+        QuotationLineItem.objects.create(quotation=newer, order=1, description='Newer bar', product_type=self.code_b,
+                                         grade='SS304', size=Decimal('2.500'), quantity=Decimal('42'), rate_per_kg=1)
+        draft = Quotation.objects.create(customer=self.customer, status='draft')
+        QuotationLineItem.objects.create(quotation=draft, order=1, description='Draft bar', quantity=1, rate_per_kg=1)
+        html = self.client.get(self.url).content.decode()
+        self.assertIn('Newer bar', html)
+        self.assertNotIn('Bar A', html)
+        self.assertNotIn('Draft bar', html)
+
+    def test_a_single_item_quote_shows_one_block_and_makes_one_order(self):
+        single = Customer.objects.create(name='Single Co')
+        quote = Quotation.objects.create(customer=single, status='sent')
+        item = QuotationLineItem.objects.create(quotation=quote, order=1, description='Only bar',
+                                                product_type=self.code_a, grade='EN8D', size=Decimal('1.200'),
+                                                quantity=Decimal('100'), rate_per_kg=1)
+        url = reverse('quote_form', kwargs={'token': single.quote_token})
+        self.assertContains(self.client.get(url), 'Item 1', count=1)
+        self.client.post(url, self._post_data(items=[item]))
+        self.assertEqual(Order.objects.filter(customer=single).count(), 1)
+
+
+class CustomerOrderFormWithoutAQuoteTests(TestCase):
+    """An old link sent before quotes existed has nothing to read a code from:
+    a single free-form order, still with no product-code dropdown."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(name='Old Link Co')
+        self.url = reverse('quote_form', kwargs={'token': self.customer.quote_token})
+        self.code = ProductType.objects.create(item_code='CODE-X', grade='EN8D', size='1.200')
+
+    def test_there_is_no_product_code_dropdown(self):
+        html = self.client.get(self.url).content.decode()
+        self.assertNotIn('name="product_type"', html)
+        self.assertIn('name="grade"', html)
+        self.assertIn('name="size"', html)
+
+    def test_the_code_is_matched_from_the_grade_and_size_typed(self):
+        self.client.post(self.url, {'quantity': '250', 'grade': 'en8d', 'size': '1.2'})
+        self.assertEqual(Order.objects.get(customer=self.customer).product_type, self.code)
+
+    def test_no_match_leaves_the_code_to_be_assigned_at_confirmation(self):
+        self.client.post(self.url, {'quantity': '250', 'grade': 'EN9', 'size': '3'})
+        self.assertIsNone(Order.objects.get(customer=self.customer).product_type)
+
+    def test_a_posted_product_type_is_ignored(self):
+        other = ProductType.objects.create(item_code='CODE-Y', grade='SS304', size='2.500')
+        self.client.post(self.url, {'quantity': '250', 'product_type': str(other.pk)})
+        self.assertIsNone(Order.objects.get(customer=self.customer).product_type)

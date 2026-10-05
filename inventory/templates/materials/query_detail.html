@@ -119,7 +119,7 @@
     <div class="card-header">Product &amp; requirements</div>
     <div class="card-body">
       <dl class="rows">
-        <dt>Product type</dt><dd>{% if query.product_type %}{{ query.product_type.item_code }}{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Product code</dt><dd>{% if query.product_type %}{{ query.product_type.item_code }}{% else %}<span class="blank">—</span>{% endif %}</dd>
         <dt>Grade</dt><dd>{{ query.grade|default:"—" }}</dd>
         <dt>Size</dt><dd>{% if query.size %}{{ query.size }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>
         <dt>Quantity (kg)</dt><dd>{{ query.quantity|default:"—" }}</dd>

@@ -13,7 +13,7 @@ from ..models import ProductType, Customer, Query, Quotation, QuotationLineItem
 from ..forms import QuotationForm, QuotationLineItemFormSet
 from ..pdf import generate_quotation_pdf
 from ..decorators import staff_required
-from .common import _first_form_error, _first_formset_error, _safe_get
+from .common import _first_form_error, _first_formset_error, _match_product_type, _safe_get
 
 
 def _resolve_quotation_customer(customer_name, query, existing_customer, email, phone):
@@ -46,6 +46,17 @@ def _resolve_quotation_customer(customer_name, query, existing_customer, email, 
             customer.phone = phone
         customer.save(update_fields=['email', 'phone'])
     return customer
+
+
+def _autofill_product_codes(item_dicts):
+    """When the owner has filled in grade and size but not picked a product
+    code, match the catalogue code for them — the code identifies a grade+size
+    (they're unique together), so there's nothing for them to choose. A code
+    picked by hand is never overridden, and no match leaves it blank (the
+    order's code is then assigned when it's confirmed)."""
+    for item in item_dicts:
+        if not item.get('product_type'):
+            item['product_type'] = _match_product_type(item.get('grade'), item.get('size'))
 
 
 def _parse_draft_line_items(post_data):
@@ -155,6 +166,7 @@ def quotation_form(request, pk=None):
                 item_dicts = [dict(item_data) for item_data in formset.cleaned_data]
             else:
                 item_dicts = _parse_draft_line_items(request.POST)
+            _autofill_product_codes(item_dicts)
 
             with transaction.atomic():
                 customer = _resolve_quotation_customer(customer_name, query, existing_customer, email, phone)
@@ -234,6 +246,11 @@ def quotation_form(request, pk=None):
         formset = QuotationLineItemFormSet(initial=item_initial, prefix='item')
 
     return render(request, 'materials/quotation_form.html', {
+        # grade + size -> product code, for the form's live auto-match (see _autofill_product_codes)
+        'product_code_map': [
+            {'pk': pt.pk, 'grade': pt.grade.lower(), 'size': f"{pt.size:.3f}"}
+            for pt in ProductType.objects.exclude(size=None)
+        ],
         'form': form,
         'formset': formset,
         'query': query,

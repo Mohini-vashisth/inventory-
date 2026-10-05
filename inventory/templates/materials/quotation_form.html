@@ -208,7 +208,7 @@
                 <input type="text" name="item-{{ forloop.counter0 }}-description" value="{{ item_form.description.value|default:'' }}" placeholder="e.g. Steel Chamfer 10x10x14 mm">
               </div>
               <div class="form-group">
-                <label>Product Type</label>
+                <label>Product Code</label>
                 <select name="item-{{ forloop.counter0 }}-product_type">
                   <option value="">— none —</option>
                   {% for pt in item_form.fields.product_type.queryset %}
@@ -417,7 +417,7 @@
       '<div class="form-row cols-2">' +
         '<div class="form-group"><label>Description *</label>' +
           '<input type="text" name="item-' + index + '-description" placeholder="e.g. Steel Chamfer 10x10x14 mm"></div>' +
-        '<div class="form-group"><label>Product Type</label>' +
+        '<div class="form-group"><label>Product Code</label>' +
           '<select name="item-' + index + '-product_type">' + document.querySelector('[name="item-0-product_type"]').innerHTML + '</select></div>' +
       '</div>' +
       '<div class="form-row cols-5">' +
@@ -435,9 +435,44 @@
         '<div class="form-group"><label>MOQ</label><input type="number" step="0.001" min="0" name="item-' + index + '-moq" value="0"></div>' +
       '</div>';
 
+    // The copied options carry row 1's selected="selected"; a new row starts with no code.
+    row.querySelector('select[name$="-product_type"]').value = '';
     document.getElementById('items-container').appendChild(row);
     totalInput.value = index + 1;
     updateRemoveButtonsVisibility();
   });
+</script>
+
+{{ product_code_map|json_script:"product-code-map" }}
+<script>
+  // The product code identifies a grade + size, so once both are filled in the
+  // code is matched for the owner. A code picked by hand is never overridden.
+  (function () {
+    var codes = JSON.parse(document.getElementById('product-code-map').textContent);
+    var container = document.getElementById('items-container');
+
+    function normSize(value) {
+      var n = parseFloat(value);
+      return isNaN(n) ? '' : n.toFixed(3);
+    }
+
+    function matchRow(row) {
+      var grade = (row.querySelector('[name$="-grade"]').value || '').trim().toLowerCase();
+      var size = normSize(row.querySelector('[name$="-size"]').value);
+      var select = row.querySelector('select[name$="-product_type"]');
+      if (select.value && select.dataset.auto !== '1') return;
+      var found = grade && size ? codes.find(function (c) { return c.grade === grade && c.size === size; }) : null;
+      select.value = found ? String(found.pk) : '';
+      select.dataset.auto = found ? '1' : '';
+    }
+
+    container.addEventListener('input', function (event) {
+      if (/-(grade|size)$/.test(event.target.name || '')) matchRow(event.target.closest('.item-row'));
+    });
+    container.addEventListener('change', function (event) {
+      if (/-product_type$/.test(event.target.name || '')) event.target.dataset.auto = '';
+    });
+    document.querySelectorAll('.item-row').forEach(matchRow);
+  })();
 </script>
 {% endblock %}

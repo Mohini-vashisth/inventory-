@@ -61,6 +61,18 @@
       border: none; border-radius: 8px; font-size: 1rem; cursor: pointer;
     }
 
+    .item-card {
+      border: 1px solid #e8ecff; border-radius: 12px;
+      padding: 1rem 1.1rem 0.4rem; margin-bottom: 1.1rem; background: #fafbff;
+    }
+    .item-head { margin-bottom: 0.9rem; }
+    .item-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.45rem; }
+    .item-spec { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; font-size: 0.85rem; color: #555; }
+    .item-spec b {
+      font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em;
+      color: #888; margin-right: 0.3rem;
+    }
+
     @media (max-width: 520px) {
       .cols-2, .cols-3 { grid-template-columns: 1fr; }
     }
@@ -78,21 +90,44 @@
     <form method="post" enctype="multipart/form-data">
       {% csrf_token %}
 
-      <div class="section-label">Product</div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>Product Type</label>
-          <select name="product_type" id="q-product-type">
-            <option value="">— select if known —</option>
-            {% for pt in product_types %}
-            <option value="{{ pt.pk }}" {% if post.product_type == pt.pk|stringformat:"s" %}selected{% endif %}>
-              {{ pt.item_code }}
-            </option>
-            {% endfor %}
-          </select>
+      {% if item_forms %}
+      {{ formset.management_form }}
+      {% for item_form, item in item_forms %}
+      <div class="item-card">
+        <div class="item-head">
+          <div class="item-title">Item {{ forloop.counter }}{% if item.description %} — {{ item.description }}{% endif %}</div>
+          <div class="item-spec">
+            <span><b>Product code</b> {% if item.product_type %}{{ item.product_type.item_code }}{% else %}To be assigned{% endif %}</span>
+            <span><b>Grade</b> {{ item.grade|default:"—" }}</span>
+            <span><b>Size</b> {% if item.size %}{{ item.size }} mm{% else %}—{% endif %}</span>
+          </div>
+        </div>
+        {{ item_form.line_item }}
+        <div class="form-row cols-3">
+          <div class="form-group"><label>Required Quantity (kg) *</label>{{ item_form.quantity }}</div>
+          <div class="form-group"><label>Delivery Form</label>{{ item_form.delivery_form }}</div>
+          <div class="form-group"><label>Frequency</label>{{ item_form.frequency }}</div>
+        </div>
+        <div class="form-row cols-2">
+          <div class="form-group"><label>Specific Mill Make</label>{{ item_form.mill_make }}</div>
+          <div class="form-group"><label>Expected Delivery Date</label>{{ item_form.delivery_date }}</div>
+        </div>
+        <div class="form-row cols-2">
+          <div class="form-group"><label>Drawing / Dimensions</label>{{ item_form.drawing_dimensions }}</div>
+          <div class="form-group"><label>Mechanical Properties</label>{{ item_form.mechanical_properties }}</div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Processes Required</label>{{ item_form.processes }}</div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>End Usage / Application</label>{{ item_form.end_usage }}</div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Additional Notes</label>{{ item_form.notes }}</div>
         </div>
       </div>
-
+      {% endfor %}
+      {% else %}
       <div class="section-label">Material Requirements</div>
       <div class="form-row cols-3">
         <div class="form-group">
@@ -177,6 +212,8 @@
                  value="{{ post.notes|default:'' }}">
         </div>
       </div>
+      {% endif %}
+
       <div class="form-row">
         <div class="form-group">
           <label>Attach Your Purchase Order (optional)</label>
@@ -191,15 +228,4 @@
   </div>
 </div>
 
-{{ product_type_data|json_script:"product-type-data" }}
-<script>
-  const productTypeData = JSON.parse(document.getElementById('product-type-data').textContent);
-  document.getElementById('q-product-type').addEventListener('change', function() {
-    const data = productTypeData[this.value];
-    if (data) {
-      document.getElementById('q-grade').value = data.grade || '';
-      document.getElementById('q-size').value  = data.size  || '';
-    }
-  });
-</script>
 {% endblock %}

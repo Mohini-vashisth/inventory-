@@ -81,10 +81,42 @@ class OrderForm(forms.ModelForm):
     class Meta:
         model = Order
         fields = [
-            'product_type', 'drawing_dimensions', 'grade', 'size', 'mill_make',
+            'drawing_dimensions', 'grade', 'size', 'mill_make',
             'mechanical_properties', 'processes', 'end_usage', 'delivery_form',
             'quantity', 'frequency', 'delivery_date', 'notes', 'purchase_order',
         ]
+
+
+class OrderItemForm(forms.ModelForm):
+    """One quoted item on the customer's order form. Product code, grade and
+    size are deliberately NOT fields here — the view takes them from the
+    quotation line item (the one `line_item` points at), so the customer can
+    neither pick a code nor change the spec the quote was priced for."""
+    line_item = forms.IntegerField(widget=forms.HiddenInput)
+
+    class Meta:
+        model = Order
+        fields = [
+            'drawing_dimensions', 'mill_make', 'mechanical_properties', 'processes',
+            'end_usage', 'delivery_form', 'quantity', 'frequency', 'delivery_date', 'notes',
+        ]
+        widgets = {
+            'delivery_date': forms.DateInput(attrs={'type': 'date'}),
+            'drawing_dimensions': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Describe dimensions or reference a drawing...'}),
+            'mechanical_properties': forms.Textarea(attrs={'rows': 2, 'placeholder': 'e.g. Tensile: 700 MPa, Hardness: 200 HB'}),
+            'mill_make': forms.TextInput(attrs={'placeholder': 'e.g. SAIL, Tata, Any'}),
+            'processes': forms.TextInput(attrs={'placeholder': 'e.g. Drilling, Tapping, Machining, Heat treatment'}),
+            'end_usage': forms.TextInput(attrs={'placeholder': 'e.g. Automotive axle, Gear shaft'}),
+            'notes': forms.TextInput(attrs={'placeholder': 'Any other requirements'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in ('delivery_form', 'frequency'):
+            self.fields[name].choices = [('', '— select —')] + [c for c in self.fields[name].choices if c[0]]
+
+
+OrderItemFormSet = formset_factory(OrderItemForm, extra=0)
 
 
 class QuotationLineItemForm(forms.Form):

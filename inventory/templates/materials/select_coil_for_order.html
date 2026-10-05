@@ -207,11 +207,11 @@
   <div style="background:rgba(255,200,0,0.2); border:1px solid rgba(255,200,0,0.5);
               border-radius:10px; padding:0.85rem 1.1rem; margin-bottom:1.25rem;
               color:white; font-size:0.88rem;">
-    ⚠️ <strong>No product type set on this order.</strong>
+    ⚠️ <strong>No product code set on this order.</strong>
     Showing all coils with remaining weight — coil filtering is disabled.<br>
     Go to <a href="/admin/materials/order/{{ order.pk }}/change/"
              style="color:white; text-decoration:underline;">Admin → Order ORD-{{ order.order_no|stringformat:"04d" }}</a>
-    and assign a Product Type to enable smart coil matching.
+    and assign a Product Code to enable smart coil matching.
   </div>
   {% endif %}
 
