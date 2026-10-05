@@ -1,5 +1,6 @@
 """Official quotations: the Send Quote / Save Draft form, drafts, PDF, and the email."""
 
+from django.utils import timezone
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.core.mail import EmailMessage
@@ -242,7 +243,11 @@ def quotation_form(request, pk=None):
             address = query.gst_address if query else ''
             if query and query.gst_number:
                 address = f"{address}\nGSTIN: {query.gst_number}".strip()
-            form = QuotationForm(initial={'customer_address': address} if address else None)
+            form_initial = {'customer_address': address} if address else {}
+            if query and query.sent_quotations():
+                # Sending again means the quote is being updated: Rev. 1, 2, ... dated today.
+                form_initial.update({'rev_no': len(query.sent_quotations()), 'rev_date': timezone.localdate()})
+            form = QuotationForm(initial=form_initial or None)
         formset = QuotationLineItemFormSet(initial=item_initial, prefix='item')
 
     return render(request, 'materials/quotation_form.html', {

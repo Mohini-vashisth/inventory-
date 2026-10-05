@@ -101,7 +101,7 @@ def query_detail(request, pk):
     query = get_object_or_404(Query.objects.select_related('product_type', 'customer'), pk=pk)
     return render(request, 'materials/query_detail.html', {
         'query': query,
-        'quotations': query.quotations.order_by('-updated_at'),
+        'history': query.quotation_history(),
         'quote_base_url': _public_quote_base_url(request),
     })
 

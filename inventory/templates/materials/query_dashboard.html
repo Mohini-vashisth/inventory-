@@ -195,7 +195,17 @@
             <a href="{% url 'query_detail' query.pk %}" style="font-weight:600; color:inherit; text-decoration:none;">{{ query.company_name|default:query.contact_phone }}</a>
             {% if query.company_name %}<div class="muted">{{ query.contact_phone }}</div>{% endif %}
           </td>
-          <td><span class="badge badge-{{ query.status }}">{{ query.get_status_display }}</span></td>
+          <td>
+            <span class="badge badge-{{ query.status }}">{{ query.get_status_display }}</span>
+            {% with latest=query.latest_sent_quotation %}
+            {% if latest %}
+            <div class="muted" style="font-size:0.78em; margin-top:0.3rem;">
+              <span style="white-space:nowrap;">Quote sent {{ latest.sent_at|date:"d M Y" }}</span>{% if query.quote_revision %} · <span style="white-space:nowrap;">Rev {{ query.quote_revision }}</span>{% endif %}
+              {% if query.quote_revision %}<br><a href="{% url 'query_detail' query.pk %}#quotations" style="color:#4e73df; text-decoration:none;">View all {{ query.quote_revision|add:1 }} quotes</a>{% endif %}
+            </div>
+            {% endif %}
+            {% endwith %}
+          </td>
           <td class="muted">{{ query.created_at|date:"d M Y" }}</td>
           <td>
             <a href="{% url 'query_detail' query.pk %}" class="icon-btn">👁 Details</a>
