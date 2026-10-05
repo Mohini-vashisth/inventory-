@@ -534,3 +534,62 @@ class CustomerOrderFormWithoutAQuoteTests(TestCase):
         other = ProductType.objects.create(item_code='CODE-Y', grade='SS304', size='2.500')
         self.client.post(self.url, {'quantity': '250', 'product_type': str(other.pk)})
         self.assertIsNone(Order.objects.get(customer=self.customer).product_type)
+
+
+class OrderFormPrefillFromQueryTests(TestCase):
+    """What the customer already told the bot (end use, delivery form) is
+    pre-filled on the order form instead of being asked again."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(name='Prefill Order Co')
+        self.code = ProductType.objects.create(item_code='CODE-P', grade='EN8D', size='1.200')
+        quotation = Quotation.objects.create(customer=self.customer, status='sent')
+        self.item = QuotationLineItem.objects.create(
+            quotation=quotation, order=1, description='Bar', product_type=self.code,
+            grade='EN8D', size=Decimal('1.200'), quantity=Decimal('500'), rate_per_kg=90)
+        self.query = Query.objects.create(
+            source='whatsapp', contact_phone='9123456780', company_name='Prefill Order Co',
+            customer=self.customer, status='quote_sent', end_use='automotive shafts', delivery_form='Coil')
+        self.url = reverse('quote_form', kwargs={'token': self.customer.quote_token})
+
+    def _post(self, **overrides):
+        data = {'item-TOTAL_FORMS': '1', 'item-INITIAL_FORMS': '1', 'item-MIN_NUM_FORMS': '0',
+                'item-MAX_NUM_FORMS': '1000', 'item-0-line_item': str(self.item.pk), 'item-0-quantity': '500',
+                'item-0-end_usage': 'automotive shafts', 'item-0-delivery_form': 'coil'}
+        data.update(overrides)
+        return self.client.post(self.url, data)
+
+    def test_end_use_and_delivery_form_are_prefilled_on_each_quoted_item(self):
+        html = self.client.get(self.url).content.decode()
+        self.assertIn('value="automotive shafts"', html)
+        self.assertIn('<option value="coil" selected>Coil</option>', html)
+        self.assertNotIn('<option value="bar" selected>', html)
+
+    def test_bar_is_prefilled_when_that_was_the_answer(self):
+        self.query.delivery_form = 'Bar'
+        self.query.save(update_fields=['delivery_form'])
+        self.assertIn('<option value="bar" selected>Bar</option>', self.client.get(self.url).content.decode())
+
+    def test_submitting_unchanged_saves_the_prefilled_values_on_the_order(self):
+        self._post()
+        order = Order.objects.get(customer=self.customer)
+        self.assertEqual((order.end_usage, order.delivery_form), ('automotive shafts', 'coil'))
+
+    def test_the_customer_can_still_change_them(self):
+        self._post(**{'item-0-end_usage': 'gear shafts', 'item-0-delivery_form': 'bar'})
+        order = Order.objects.get(customer=self.customer)
+        self.assertEqual((order.end_usage, order.delivery_form), ('gear shafts', 'bar'))
+
+    def test_nothing_is_prefilled_without_a_query(self):
+        Query.objects.all().delete()
+        html = self.client.get(self.url).content.decode()
+        self.assertNotIn('value="automotive shafts"', html)
+        self.assertNotIn('<option value="coil" selected>', html)
+
+    def test_the_no_quote_fallback_form_is_prefilled_too(self):
+        other = Customer.objects.create(name='No Quote Co')
+        Query.objects.create(source='whatsapp', contact_phone='9000000001', customer=other,
+                             status='quote_sent', end_use='structural', delivery_form='Bar')
+        html = self.client.get(reverse('quote_form', kwargs={'token': other.quote_token})).content.decode()
+        self.assertIn('value="structural"', html)
+        self.assertRegex(html, r'<option value="bar"\s+selected>')  # hand-written markup pads the attribute

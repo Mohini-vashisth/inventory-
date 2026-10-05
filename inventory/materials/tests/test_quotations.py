@@ -132,6 +132,17 @@ class QuotationFormDispatchTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertIn(f"testserver/quote/{self.customer.quote_token}/", mail.outbox[0].body)
 
+    @override_settings(EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com')
+    def test_email_says_the_link_is_single_use_not_a_standing_link(self):
+        """The link stops working once an order is placed (the token is
+        regenerated), so the email must not read like a permanent link."""
+        self.client.force_login(self.staff)
+        self.client.post(f"{reverse('quotation_form')}?customer={self.customer.pk}", self._item_data())
+        body = mail.outbox[0].body
+        self.assertIn('can be used once', body)
+        self.assertIn('new quotation and link', body)
+        self.assertNotIn('unique to your company', body)
+
     def test_fails_gracefully_without_recipient_address(self):
         no_email_customer = Customer.objects.create(name='No Email Co')
         self.client.force_login(self.staff)

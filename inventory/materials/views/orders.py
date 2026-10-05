@@ -174,8 +174,12 @@ def quote_form(request, token):
         customer.save(update_fields=['quote_token'])
         return render(request, 'materials/quote_submitted.html', {'customer': customer})
 
+    # What the customer already told us on WhatsApp, so they aren't asked twice. The
+    # query keeps delivery form as "Coil"/"Bar"; the order's choices are lower-case.
+    from_query = {'end_usage': query.end_use, 'delivery_form': query.delivery_form.lower()} if query else {}
+
     if items:
-        initial = [{'line_item': item.pk, 'quantity': item.quantity} for item in items]
+        initial = [{'line_item': item.pk, 'quantity': item.quantity, **from_query} for item in items]
         formset = (OrderItemFormSet(request.POST, prefix='item') if request.method == 'POST'
                    else OrderItemFormSet(initial=initial, prefix='item'))
         if request.method == 'POST':
@@ -222,6 +226,7 @@ def quote_form(request, token):
     initial = {}
     if query and not error:
         initial = {
+            **from_query,
             'grade': query.grade,
             'size': str(query.size) if query.size is not None else '',
             'quantity': str(query.quantity) if query.quantity is not None else '',
