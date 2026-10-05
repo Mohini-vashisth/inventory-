@@ -5,13 +5,21 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from ..models import ProductType
 
 
-def _match_product_type(grade, size):
-    """The catalogue product code (ProductType) for this grade + size, or None.
-    Grade matches case-insensitively (a typed "en8d" is "EN8D"), size exactly.
-    Grade + size is a product code's identity (they're unique together)."""
+def _match_product_type(grade, size, category=None):
+    """The catalogue product code (ProductType) for this product type + grade +
+    size, or None. A code depends on all three: with a `category` (product type)
+    given it must match that too; without one, grade + size alone only count
+    when exactly one code has them — two codes sharing a grade and size across
+    different product types is ambiguous, so it matches nothing rather than
+    guessing. Grade matches case-insensitively (a typed "en8d" is "EN8D"),
+    size exactly."""
     if not grade or size is None:
         return None
-    return ProductType.objects.filter(grade__iexact=grade.strip(), size=size).first()
+    candidates = ProductType.objects.filter(grade__iexact=grade.strip(), size=size)
+    if category is not None:
+        candidates = candidates.filter(category=category)
+    matches = list(candidates[:2])
+    return matches[0] if len(matches) == 1 else None
 
 
 class _CoilOverCommitted(Exception):

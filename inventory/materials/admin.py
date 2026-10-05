@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
-from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
+from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductCategory, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
 
 
 class GateEntryLotInline(admin.TabularInline):
@@ -91,11 +91,24 @@ class AllowedCoilSpecInline(admin.TabularInline):
 
 # ── ProductType ──────────────────────────────────────────────
 
+@admin.register(ProductCategory)
+class ProductCategoryAdmin(admin.ModelAdmin):
+    """The product types (Round Bright Bar, Key Steel, ...): a product code is one of
+    these in a particular grade and size."""
+    list_display = ['name', 'position', 'code_count']
+    list_editable = ['position']
+
+    @admin.display(description='Product codes')
+    def code_count(self, obj):
+        return obj.product_codes.count()
+
+
 @admin.register(ProductType)
 class ProductTypeAdmin(admin.ModelAdmin):
     inlines = [ProcessStepInline, AllowedCoilSpecInline]
-    list_display = ['item_code', 'grade', 'size', 'step_count', 'allowed_spec_summary']
-    fields = ['item_code', 'grade', 'size', 'description']
+    list_display = ['item_code', 'category', 'grade', 'size', 'step_count', 'allowed_spec_summary']
+    list_filter = ['category']
+    fields = ['category', 'item_code', 'grade', 'size', 'description']
 
     def step_count(self, obj):
         return obj.steps.count()

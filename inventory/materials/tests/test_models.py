@@ -9,7 +9,9 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from ..models import Customer, GateEntry, GateEntryLot, Material, Order, OrderCoilPick, ProductType
+from ..models import (
+    Customer, GateEntry, GateEntryLot, Material, Order, OrderCoilPick, ProductCategory, ProductType,
+)
 
 
 class MaterialUsedStatusTests(TestCase):
@@ -203,6 +205,27 @@ class ProductTypeUniquenessTests(TestCase):
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
                 ProductType.objects.create(item_code='Bar B', grade='EN8D', size='1.200')
+
+    def test_the_same_grade_and_size_is_allowed_in_different_product_types(self):
+        round_bar = ProductCategory.objects.get(name='Round Bright Bar')
+        hex_bar = ProductCategory.objects.get(name='Hexagonal Bright Bar')
+        ProductType.objects.create(item_code='RB-EN8D-12', category=round_bar, grade='EN8D', size='12.000')
+        ProductType.objects.create(item_code='HB-EN8D-12', category=hex_bar, grade='EN8D', size='12.000')
+        self.assertEqual(ProductType.objects.filter(grade='EN8D', size='12.000').count(), 2)
+
+    def test_the_same_type_grade_and_size_is_rejected(self):
+        round_bar = ProductCategory.objects.get(name='Round Bright Bar')
+        ProductType.objects.create(item_code='RB-1', category=round_bar, grade='EN8D', size='12.000')
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                ProductType.objects.create(item_code='RB-2', category=round_bar, grade='EN8D', size='12.000')
+
+    def test_the_fourteen_website_product_types_are_seeded_in_menu_order(self):
+        names = list(ProductCategory.objects.values_list('name', flat=True))
+        self.assertEqual(len(names), 14)
+        self.assertEqual(names[0], 'Key Steel')
+        self.assertEqual(names[-1], 'Cold Rolled Strip')
+        self.assertIn('Triangle Bright Bar', names)
 
     def test_same_grade_different_size_allowed(self):
         ProductType.objects.create(item_code='Bar A', grade='EN8D', size='1.200')

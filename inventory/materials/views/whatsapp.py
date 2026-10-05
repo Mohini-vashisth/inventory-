@@ -20,7 +20,7 @@ from django.views.decorators.http import require_http_methods
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
-from ..models import GSTIN_PATTERN, Query
+from ..models import GSTIN_PATTERN, ProductCategory, Query
 
 logger = logging.getLogger(__name__)
 
@@ -248,6 +248,19 @@ def _parse_whatsapp_gst_details(text):
         before = _GST_LABEL_AT_END.sub('', text[:found.start()])
         return found.group(0).upper(), _clean_address(f"{before} {text[found.end():]}")
     return None
+
+
+def _detect_product_category(text):
+    """The product type (Round Bright Bar, Flat Wire, ...) a customer's answer
+    names, or None. A type counts when its full name appears in the text; a
+    shorter name inside a longer match is dropped ("Half Round Bright Bar"
+    contains "Round Bright Bar"), and if what's left is more than one type the
+    answer is ambiguous and matches nothing — staff pick it instead."""
+    lowered = re.sub(r'\s+', ' ', (text or '').lower())
+    found = [c for c in ProductCategory.objects.all() if c.name.lower() in lowered]
+    names = [c.name.lower() for c in found]
+    kept = [c for c in found if not any(c.name.lower() != other and c.name.lower() in other for other in names)]
+    return kept[0] if len(kept) == 1 else None
 
 
 def _parse_whatsapp_delivery_form(text):
@@ -561,6 +574,12 @@ def _process_whatsapp_answer(query_pk, text):
         else:
             setattr(query, field, text.strip())
             changed = [field]
+            if field == 'product_description' and not query.product_category_id:
+                # "Your requirements" is where they name the product type.
+                detected = _detect_product_category(text)
+                if detected:
+                    query.product_category = detected
+                    changed.append('product_category')
         query.save(update_fields=changed)
 
         _advance_whatsapp_query(query)

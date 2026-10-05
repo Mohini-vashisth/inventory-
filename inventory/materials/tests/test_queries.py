@@ -9,7 +9,7 @@ from django.urls import reverse
 from django.utils import timezone
 from unittest.mock import patch
 
-from ..models import Customer, Order, ProductType, Query, Quotation
+from ..models import Customer, Order, ProductCategory, ProductType, Query, Quotation
 from ..views.whatsapp import (
     WhatsAppSendError,
     WHATSAPP_QUERY_INTAKE_TEMPLATE,
@@ -638,3 +638,39 @@ class QuoteTrackingTests(TestCase):
         second = self.client.get(f"{reverse('quotation_form')}?query={self.query.pk}").context['form'].initial
         self.assertEqual(second['rev_no'], 1)
         self.assertEqual(second['rev_date'], timezone.localdate())
+
+
+class QueryProductTypeTests(TestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user('type_staff', password='pw', is_staff=True)
+        self.client.force_login(self.staff)
+        self.round_bar = ProductCategory.objects.get(name='Round Bright Bar')
+        self.query = Query.objects.create(source='indiamart', contact_phone='9123456780', company_name='Type Co')
+
+    def _edit(self, **overrides):
+        data = {'company_name': 'Type Co', 'contact_phone': '9123456780', 'contact_email': '', 'product_type': '',
+                'grade': '', 'size': '', 'quantity': '', 'notes': '', 'product_category': ''}
+        data.update(overrides)
+        return self.client.post(reverse('query_edit', kwargs={'pk': self.query.pk}), data)
+
+    def test_edit_page_offers_all_fourteen_product_types(self):
+        html = self.client.get(reverse('query_edit', kwargs={'pk': self.query.pk})).content.decode()
+        self.assertIn('<select name="product_category">', html)
+        for name in ProductCategory.objects.values_list('name', flat=True):
+            with self.subTest(name=name):
+                self.assertIn(f'>{name}</option>', html)
+
+    def test_edit_saves_and_clears_the_product_type(self):
+        self._edit(product_category=str(self.round_bar.pk))
+        self.query.refresh_from_db()
+        self.assertEqual(self.query.product_category, self.round_bar)
+        self._edit(product_category='')
+        self.query.refresh_from_db()
+        self.assertIsNone(self.query.product_category)
+
+    def test_detail_page_shows_the_product_type(self):
+        self.query.product_category = self.round_bar
+        self.query.save(update_fields=['product_category'])
+        html = self.client.get(reverse('query_detail', kwargs={'pk': self.query.pk})).content.decode()
+        self.assertIn('Product type', html)
+        self.assertIn('Round Bright Bar', html)

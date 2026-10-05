@@ -163,19 +163,53 @@ class SizeOption(models.Model):
         return f"{self.value} mm"
 
 
-class ProductType(models.Model):
-    """e.g. 'EN8D Bar 2.5mm' — defines the final product, its preset grade/size, and which steps apply.
+class ProductCategory(models.Model):
+    """What the business calls a *product type*: Round Bright Bar, Key Steel,
+    Flat Wire, ... (the menu on its website). A product code is one of these in
+    a particular grade and size. NAMING: on screen this is "Product Type"; the
+    model that holds product codes is `ProductType` (an older name kept so as
+    not to rename every table, field and URL) — see CLAUDE.md."""
+    name     = models.CharField(max_length=100, unique=True)
+    position = models.PositiveIntegerField(default=0, help_text="Order in menus and dropdowns (lowest first).")
 
-    A grade/size combination identifies exactly one product type — the two
-    can't be reused across different product types.
+    class Meta:
+        ordering = ['position', 'name']
+        verbose_name = 'product type'
+        verbose_name_plural = 'product types'
+
+    def __str__(self):
+        return self.name
+
+
+class ProductType(models.Model):
+    """A **product code** (that's what the screens call it): e.g. 'EN8D Bar 2.5mm' —
+    defines the final product, its preset grade/size, and which steps apply.
+
+    A product code depends on three things: its product type (`category`: Round
+    Bright Bar, Key Steel, ...), grade and size. Those three identify exactly
+    one code — a round and a hexagonal bar in the same grade and size are
+    different codes.
     """
+    category    = models.ForeignKey(
+        ProductCategory, on_delete=models.PROTECT, null=True, related_name='product_codes',
+        verbose_name="Product Type",
+    )
     item_code   = models.CharField(max_length=100, verbose_name="Item Code")
     grade       = models.CharField(max_length=20, blank=True, verbose_name="Grade")
     size        = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Size (mm)")
     description = models.TextField(blank=True)
 
     class Meta:
-        unique_together = ['grade', 'size']
+        constraints = [
+            # type + grade + size identify one code ...
+            models.UniqueConstraint(fields=['category', 'grade', 'size'], name='unique_code_per_type_grade_size'),
+            # ... and a database treats NULLs as distinct, so codes that don't have a type yet
+            # (older rows) still can't repeat a grade + size.
+            models.UniqueConstraint(
+                fields=['grade', 'size'], condition=models.Q(category__isnull=True),
+                name='unique_untyped_code_per_grade_size',
+            ),
+        ]
         verbose_name = 'product code'
         verbose_name_plural = 'product codes'
 
@@ -383,6 +417,9 @@ class Query(models.Model):
     company_name  = models.CharField(max_length=100, blank=True)
     contact_phone = models.CharField(max_length=20, blank=True)
     contact_email = models.EmailField(blank=True)
+    # The product type (family) the customer asked for — set by staff, or detected
+    # from the bot's "Your requirements" answer when it names exactly one.
+    product_category = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
     product_type  = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)
     grade         = models.CharField(max_length=100, blank=True)
     size          = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
@@ -657,6 +694,7 @@ class QuotationLineItem(models.Model):
     quotation    = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name='line_items')
     order        = models.PositiveIntegerField(default=1, help_text="Display order (Sr. No.) within the quotation.")
     description  = models.CharField(max_length=255)
+    category     = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
     product_type = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)
     grade        = models.CharField(max_length=100, blank=True)
     size         = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)

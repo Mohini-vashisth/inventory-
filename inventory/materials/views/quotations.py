@@ -10,7 +10,7 @@ from django.db import transaction
 from django.http import HttpResponse
 from decimal import Decimal, InvalidOperation
 
-from ..models import ProductType, Customer, Query, Quotation, QuotationLineItem
+from ..models import ProductCategory, ProductType, Customer, Query, Quotation, QuotationLineItem
 from ..forms import QuotationForm, QuotationLineItemFormSet
 from ..pdf import generate_quotation_pdf
 from ..decorators import staff_required
@@ -57,7 +57,7 @@ def _autofill_product_codes(item_dicts):
     order's code is then assigned when it's confirmed)."""
     for item in item_dicts:
         if not item.get('product_type'):
-            item['product_type'] = _match_product_type(item.get('grade'), item.get('size'))
+            item['product_type'] = _match_product_type(item.get('grade'), item.get('size'), item.get('category'))
 
 
 def _parse_draft_line_items(post_data):
@@ -85,8 +85,11 @@ def _parse_draft_line_items(post_data):
             continue
         product_type_id = post_data.get(prefix + 'product_type') or None
         product_type = ProductType.objects.filter(pk=product_type_id).first() if product_type_id else None
+        category_id = post_data.get(prefix + 'category') or None
+        category = ProductCategory.objects.filter(pk=category_id).first() if category_id else None
         items.append({
             'description': description,
+            'category': category,
             'product_type': product_type,
             'grade': post_data.get(prefix + 'grade', '').strip(),
             'size': _dec(post_data.get(prefix + 'size')),
@@ -211,7 +214,7 @@ def quotation_form(request, pk=None):
             form = QuotationForm(initial=model_to_dict(draft))
             item_initial = [
                 {
-                    'description': item.description, 'product_type': item.product_type_id,
+                    'description': item.description, 'category': item.category_id, 'product_type': item.product_type_id,
                     'grade': item.grade, 'size': item.size, 'quantity': item.quantity,
                     'unit': item.unit, 'rate_per_kg': item.rate_per_kg, 'discount_pct': item.discount_pct,
                     'hsn_sac': item.hsn_sac, 'gst_pct': item.gst_pct, 'tool_cost': item.tool_cost, 'moq': item.moq,
@@ -226,6 +229,7 @@ def quotation_form(request, pk=None):
                         query.product_type.item_code if query.product_type
                         else (query.product_description.splitlines() or [''])[0][:255] or query.grade or 'Item'
                     ),
+                    'category': query.product_category_id,
                     'product_type': query.product_type_id,
                     'grade': query.grade,
                     'size': query.size,
@@ -251,9 +255,9 @@ def quotation_form(request, pk=None):
         formset = QuotationLineItemFormSet(initial=item_initial, prefix='item')
 
     return render(request, 'materials/quotation_form.html', {
-        # grade + size -> product code, for the form's live auto-match (see _autofill_product_codes)
+        # product type + grade + size -> product code, for the form's live auto-match (see _autofill_product_codes)
         'product_code_map': [
-            {'pk': pt.pk, 'grade': pt.grade.lower(), 'size': f"{pt.size:.3f}"}
+            {'pk': pt.pk, 'category': pt.category_id, 'grade': pt.grade.lower(), 'size': f"{pt.size:.3f}"}
             for pt in ProductType.objects.exclude(size=None)
         ],
         'form': form,

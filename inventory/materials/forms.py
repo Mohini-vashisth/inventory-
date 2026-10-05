@@ -126,7 +126,8 @@ class QuotationLineItemForm(forms.Form):
     repeatable row" pattern GateEntryLotFormSet already established for a
     gate entry's lots."""
     description  = forms.CharField(max_length=255)
-    product_type = forms.ModelChoiceField(queryset=None, required=False)
+    category     = forms.ModelChoiceField(queryset=None, required=False)   # product type
+    product_type = forms.ModelChoiceField(queryset=None, required=False)   # product code
     grade        = forms.CharField(max_length=100, required=False)
     size         = forms.DecimalField(max_digits=10, decimal_places=3, required=False)
     quantity     = forms.DecimalField(max_digits=10, decimal_places=3, min_value=0.001)
@@ -143,7 +144,8 @@ class QuotationLineItemForm(forms.Form):
         # Imported here (not at module level) to dodge a circular-import
         # headache with .models — ProductType is only needed for this one
         # queryset assignment.
-        from .models import ProductType
+        from .models import ProductCategory, ProductType
+        self.fields['category'].queryset = ProductCategory.objects.all()
         self.fields['product_type'].queryset = ProductType.objects.order_by('item_code')
 
     def clean_unit(self):

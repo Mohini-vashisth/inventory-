@@ -202,10 +202,19 @@
               <span>Item {{ forloop.counter }}</span>
               <button type="button" class="btn-remove-item" onclick="removeItem(this)">✕ Remove</button>
             </div>
-            <div class="form-row cols-2">
+            <div class="form-row cols-3">
               <div class="form-group">
                 <label>Description *</label>
                 <input type="text" name="item-{{ forloop.counter0 }}-description" value="{{ item_form.description.value|default:'' }}" placeholder="e.g. Steel Chamfer 10x10x14 mm">
+              </div>
+              <div class="form-group">
+                <label>Product Type</label>
+                <select name="item-{{ forloop.counter0 }}-category">
+                  <option value="">— select —</option>
+                  {% for category in item_form.fields.category.queryset %}
+                  <option value="{{ category.pk }}" {% if item_form.category.value|stringformat:"s" == category.pk|stringformat:"s" %}selected{% endif %}>{{ category.name }}</option>
+                  {% endfor %}
+                </select>
               </div>
               <div class="form-group">
                 <label>Product Code</label>
@@ -414,9 +423,11 @@
     row.innerHTML =
       '<div class="item-row-head"><span>Item ' + (index + 1) + '</span>' +
         '<button type="button" class="btn-remove-item" onclick="removeItem(this)">✕ Remove</button></div>' +
-      '<div class="form-row cols-2">' +
+      '<div class="form-row cols-3">' +
         '<div class="form-group"><label>Description *</label>' +
           '<input type="text" name="item-' + index + '-description" placeholder="e.g. Steel Chamfer 10x10x14 mm"></div>' +
+        '<div class="form-group"><label>Product Type</label>' +
+          '<select name="item-' + index + '-category">' + document.querySelector('[name="item-0-category"]').innerHTML + '</select></div>' +
         '<div class="form-group"><label>Product Code</label>' +
           '<select name="item-' + index + '-product_type">' + document.querySelector('[name="item-0-product_type"]').innerHTML + '</select></div>' +
       '</div>' +
@@ -437,6 +448,7 @@
 
     // The copied options carry row 1's selected="selected"; a new row starts with no code.
     row.querySelector('select[name$="-product_type"]').value = '';
+    row.querySelector('select[name$="-category"]').value = '';
     document.getElementById('items-container').appendChild(row);
     totalInput.value = index + 1;
     updateRemoveButtonsVisibility();
@@ -445,8 +457,9 @@
 
 {{ product_code_map|json_script:"product-code-map" }}
 <script>
-  // The product code identifies a grade + size, so once both are filled in the
-  // code is matched for the owner. A code picked by hand is never overridden.
+  // A product code depends on its product type, grade and size, so once those are
+  // filled in the code is matched for the owner. With no type chosen, grade + size
+  // only match when exactly one code has them. A code picked by hand is never overridden.
   (function () {
     var codes = JSON.parse(document.getElementById('product-code-map').textContent);
     var container = document.getElementById('items-container');
@@ -459,9 +472,16 @@
     function matchRow(row) {
       var grade = (row.querySelector('[name$="-grade"]').value || '').trim().toLowerCase();
       var size = normSize(row.querySelector('[name$="-size"]').value);
+      var category = row.querySelector('select[name$="-category"]').value;
       var select = row.querySelector('select[name$="-product_type"]');
       if (select.value && select.dataset.auto !== '1') return;
-      var found = grade && size ? codes.find(function (c) { return c.grade === grade && c.size === size; }) : null;
+      var found = null;
+      if (grade && size) {
+        var matches = codes.filter(function (c) {
+          return c.grade === grade && c.size === size && (!category || String(c.category) === category);
+        });
+        if (matches.length === 1) found = matches[0];
+      }
       select.value = found ? String(found.pk) : '';
       select.dataset.auto = found ? '1' : '';
     }
@@ -470,7 +490,9 @@
       if (/-(grade|size)$/.test(event.target.name || '')) matchRow(event.target.closest('.item-row'));
     });
     container.addEventListener('change', function (event) {
-      if (/-product_type$/.test(event.target.name || '')) event.target.dataset.auto = '';
+      var name = event.target.name || '';
+      if (/-product_type$/.test(name)) event.target.dataset.auto = '';
+      if (/-category$/.test(name)) matchRow(event.target.closest('.item-row'));
     });
     document.querySelectorAll('.item-row').forEach(matchRow);
   })();
