@@ -439,7 +439,7 @@ class WhatsAppWebhookTests(TestCase):
         staff = User.objects.create_user('symbol_phone_staff', password='pw', is_staff=True)
         self.client.force_login(staff)
         self.client.post(reverse('query_dashboard'), {
-            'source': 'call', 'contact_phone': '+91 98765 43210',
+            'source': 'indiamart', 'contact_phone': '+91 98765 43210',
         })
 
         payload = self._message_payload('919876543210', 'Ramesh Traders')

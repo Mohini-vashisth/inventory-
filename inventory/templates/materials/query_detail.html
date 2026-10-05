@@ -94,6 +94,11 @@
         <dt>Phone</dt><dd>{{ query.contact_phone|default:"—" }}</dd>
         <dt>Email</dt><dd>{{ query.contact_email|default:"—" }}</dd>
         <dt>Source</dt><dd>{{ query.get_source_display }}</dd>
+        {% if query.source == 'referral' %}
+        <dt>Referred by</dt><dd>{{ query.referrer_name|default:"—" }}{% if query.referrer_phone %} · {{ query.referrer_phone }}{% endif %}</dd>
+        {% elif query.source == 'other' %}
+        <dt>Where from</dt><dd>{{ query.source_detail|default:"—" }}</dd>
+        {% endif %}
         <dt>Received</dt><dd>{{ query.created_at|date:"d M Y, H:i" }}</dd>
       </dl>
     </div>

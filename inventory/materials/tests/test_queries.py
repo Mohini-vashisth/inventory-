@@ -1,5 +1,6 @@
 """The Query dashboard (pre-quote leads)."""
 
+import re
 from decimal import Decimal
 from django.contrib.auth.models import User
 from django.core import mail
@@ -33,11 +34,11 @@ class QueryDashboardTests(TestCase):
     def test_logging_a_query_with_minimal_fields(self, mock_send):
         self.client.force_login(self.staff)
         response = self.client.post(reverse('query_dashboard'), {
-            'source': 'call', 'contact_phone': '9123456780',
+            'source': 'indiamart', 'contact_phone': '9123456780',
         })
         self.assertRedirects(response, reverse('query_dashboard'))
         query = Query.objects.get(contact_phone='9123456780')
-        self.assertEqual(query.source, 'call')
+        self.assertEqual(query.source, 'indiamart')
         self.assertEqual(query.status, 'new')
         self.assertEqual(query.company_name, '')
         mock_send.assert_called_once_with(
@@ -48,7 +49,7 @@ class QueryDashboardTests(TestCase):
     def test_logging_a_query_normalizes_phone_to_digits_only(self, mock_send):
         self.client.force_login(self.staff)
         self.client.post(reverse('query_dashboard'), {
-            'source': 'call', 'contact_phone': '+91 98765 43210',
+            'source': 'indiamart', 'contact_phone': '+91 98765 43210',
         })
         Query.objects.get(contact_phone='919876543210')
         mock_send.assert_called_once_with(
@@ -60,7 +61,7 @@ class QueryDashboardTests(TestCase):
         mock_send.side_effect = WhatsAppSendError("boom")
         self.client.force_login(self.staff)
         response = self.client.post(reverse('query_dashboard'), {
-            'source': 'call', 'contact_phone': '9123456780',
+            'source': 'indiamart', 'contact_phone': '9123456780',
         }, follow=True)
 
         self.assertTrue(Query.objects.filter(contact_phone='9123456780').exists())
@@ -69,8 +70,8 @@ class QueryDashboardTests(TestCase):
     @patch('materials.views.whatsapp._send_whatsapp_template_message')
     def test_logging_a_query_twice_for_same_phone_is_rejected(self, mock_send):
         self.client.force_login(self.staff)
-        self.client.post(reverse('query_dashboard'), {'source': 'call', 'contact_phone': '9123456780'})
-        response = self.client.post(reverse('query_dashboard'), {'source': 'call', 'contact_phone': '9123456780'})
+        self.client.post(reverse('query_dashboard'), {'source': 'indiamart', 'contact_phone': '9123456780'})
+        response = self.client.post(reverse('query_dashboard'), {'source': 'indiamart', 'contact_phone': '9123456780'})
 
         self.assertEqual(Query.objects.filter(contact_phone='9123456780').count(), 1)
         self.assertContains(response, "already in progress")
@@ -80,14 +81,14 @@ class QueryDashboardTests(TestCase):
     def test_logging_a_query_for_same_phone_allowed_once_prior_query_closed(self, mock_send):
         self.client.force_login(self.staff)
         Query.objects.create(source='call', contact_phone='9123456780', status='converted')
-        response = self.client.post(reverse('query_dashboard'), {'source': 'call', 'contact_phone': '9123456780'})
+        response = self.client.post(reverse('query_dashboard'), {'source': 'indiamart', 'contact_phone': '9123456780'})
 
         self.assertRedirects(response, reverse('query_dashboard'))
         self.assertEqual(Query.objects.filter(contact_phone='9123456780').count(), 2)
 
     def test_logging_a_query_requires_phone_and_source(self):
         self.client.force_login(self.staff)
-        response = self.client.post(reverse('query_dashboard'), {'source': 'call', 'contact_phone': ''})
+        response = self.client.post(reverse('query_dashboard'), {'source': 'indiamart', 'contact_phone': ''})
         self.assertContains(response, "Phone number is required.")
         self.assertEqual(Query.objects.count(), 0)
 
@@ -100,7 +101,7 @@ class QueryDashboardTests(TestCase):
         # the actual number normalizes to just "91", not empty, so this
         # needs its own check beyond "phone number is required".
         self.client.force_login(self.staff)
-        response = self.client.post(reverse('query_dashboard'), {'source': 'call', 'contact_phone': '+91 '})
+        response = self.client.post(reverse('query_dashboard'), {'source': 'indiamart', 'contact_phone': '+91 '})
         self.assertContains(response, "complete phone number")
         self.assertEqual(Query.objects.count(), 0)
 
@@ -450,3 +451,103 @@ class QueryIntakeDetailsTests(TestCase):
         bare = Query.objects.create(source='call', contact_phone='9000000001', company_name='Bare Co')
         response = self.client.get(f"{reverse('quotation_form')}?query={bare.pk}")
         self.assertNotIn('customer_address', response.context['form'].initial)
+
+
+class QuerySourceTests(TestCase):
+    """Logging a query by hand offers four sources; Referral and Other each
+    take optional follow-up details."""
+
+    def setUp(self):
+        self.staff = User.objects.create_user('source_staff', password='pw', is_staff=True)
+        self.client.force_login(self.staff)
+
+    def _log(self, **fields):
+        data = {'source': 'indiamart', 'contact_phone': '9123456780'}
+        data.update(fields)
+        with patch('materials.views.whatsapp._send_whatsapp_template_message'):
+            return self.client.post(reverse('query_dashboard'), data)
+
+    def test_log_form_offers_exactly_indiamart_google_referral_and_other(self):
+        html = self.client.get(reverse('query_dashboard')).content.decode()
+        offered = re.findall(r'<option value="([a-z]+)"[^>]*>([^<]+)</option>', html.split('name="source"')[1].split('</select>')[0])
+        self.assertEqual(offered, [('indiamart', 'IndiaMART'), ('google', 'Google'), ('referral', 'Referral'), ('other', 'Other')])
+
+    def test_whatsapp_and_call_are_not_selectable_when_logging_by_hand(self):
+        for source in ('whatsapp', 'call', 'bogus', ''):
+            with self.subTest(source=source):
+                response = self._log(source=source, contact_phone='9123456781')
+                self.assertContains(response, 'Please select where this query came from.')
+                self.assertEqual(Query.objects.count(), 0)
+
+    def test_legacy_sources_still_display_for_existing_queries(self):
+        for source, label in (('whatsapp', 'WhatsApp'), ('call', 'Phone Call')):
+            query = Query.objects.create(source=source, contact_phone='9000000000' if source == 'call' else '9000000001')
+            self.assertEqual(query.get_source_display(), label)
+
+    def test_google_and_indiamart_need_no_extra_details(self):
+        for index, source in enumerate(('google', 'indiamart')):
+            self._log(source=source, contact_phone=f'91234567{index:02d}')
+        self.assertEqual(sorted(Query.objects.values_list('source', flat=True)), ['google', 'indiamart'])
+
+    def test_referral_saves_the_referrer_name_and_phone(self):
+        self._log(source='referral', referrer_name='  Raju Traders ', referrer_phone='98100 12345')
+        query = Query.objects.get()
+        self.assertEqual((query.source, query.referrer_name, query.referrer_phone), ('referral', 'Raju Traders', '98100 12345'))
+
+    def test_referral_details_are_optional(self):
+        self._log(source='referral')
+        query = Query.objects.get()
+        self.assertEqual((query.source, query.referrer_name, query.referrer_phone), ('referral', '', ''))
+
+    def test_other_saves_where_from_and_it_is_optional(self):
+        self._log(source='other', source_detail='Trade fair, Delhi', contact_phone='9123456781')
+        self._log(source='other', contact_phone='9123456782')
+        self.assertEqual(sorted(Query.objects.values_list('source_detail', flat=True)), ['', 'Trade fair, Delhi'])
+
+    def test_details_for_a_different_source_are_ignored(self):
+        self._log(source='google', referrer_name='Ignored', referrer_phone='1', source_detail='Ignored too')
+        query = Query.objects.get()
+        self.assertEqual((query.referrer_name, query.referrer_phone, query.source_detail), ('', '', ''))
+
+    def test_overlong_details_are_rejected_without_logging(self):
+        response = self._log(source='referral', referrer_name='x' * 101)
+        self.assertContains(response, 'error-msg')
+        self.assertEqual(Query.objects.count(), 0)
+
+    def test_form_markup_has_the_conditional_groups_hidden_by_default(self):
+        html = self.client.get(reverse('query_dashboard')).content.decode()
+        self.assertIn('<div id="referral-fields" style="display:none;">', html)
+        self.assertIn('<div id="other-fields" style="display:none;">', html)
+        self.assertIn('name="referrer_name"', html)
+        self.assertIn('name="referrer_phone"', html)
+        self.assertIn('name="source_detail"', html)
+
+    def test_detail_page_shows_referrer_or_where_from_only_for_the_matching_source(self):
+        referral = Query.objects.create(source='referral', contact_phone='9000000010', referrer_name='Raju', referrer_phone='98100')
+        other = Query.objects.create(source='other', contact_phone='9000000011', source_detail='Trade fair')
+        google = Query.objects.create(source='google', contact_phone='9000000012')
+        page = lambda q: self.client.get(reverse('query_detail', kwargs={'pk': q.pk})).content.decode()  # noqa: E731
+        self.assertIn('Referred by', page(referral))
+        self.assertIn('Raju · 98100', page(referral))
+        self.assertIn('Where from', page(other))
+        self.assertIn('Trade fair', page(other))
+        for text in ('Referred by', 'Where from'):
+            self.assertNotIn(text, page(google))
+
+    def test_edit_page_shows_and_saves_the_follow_up_for_its_own_source(self):
+        referral = Query.objects.create(source='referral', contact_phone='9000000010', referrer_name='Raju')
+        url = reverse('query_edit', kwargs={'pk': referral.pk})
+        self.assertContains(self.client.get(url), 'name="referrer_name"')
+        self.assertNotContains(self.client.get(url), 'name="source_detail"')
+        base = {'company_name': '', 'contact_phone': '9000000010', 'contact_email': '', 'product_type': '',
+                'grade': '', 'size': '', 'quantity': '', 'notes': ''}
+        self.client.post(url, {**base, 'referrer_name': 'Raju Traders', 'referrer_phone': '98100 12345', 'source_detail': 'ignored'})
+        referral.refresh_from_db()
+        self.assertEqual((referral.referrer_name, referral.referrer_phone, referral.source_detail), ('Raju Traders', '98100 12345', ''))
+
+        other = Query.objects.create(source='other', contact_phone='9000000011')
+        other_url = reverse('query_edit', kwargs={'pk': other.pk})
+        self.assertContains(self.client.get(other_url), 'name="source_detail"')
+        self.client.post(other_url, {**base, 'contact_phone': '9000000011', 'source_detail': 'Walk-in'})
+        other.refresh_from_db()
+        self.assertEqual(other.source_detail, 'Walk-in')

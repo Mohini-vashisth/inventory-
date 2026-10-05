@@ -36,7 +36,7 @@ def query_dashboard(request):
             # meaningless digit string ("91") instead of failing the
             # "required" check above.
             error = "That doesn't look like a complete phone number."
-        elif source not in dict(Query.SOURCE_CHOICES):
+        elif source not in Query.MANUAL_SOURCES:
             error = "Please select where this query came from."
         elif Query.objects.filter(contact_phone=contact_phone).exclude(status__in=['converted', 'not_interested']).exists():
             # Logging the same number twice would fire a second template
@@ -45,21 +45,37 @@ def query_dashboard(request):
             # silently orphaning it in 'new' status forever.
             error = f"A query for {contact_phone} is already in progress — check the table below."
         else:
-            Query.objects.create(source=source, contact_phone=contact_phone)
+            # The follow-up fields are optional and only belong to their own source.
+            extra = {}
+            if source == 'referral':
+                extra = {
+                    'referrer_name': request.POST.get('referrer_name', '').strip(),
+                    'referrer_phone': request.POST.get('referrer_phone', '').strip(),
+                }
+            elif source == 'other':
+                extra = {'source_detail': request.POST.get('source_detail', '').strip()}
+            new_query = Query(source=source, contact_phone=contact_phone, **extra)
             try:
-                whatsapp._send_whatsapp_template_message(
-                    contact_phone, whatsapp.WHATSAPP_QUERY_INTAKE_TEMPLATE, language=whatsapp.WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE,
-                )
-            except whatsapp.WhatsAppSendError as e:
-                messages.warning(
-                    request,
-                    f"Query logged, but the WhatsApp intake message to {contact_phone} couldn't be "
-                    f"sent automatically ({e}). Please reach out directly.",
-                )
-            return redirect('query_dashboard')
+                new_query.full_clean(exclude=['status', 'customer'])
+            except ValidationError as e:
+                error = e.messages[0]
+            else:
+                new_query.save()
+                try:
+                    whatsapp._send_whatsapp_template_message(
+                        contact_phone, whatsapp.WHATSAPP_QUERY_INTAKE_TEMPLATE, language=whatsapp.WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE,
+                    )
+                except whatsapp.WhatsAppSendError as e:
+                    messages.warning(
+                        request,
+                        f"Query logged, but the WhatsApp intake message to {contact_phone} couldn't be "
+                        f"sent automatically ({e}). Please reach out directly.",
+                    )
+                return redirect('query_dashboard')
 
     return render(request, 'materials/query_dashboard.html', {
         'queries': queries,
+        'source_choices': Query.manual_source_choices(),
         'error': error,
         'post': request.POST if error else {},
         'quote_base_url': _public_quote_base_url(request),
@@ -114,6 +130,11 @@ def query_edit(request, pk):
             query.size = raw_size
             query.quantity = raw_quantity
             query.notes = request.POST.get('notes', '').strip()
+            if query.source == 'referral':
+                query.referrer_name = request.POST.get('referrer_name', '').strip()
+                query.referrer_phone = request.POST.get('referrer_phone', '').strip()
+            elif query.source == 'other':
+                query.source_detail = request.POST.get('source_detail', '').strip()
             for field, _label in Query.INTAKE_TEXT_FIELDS:
                 setattr(query, field, request.POST.get(field, '').strip())
             query.gst_number = query.gst_number.replace(' ', '').upper()
@@ -126,6 +147,7 @@ def query_edit(request, pk):
             query.save(update_fields=[
                 'company_name', 'contact_phone', 'contact_email',
                 'product_type', 'grade', 'size', 'quantity', 'notes',
+                'referrer_name', 'referrer_phone', 'source_detail',
                 *[field for field, _label in Query.INTAKE_TEXT_FIELDS],
             ])
             return redirect('query_dashboard')
