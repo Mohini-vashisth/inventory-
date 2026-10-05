@@ -71,6 +71,8 @@ sc start InventoryApp
 sc query InventoryApp   # STATE 4 RUNNING once it's back up
 ```
 
+**Nightly backup (office PC):** Task Scheduler task `InventoryDbBackup` runs `scripts\backup_db.bat` daily at 02:00 as `SYSTEM` (set up 2026-10-05; before that no backup was scheduled and `db_backups\` was empty). The `.bat` runs the venv's `manage.py backup_db` and appends output to `db_backups\backup.log`. Check it with `schtasks /query /tn InventoryDbBackup /v /fo LIST` (`Last Result: 0` = fine) or trigger one with `schtasks /run /tn InventoryDbBackup`. **Known gap:** backups live on the same disk as the database, so they don't survive disk loss — copying `db_backups\` somewhere off the machine is still open.
+
 ### SQLite tuning: WAL mode + a longer write-lock timeout
 
 SQLite's default journal mode locks the whole database file for the duration of a write and blocks readers while it does — invisible at today's single-plant, one-writer-at-a-time volume, but the first thing that would actually slow down once concurrent writers become routine (a second plant, or a future QA module logging more rows per step). Two changes address this, both already in place:
