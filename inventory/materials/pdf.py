@@ -163,7 +163,7 @@ def generate_quotation_pdf(quotation):
     by_box = _info_box(by_rows, styles)
 
     customer = quotation.customer
-    to_rows = [("Quotation to", Paragraph(f"<b>M/s. {_esc(customer.name)}</b>", styles['box_value']))]
+    to_rows = [("Quotation to", Paragraph(f"<b>{_esc(customer.name)}</b>", styles['box_value']))]
     if quotation.customer_address:
         to_rows.append(("Address", Paragraph(_esc(quotation.customer_address), styles['box_value'])))
     if quotation.customer_gstin:
