@@ -158,6 +158,13 @@ Checked once, at `order_confirm` (`materials/views.py`) — not at quote submiss
 
 ### Two user roles
 
+**Access control is declared with decorators, not hand-written per view** (`materials/decorators.py`). Every routed view in `materials/urls.py` carries one of:
+- `@employee_required` — session flag set by `employee_login` (shared PIN); otherwise redirects to `/employee-login/?next=<path>`.
+- `@staff_required` — `request.user.is_staff`; otherwise redirects `home`. Takes `on_denied=` for a different refusal: the two dashboards use `redirect_to_admin_login`, and `customer_autocomplete` returns an empty JSON list.
+- ...or is listed in `MaterialsRouteGuardTests.PUBLIC` (`materials/tests.py`) with a one-line reason: `home`, `admin_login`, `employee_login`, `employee_logout`, `quote_form` (the UUID token is the credential), `whatsapp_webhook` (HMAC-verified inside the view).
+
+`MaterialsRouteGuardTests` walks the URLconf, so **a new view with neither a decorator nor a PUBLIC entry fails CI by name** — the whole point, since previously a forgotten two-line guard was a silent unauthenticated hole. It also checks that anonymous requests, an employee-PIN-only session, and a non-staff login are all denied on every guarded route, and that the REST API rejects anonymous requests. When adding a view, add the decorator above the `def`; only add to `PUBLIC` for something that is genuinely meant to be open.
+
 **Admin/staff** (`is_staff=True` Django user):
 - Access via `/admin-login/` → Django admin (`/admin/`) or `/orders/` dashboard
 - Can confirm/reject/dispatch orders, manage product types, view all data
