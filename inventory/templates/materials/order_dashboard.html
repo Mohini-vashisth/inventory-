@@ -259,9 +259,9 @@
           <div class="section-label" style="margin-top:1.25rem;">Final Product</div>
           <div class="form-row cols-pt">
             <div class="form-group">
-              <label>Product Type</label>
+              <label>Product Code</label>
               <select name="product_type" id="dash-product-type">
-                <option value="">— select product type —</option>
+                <option value="">— select product code —</option>
                 {% for pt in product_types %}
                 <option value="{{ pt.pk }}" {% if post.product_type == pt.pk|stringformat:"s" %}selected{% endif %}>
                   {{ pt.item_code }}

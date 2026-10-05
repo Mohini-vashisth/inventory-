@@ -2,6 +2,17 @@
 
 from django.utils.http import url_has_allowed_host_and_scheme
 
+from ..models import ProductType
+
+
+def _match_product_type(grade, size):
+    """The catalogue product code (ProductType) for this grade + size, or None.
+    Grade matches case-insensitively (a typed "en8d" is "EN8D"), size exactly.
+    Grade + size is a product code's identity (they're unique together)."""
+    if not grade or size is None:
+        return None
+    return ProductType.objects.filter(grade__iexact=grade.strip(), size=size).first()
+
 
 class _CoilOverCommitted(Exception):
     """Raised inside pick_coil_for_order's atomic block when, after actually
