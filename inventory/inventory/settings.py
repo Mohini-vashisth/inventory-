@@ -198,11 +198,9 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# Customer-uploaded Purchase Orders (Order.purchase_order). WhiteNoise only
-# serves STATIC_ROOT, not this — materials/urls.py wires MEDIA_URL up via
-# Django's own static() helper unconditionally (not just in DEBUG), a
-# pragmatic choice for a small internal app with no reverse proxy in front,
-# consistent with running SQLite in production here.
+# Uploaded files (customer POs, WhatsApp drawings). WhiteNoise only serves
+# STATIC_ROOT, and Django's static() URL helper does nothing when DEBUG=False,
+# so materials.views.serve_media (staff-only) serves MEDIA_URL instead.
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 STORAGES = {

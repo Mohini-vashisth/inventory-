@@ -1,9 +1,12 @@
+from pathlib import Path
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login
 from django.contrib import messages
 from django.core.mail import EmailMessage
 from django.conf import settings
 from django.core.cache import cache
+from django.views.static import serve
 from django.urls import reverse
 from django.db import transaction, connections
 from django.core.files.base import ContentFile
@@ -1348,6 +1351,24 @@ def _dispatch_quote_email(request, customer, quotation):
         messages.success(request, f"Quotation {quotation.formatted_no()} sent to {customer.email}.")
     except Exception as e:
         messages.error(request, f"Failed to send email: {e}")
+
+
+# Types a browser can display without executing anything. Uploads come from
+# the public quote form (any file type is accepted server-side; the form's
+# `accept=` attribute is browser-only), so everything else is forced to
+# download rather than rendered on this app's own origin.
+_INLINE_MEDIA_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png', '.webp'}
+
+
+@staff_required(on_denied=redirect_to_admin_login)
+def serve_media(request, path):
+    """Serves uploaded files (customer POs, WhatsApp drawings) to staff only.
+    Django's static() helper can't do this: it returns nothing when
+    DEBUG=False, and it would be unauthenticated anyway."""
+    response = serve(request, path, document_root=settings.MEDIA_ROOT)
+    if Path(path).suffix.lower() not in _INLINE_MEDIA_EXTENSIONS:
+        response['Content-Disposition'] = 'attachment'
+    return response
 
 
 @staff_required

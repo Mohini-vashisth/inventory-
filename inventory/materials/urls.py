@@ -40,5 +40,6 @@ urlpatterns = [
     path('orders/<int:pk>/confirm/', views.order_confirm, name='order_confirm'),
     path('orders/<int:pk>/reject/', views.order_reject, name='order_reject'),
     path('orders/<int:pk>/dispatch/', views.order_dispatch, name='order_dispatch'),
+    path('media/<path:path>', views.serve_media, name='serve_media'),
     path('quote/<uuid:token>/', views.quote_form, name='quote_form'),
 ]
