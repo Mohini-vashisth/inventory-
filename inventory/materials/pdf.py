@@ -142,21 +142,22 @@ def generate_quotation_pdf(quotation):
     story.append(header)
     story.append(Spacer(1, 5 * mm))
 
-    # ── Quotation by / Quotation to boxes — each field gets its own row
+    # ── Quotation by / Quotation to boxes — each field gets its own row, and both
+    # boxes list them in the same order: name, address, GSTIN, email, phone, then extras.
     # (cramming Phone/Email onto one "Contact" line read poorly), so the
     # two boxes won't always match in row count — that's fine, they're
     # still visually paired by matching width/style, just not forced level.
     by_rows = [("Quotation by", Paragraph(f"<b>{_esc(company_name)}</b>", styles['box_value']))]
     if settings.COMPANY_ADDRESS:
         by_rows.append(("Address", Paragraph(_esc(settings.COMPANY_ADDRESS), styles['box_value'])))
-    if settings.COMPANY_PHONE:
-        by_rows.append(("Phone", Paragraph(_esc(settings.COMPANY_PHONE), styles['box_value'])))
-    if settings.COMPANY_EMAIL:
-        by_rows.append(("Email", Paragraph(_esc(settings.COMPANY_EMAIL), styles['box_value'])))
-    if settings.COMPANY_WEBSITE:
-        by_rows.append(("Website", Paragraph(_esc(settings.COMPANY_WEBSITE), styles['box_value'])))
     if settings.COMPANY_GST:
         by_rows.append(("GSTIN", Paragraph(_esc(settings.COMPANY_GST), styles['box_value'])))
+    if settings.COMPANY_EMAIL:
+        by_rows.append(("Email", Paragraph(_esc(settings.COMPANY_EMAIL), styles['box_value'])))
+    if settings.COMPANY_PHONE:
+        by_rows.append(("Phone", Paragraph(_esc(settings.COMPANY_PHONE), styles['box_value'])))
+    if settings.COMPANY_WEBSITE:
+        by_rows.append(("Website", Paragraph(_esc(settings.COMPANY_WEBSITE), styles['box_value'])))
     if quotation.sales_person:
         by_rows.append(("Sales Person", Paragraph(_esc(quotation.sales_person), styles['box_value'])))
     by_box = _info_box(by_rows, styles)
