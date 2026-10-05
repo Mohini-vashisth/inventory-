@@ -14,7 +14,7 @@ from decimal import Decimal, InvalidOperation
 from ..models import GradeOption, ProductCategory, ProductType, Customer, Query, Quotation, QuotationLineItem
 from ..forms import QuotationForm, QuotationLineItemFormSet
 from ..pdf import generate_quotation_pdf
-from ..product_codes import canonical_grade, describe_product_code
+from ..product_codes import canonical_grade, describe_product_code, grade_key
 from ..decorators import staff_required
 from .common import _first_form_error, _first_formset_error, _match_product_type, _safe_get
 
@@ -331,7 +331,7 @@ def quotation_form(request, pk=None):
     return render(request, 'materials/quotation_form.html', {
         # product type + grade + size -> product code, for the form's live auto-match (see _autofill_product_codes)
         'product_code_map': [
-            {'pk': pt.pk, 'category': pt.category_id, 'grade': pt.grade.lower(), 'size': f"{pt.size:.3f}"}
+            {'pk': pt.pk, 'category': pt.category_id, 'grade': grade_key(pt.grade), 'size': f"{pt.size:.3f}"}
             for pt in ProductType.objects.exclude(size=None)
         ],
         'grade_options': list(GradeOption.objects.values_list('name', flat=True)),

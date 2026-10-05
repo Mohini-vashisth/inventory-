@@ -6,7 +6,7 @@ from decimal import InvalidOperation
 from django.core.exceptions import ValidationError
 
 from ..models import GradeOption, ProductCategory, ProductType, Query
-from ..product_codes import canonical_grade
+from ..product_codes import canonical_grade, grade_key
 from .common import _match_product_type
 from ..decorators import redirect_to_admin_login, staff_required
 from .quotations import _public_quote_base_url
@@ -165,7 +165,7 @@ def query_edit(request, pk):
         'categories': ProductCategory.objects.all(),
         # type + grade + size -> product code, for the form's live auto-match (same as the quote form)
         'product_code_map': [
-            {'pk': pt.pk, 'category': pt.category_id, 'grade': pt.grade.lower(), 'size': f"{pt.size:.3f}"}
+            {'pk': pt.pk, 'category': pt.category_id, 'grade': grade_key(pt.grade), 'size': f"{pt.size:.3f}"}
             for pt in ProductType.objects.exclude(size=None)
         ],
         'grade_options': list(GradeOption.objects.values_list('name', flat=True)),

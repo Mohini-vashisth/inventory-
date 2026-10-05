@@ -515,8 +515,11 @@
       }, 250));
     }
 
+    // Same rule as Python's grade_key: case, spaces and punctuation don't make a different grade.
+    function gradeKey(value) { return (value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
     function matchRow(row) {
-      var grade = (row.querySelector('[name$="-grade"]').value || '').trim().toLowerCase();
+      var grade = gradeKey(row.querySelector('[name$="-grade"]').value);
       var size = normSize(row.querySelector('[name$="-size"]').value);
       var category = row.querySelector('select[name$="-category"]').value;
       var select = row.querySelector('select[name$="-product_type"]');
@@ -539,9 +542,9 @@
     // Typing "en8d" where the list has "EN8D" settles on the listed spelling, so one grade
     // isn't written several ways (each would get its own grade number in product codes).
     function canonicalGrade(input) {
-      var typed = input.value.trim().toLowerCase();
-      var listed = Array.prototype.find.call(document.querySelectorAll('#grade-options option'), function (option) {
-        return option.value.toLowerCase() === typed;
+      var typed = gradeKey(input.value);
+      var listed = !typed ? null : Array.prototype.find.call(document.querySelectorAll('#grade-options option'), function (option) {
+        return gradeKey(option.value) === typed;
       });
       if (listed && listed.value !== input.value) {
         input.value = listed.value;

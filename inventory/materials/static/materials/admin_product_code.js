@@ -14,10 +14,13 @@
   hint.style.cssText = 'margin-top:4px;font-size:12px;color:#4e73df;';
   code.parentNode.appendChild(hint);
 
+  // Same rule as Python's grade_key: case, spaces and punctuation don't make a different grade.
+  function gradeKey(value) { return (value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+
   function canonicalGrade() {
-    var typed = grade.value.trim().toLowerCase();
-    var listed = Array.prototype.find.call(document.querySelectorAll('#grade-options option'), function (option) {
-      return option.value.toLowerCase() === typed;
+    var typed = gradeKey(grade.value);
+    var listed = !typed ? null : Array.prototype.find.call(document.querySelectorAll('#grade-options option'), function (option) {
+      return gradeKey(option.value) === typed;
     });
     if (listed && listed.value !== grade.value) grade.value = listed.value;
   }

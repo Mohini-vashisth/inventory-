@@ -3,6 +3,7 @@
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from ..models import ProductType
+from ..product_codes import grade_key
 
 
 def _match_product_type(grade, size, category=None):
@@ -11,14 +12,15 @@ def _match_product_type(grade, size, category=None):
     given it must match that too; without one, grade + size alone only count
     when exactly one code has them — two codes sharing a grade and size across
     different product types is ambiguous, so it matches nothing rather than
-    guessing. Grade matches case-insensitively (a typed "en8d" is "EN8D"),
+    guessing. Grade ignores case, spaces and punctuation (a typed "EN8D" is "EN-8D"),
     size exactly."""
     if not grade or size is None:
         return None
-    candidates = ProductType.objects.filter(grade__iexact=grade.strip(), size=size)
+    candidates = ProductType.objects.filter(size=size)
     if category is not None:
         candidates = candidates.filter(category=category)
-    matches = list(candidates[:2])
+    key = grade_key(grade)
+    matches = [c for c in candidates if grade_key(c.grade) == key]
     return matches[0] if len(matches) == 1 else None
 
 

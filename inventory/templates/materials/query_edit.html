@@ -205,8 +205,18 @@
     var size = document.querySelector('[name=size]');
     var code = document.querySelector('[name=product_type]');
     var autoFilled = false;
+    // Same rule as Python's grade_key: case, spaces and punctuation don't make a different grade.
+    function gradeKey(value) { return (value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+    // "EN8D" typed where the list has "EN-8D" settles on the listed spelling.
+    grade.addEventListener('change', function () {
+      var typed = gradeKey(grade.value);
+      var listed = !typed ? null : Array.prototype.find.call(document.querySelectorAll('#grade-options option'), function (o) {
+        return gradeKey(o.value) === typed;
+      });
+      if (listed && listed.value !== grade.value) { grade.value = listed.value; sync(); }
+    });
     function sync() {
-      var g = grade.value.trim().toLowerCase();
+      var g = gradeKey(grade.value);
       var s = size.value === '' ? null : Number(size.value).toFixed(3);
       var found = null;
       if (g && s !== null && category.value) {
