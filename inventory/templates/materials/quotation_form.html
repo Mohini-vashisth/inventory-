@@ -1,11 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>New Quotation</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+{% extends "materials/base.html" %}
+
+{% block title %}New Quotation{% endblock %}
+
+{% block css %}
+    
     body { font-family: Arial, Helvetica, sans-serif; background: #f4f6f9; color: #333; }
 
     header {
@@ -15,7 +13,6 @@
     }
     header h1 { font-size: 1.3rem; }
     .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; }
-    .back-link:hover { color: white; }
 
     .content { max-width: 980px; margin: 2rem auto; padding: 0 1.5rem 4rem; }
 
@@ -37,23 +34,12 @@
     .card.collapsed .card-body { display: none; }
     .card-body { padding: 1.5rem; }
 
-    .error-msg {
-      background: #fee2e2; color: #991b1b;
-      padding: 0.6rem 0.9rem; border-radius: 8px;
-      font-size: 0.87rem; margin-bottom: 1rem;
-    }
+    
 
-    .alert {
-      padding: 0.75rem 1rem; border-radius: 8px;
-      font-size: 0.88rem; margin-bottom: 1.25rem;
-    }
-    .alert-success { background: #dcfce7; color: #166534; }
-    .alert-error   { background: #fee2e2; color: #991b1b; }
-    .alert-warning { background: #fef3c7; color: #92400e; }
+    
 
-    .form-row { display: grid; gap: 0.75rem; margin-bottom: 0.75rem; }
-    .cols-2 { grid-template-columns: 1fr 1fr; }
-    .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    
+    
     .cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
     .cols-5 { grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr; }
 
@@ -71,7 +57,6 @@
     textarea { resize: vertical; min-height: 56px; }
 
     .readonly-value { padding: 0.55rem 0; font-size: 0.95rem; font-weight: 600; }
-    .muted { color: #aaa; font-size: 0.82rem; }
 
     .item-row {
       border: 1px solid #eee; border-radius: 10px;
@@ -100,7 +85,7 @@
       padding: 0.75rem 2.25rem; background: #4e73df; color: white;
       border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: 600;
     }
-    .btn-primary:hover { background: #3a5ec0; }
+    
     .btn-secondary {
       padding: 0.75rem 1.5rem; background: white; color: #4e73df;
       border: 1px solid #4e73df; border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: 600;
@@ -122,10 +107,10 @@
       .content { padding: 0 0.85rem 3rem; margin: 1rem auto; }
       .card-body { padding: 1.1rem; }
     }
-  </style>
-</head>
-<body>
+  
+{% endblock %}
 
+{% block content %}
 <header>
   <h1>{% if draft %}Edit Draft Quotation{% else %}New Quotation{% endif %}</h1>
   <a href="{% if query %}{% url 'query_dashboard' %}{% elif draft %}{% url 'quotation_drafts' %}{% else %}{% url 'order_dashboard' %}{% endif %}" class="back-link">← Cancel</a>
@@ -455,5 +440,4 @@
     updateRemoveButtonsVisibility();
   });
 </script>
-</body>
-</html>
+{% endblock %}

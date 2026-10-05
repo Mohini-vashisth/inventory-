@@ -1,11 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Query Dashboard</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+{% extends "materials/base.html" %}
+
+{% block title %}Query Dashboard{% endblock %}
+
+{% block css %}
+    
     body { font-family: Arial, Helvetica, sans-serif; background: #f4f6f9; color: #333; }
 
     header {
@@ -15,7 +13,6 @@
     }
     header h1 { font-size: 1.3rem; }
     .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; margin-left: 1.25rem; }
-    .back-link:hover { color: white; }
 
     .content { max-width: 1150px; margin: 2rem auto; padding: 0 1.5rem; }
 
@@ -32,8 +29,7 @@
     .card-header span { color: #aaa; font-size: 0.85rem; font-weight: 400; }
     .card-body { padding: 1.75rem; }
 
-    .form-row { display: grid; gap: 0.75rem; margin-bottom: 0.75rem; }
-    .cols-2 { grid-template-columns: 1fr 1fr; }
+    
 
     .table-scroll { overflow-x: auto; }
 
@@ -53,21 +49,10 @@
       padding: 0.65rem 2rem; background: #4e73df; color: white;
       border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
     }
-    .btn-primary:hover { background: #3a5ec0; }
 
-    .error-msg {
-      background: #fee2e2; color: #991b1b;
-      padding: 0.6rem 0.9rem; border-radius: 8px;
-      font-size: 0.87rem; margin-bottom: 1rem;
-    }
+    
 
-    .alert {
-      padding: 0.75rem 1rem; border-radius: 8px;
-      font-size: 0.88rem; margin-bottom: 1.25rem;
-    }
-    .alert-success { background: #dcfce7; color: #166534; }
-    .alert-error   { background: #fee2e2; color: #991b1b; }
-    .alert-warning { background: #fef3c7; color: #92400e; }
+    
 
     table { width: 100%; border-collapse: collapse; }
     th {
@@ -87,21 +72,17 @@
     .badge-converted       { background: #dcfce7; color: #166534; }
     .badge-not_interested  { background: #f3f4f6; color: #6b7280; }
 
-    .muted { color: #aaa; font-size: 0.82rem; }
-
     .icon-btn {
       background: #f3f4f6; border: 1px solid #ddd;
       border-radius: 6px; padding: 0.25rem 0.65rem;
       font-size: 0.75rem; cursor: pointer; color: #4e73df;
       display: inline-block; text-decoration: none;
     }
-    .icon-btn:hover { background: #eff2ff; }
+    
     .icon-btn.green { background: #dcfce7; border-color: #bbf7d0; color: #166534; margin-left: 4px; }
     .icon-btn.green:hover { background: #bbf7d0; }
     .icon-btn.red { background: #fee2e2; border-color: #fecaca; color: #991b1b; margin-left: 4px; }
     .icon-btn.red:hover { background: #fecaca; }
-
-    .empty-row td { text-align: center; color: #bbb; padding: 3rem; }
 
     @media (max-width: 640px) {
       header { padding: 1rem; flex-wrap: wrap; gap: 0.5rem; }
@@ -110,10 +91,10 @@
       .card-header { flex-direction: column; align-items: flex-start; gap: 0.3rem; }
       .cols-2 { grid-template-columns: 1fr; }
     }
-  </style>
-</head>
-<body>
+  
+{% endblock %}
 
+{% block content %}
 <header>
   <h1>Query Dashboard</h1>
   <div>
@@ -257,6 +238,4 @@
     });
   }
 </script>
-
-</body>
-</html>
+{% endblock %}

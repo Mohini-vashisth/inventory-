@@ -1,12 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Add Lot</title>
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+{% extends "materials/base.html" %}
 
+{% block title %}Add Lot{% endblock %}
+
+{% block css %}
   body {
     font-family: Arial, Helvetica, sans-serif;
     background: linear-gradient(135deg, #4e73df, #1cc88a);
@@ -23,7 +19,6 @@
     color: rgba(255,255,255,0.8); text-decoration: none;
     font-size: 0.9rem; display: inline-block; margin-bottom: 1.25rem;
   }
-  .back-link:hover { color: white; }
 
   h1 { color: white; font-size: 1.5rem; margin-bottom: 0.3rem; }
   .subtitle { color: rgba(255,255,255,0.75); font-size: 0.88rem; margin-bottom: 1.25rem; }
@@ -45,17 +40,8 @@
   .form-group { margin-bottom: 1.1rem; }
 
   /* Autocomplete */
-  .autocomplete-wrapper { position: relative; }
-  .autocomplete-list {
-    position: absolute; top: 100%; left: 0; right: 0;
-    background: white; border: 1px solid #ddd; border-top: none;
-    border-radius: 0 0 8px 8px; z-index: 100;
-    max-height: 200px; overflow-y: auto; display: none;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-  }
-  .autocomplete-list.open { display: block; }
-  .autocomplete-item { padding: 0.55rem 0.75rem; cursor: pointer; font-size: 0.9rem; }
-  .autocomplete-item:hover, .autocomplete-item.active { background: #eff2ff; color: #4e73df; }
+
+  
 
   label {
     display: block;
@@ -92,7 +78,6 @@
     font-size: 1rem; font-weight: 600; cursor: pointer;
     margin-top: 0.5rem;
   }
-  .btn-submit:hover { background: #3a5ec0; }
 
   /* ── Full-screen picker overlay ── */
   .picker-overlay {
@@ -150,16 +135,9 @@
     padding: 2rem; text-align: center;
     color: rgba(255,255,255,0.8); font-size: 0.95rem;
   }
+{% endblock %}
 
-  .error-msg {
-    background: #fee2e2; color: #991b1b;
-    padding: 0.6rem 0.9rem; border-radius: 8px;
-    font-size: 0.87rem; margin-bottom: 1rem;
-  }
-</style>
-</head>
-<body>
-
+{% block content %}
 <div class="page">
   <a href="{% url 'gate_entry_detail' gate_entry.pk %}" class="back-link">← Back to gate entry</a>
   <h1>Add Lot</h1>
@@ -343,6 +321,4 @@
     }
   });
 </script>
-
-</body>
-</html>
+{% endblock %}

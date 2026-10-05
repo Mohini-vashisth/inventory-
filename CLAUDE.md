@@ -233,6 +233,18 @@ Both the coil-picking hub and the Update Progress scan gate offer a "📷" butto
 - Falls back gracefully with an on-screen message ("Camera access isn't available" / "was denied") rather than breaking the page — manual typing (or a hardware scanner) remains the guaranteed-working path either way.
 - Since these are static files (new, not previously part of the app), remember to `collectstatic` after deploying — see the deployment section above.
 
+## Templates: `base.html` plus inline shared CSS
+
+All 24 page templates `{% extends "materials/base.html" %}` (since 2026-10-05; each one used to carry its own `<!DOCTYPE>`/`<head>`/`<style>`). A page fills in blocks: `title`, `css` (that page's own CSS), `content` (the body), and optionally `body_attrs`. Shared rules live in `templates/materials/_base.css` and are pulled in by `base.html`'s `base_css` block; a page opts out by overriding that block with nothing (only `home.html` does — it never had the `*` reset the others use, and opting out keeps it pixel-identical).
+
+**The shared CSS is inlined with `{% include %}`, deliberately not a `/static` file.** `quote_form.html` and `quote_submitted.html` are the customer-facing pages, reachable from outside only through the Tailscale Funnel path `/quote/*` — `/static/...` isn't exposed there, so an external stylesheet or script would 404 for customers and leave the page unstyled. `TemplateStructureTests.test_customer_facing_pages_load_nothing_external` fails if either page ever references `/static/`, a stylesheet link, or a script `src`. (The employee scanner pages do use `/static/` JS; they're only reached over Tailscale, where it works.)
+
+**What is and isn't shared — the pages have diverged, on purpose.** `_base.css` holds only rules that were byte-identical in every template that defined them *and* whose class isn't used by a page that doesn't style it (so hoisting couldn't change any other page): the `*` reset, `.error-msg`, `.alert*`, `.muted`, `.form-row`/`.cols-2`/`.cols-3`, the `.autocomplete-*` set, and a few `:hover` rules. Everything else stays per-page, because the rest genuinely differs — `.card` has 9 variants across 15 pages and `body` 8 — so "one stylesheet" would be a visual redesign, not a refactor. Bare tag selectors (`table`, `td`, `input:focus`, `header`) also stay per-page: hoisting them would restyle pages that never defined them. Three visual families exist: the blue→green gradient employee/portal pages (16), the staff dashboards with a header bar on `#f4f6f9` (5), and standalone pages (admin login, the printable coil tag, home).
+
+**How the refactor was verified, if a similar one is ever needed:** nothing in the test suite checks visuals, so every page (30 states including error states) was rendered before and after with sample data, loaded side by side in a browser at 1024/768/390 px wide, and the *computed style of every element* was compared (1,520 elements: 0 differences; the harness was first checked against a deliberately planted 1px change). The only intended difference is `<html lang="en">` on the admin login, which previously had none.
+
+**Adding a page:** extend `base.html`, put page-specific CSS in the `css` block, and only move a rule into `_base.css` if it's identical in 3+ pages and its class isn't used elsewhere without a rule. `TemplateStructureTests.test_every_page_template_extends_base_html` enforces the `extends`.
+
 ## Order-first coil picking (important constraint)
 
 When an order has a ProductType with AllowedCoilSpecs configured, only coils matching those grade/size specs can be picked (`_coil_matches_order_specs` in `materials/views/picking.py`, used by both the scan lookup and the browse list). If no specs are configured, all coils with remaining weight are eligible. Orders **cannot be confirmed** without a product type set, and picking is blocked entirely without one.
@@ -327,6 +339,7 @@ Read-only DRF API under `/api/` — `orders`, `coils`, `jobs`, `product-types`. 
 | `test_api.py` | The read-only REST API |
 | `test_commands.py` | `import_excel`, `backfill_options`, `backup_db` (and its media mirror) |
 | `test_uploads_and_admin.py` | Staff-only media serving; a smoke test that renders every admin page |
+| `test_templates.py` | Every template extends `base.html`; the customer-facing pages load nothing external |
 | `helpers.py` | `quotation_item_post_data`, shared by the quotation and query tests |
 
 Mirror the layout when adding tests (new view in `views/orders.py` → tests in `test_orders.py`). Mock targets use the *new* module path — e.g. `patch('materials.views.whatsapp._send_whatsapp_text_message_background')`; see "Code layout" above for why a caller must go through the module for that to work.

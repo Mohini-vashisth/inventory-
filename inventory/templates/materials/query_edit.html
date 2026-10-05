@@ -1,11 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Edit Query</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+{% extends "materials/base.html" %}
+
+{% block title %}Edit Query{% endblock %}
+
+{% block css %}
+    
     body { font-family: Arial, Helvetica, sans-serif; background: #f4f6f9; color: #333; }
 
     header {
@@ -15,7 +13,6 @@
     }
     header h1 { font-size: 1.3rem; }
     .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; margin-left: 1.25rem; }
-    .back-link:hover { color: white; }
 
     .content { max-width: 700px; margin: 2rem auto; padding: 0 1.5rem; }
 
@@ -30,8 +27,7 @@
     }
     .card-body { padding: 1.75rem; }
 
-    .form-row { display: grid; gap: 0.75rem; margin-bottom: 0.75rem; }
-    .cols-2 { grid-template-columns: 1fr 1fr; }
+    
 
     .form-group { display: flex; flex-direction: column; }
     label {
@@ -49,7 +45,7 @@
       padding: 0.65rem 2rem; background: #4e73df; color: white;
       border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
     }
-    .btn-primary:hover { background: #3a5ec0; }
+    
     .btn-secondary {
       padding: 0.65rem 1.5rem; background: white; color: #666;
       border: 1px solid #ddd; border-radius: 8px; font-size: 0.95rem;
@@ -57,22 +53,16 @@
     }
     .btn-secondary:hover { background: #f8f9fb; }
 
-    .error-msg {
-      background: #fee2e2; color: #991b1b;
-      padding: 0.6rem 0.9rem; border-radius: 8px;
-      font-size: 0.87rem; margin-bottom: 1rem;
-    }
-
     @media (max-width: 640px) {
       header { padding: 1rem; flex-wrap: wrap; gap: 0.5rem; }
       .content { padding: 0 0.85rem; margin: 1rem auto; }
       .card-body { padding: 1.1rem; }
       .cols-2 { grid-template-columns: 1fr; }
     }
-  </style>
-</head>
-<body>
+  
+{% endblock %}
 
+{% block content %}
 <header>
   <h1>Edit Query</h1>
   <div>
@@ -151,6 +141,4 @@
     </div>
   </div>
 </div>
-
-</body>
-</html>
+{% endblock %}

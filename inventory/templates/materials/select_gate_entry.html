@@ -1,11 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>New Coil Entry</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+{% extends "materials/base.html" %}
+
+{% block title %}New Coil Entry{% endblock %}
+
+{% block css %}
+    
     body {
       font-family: Arial, Helvetica, sans-serif;
       background: linear-gradient(135deg, #4e73df, #1cc88a);
@@ -67,12 +65,12 @@
       display: inline-block; margin-top: 2rem;
       color: rgba(255,255,255,0.7); font-size: 0.9rem; text-decoration: none;
     }
-    .back-link:hover { color: white; }
 
     .arrow { font-size: 1.2rem; color: #4e73df; }
-  </style>
-</head>
-<body>
+  
+{% endblock %}
+
+{% block content %}
 <div class="page">
 
   <h1>New Coil Entry</h1>
@@ -104,5 +102,4 @@
 
   <a href="{% url 'employee' %}" class="back-link">← Back</a>
 </div>
-</body>
-</html>
+{% endblock %}
