@@ -28,10 +28,9 @@ def _sign_whatsapp_payload(body_bytes, secret):
 ANSWERS = {
     'company_name': 'Ramesh Traders', 'contact_email': 'ramesh@example.com',
     'gst_number': '22AAAAA0000A1Z5', 'gst_address': '12 Industrial Area, Faridabad',
-    'product_description': 'Round bar', 'drawing': 'no', 'grade': 'EN8D', 'make': 'no',
-    'mechanical_properties': 'tensile 600 MPa', 'process_required': 'no',
-    'end_use': 'automotive shafts', 'delivery_form': 'coil', 'quantity_text': '2 tons',
-    'frequency': 'monthly',
+    'product_description': 'Round bar', 'drawing': 'no', 'grade': 'EN8D',
+    'technical_requirements': 'no', 'end_use_delivery': 'automotive shafts, coil',
+    'quantity_text': '2 tons monthly',
 }
 
 
@@ -131,8 +130,7 @@ class WhatsAppWebhookTests(TestCase):
     def test_intake_sequence_is_in_the_requested_order(self):
         self.assertEqual(WHATSAPP_QUERY_FIELDS, [
             'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_description',
-            'drawing', 'grade', 'make', 'mechanical_properties', 'process_required',
-            'end_use', 'delivery_form', 'quantity_text', 'frequency',
+            'drawing', 'grade', 'technical_requirements', 'end_use_delivery', 'quantity_text',
         ])
 
     def test_every_question_after_company_name_has_wording(self):
@@ -143,11 +141,13 @@ class WhatsAppWebhookTests(TestCase):
     def test_each_answer_is_saved_and_the_next_question_asked(self, mock_send):
         fields = WHATSAPP_QUERY_FIELDS
         for index, field in enumerate(fields[1:], start=1):
+            if field in ('gst_number', 'gst_address'):
+                continue  # the GST reply is split in two; covered by the GST tests below
             with self.subTest(field=field):
                 mock_send.reset_mock()
                 phone = f'9198765432{index:02d}'
                 _query_awaiting(field, phone=phone)
-                reply = ANSWERS[field] if field in ('contact_email', 'gst_number') else f'reply for {field}'
+                reply = ANSWERS[field] if field == 'contact_email' else f'reply for {field}'
                 self._post_payload(self._message_payload(phone, reply))
 
                 query = Query.objects.get(contact_phone=phone)
@@ -156,45 +156,75 @@ class WhatsAppWebhookTests(TestCase):
                 expected = WHATSAPP_QUERY_QUESTIONS[following] if following else WHATSAPP_CLOSING_MESSAGE
                 mock_send.assert_called_once_with(phone, expected)
 
+    def _gst_reply(self, mock_send, reply, phone='919876543210'):
+        mock_send.reset_mock()
+        _query_awaiting('gst_number', phone=phone)
+        self._post_payload(self._message_payload(phone, reply))
+        return Query.objects.get(contact_phone=phone)
+
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_gst_number_is_normalised(self, mock_send):
+    def test_gst_number_and_address_in_one_message_fill_both_and_skip_the_address_question(self, mock_send):
+        cases = {
+            '22AAAAA0000A1Z5, 12 Industrial Area, Faridabad': '12 Industrial Area, Faridabad',
+            'GSTIN: 22AAAAA0000A1Z5\n12 Industrial Area, Faridabad': '12 Industrial Area, Faridabad',
+            '12 Industrial Area, Faridabad - 22aaaaa0000a1z5': '12 Industrial Area, Faridabad',
+            '22AAAAA0000A1Z5, 14 GST Road, Chennai': '14 GST Road, Chennai',  # "GST" inside the address survives
+        }
+        for index, (reply, address) in enumerate(cases.items()):
+            with self.subTest(reply=reply):
+                query = self._gst_reply(mock_send, reply, phone=f'9198300000{index:02d}')
+                self.assertEqual(query.gst_number, '22AAAAA0000A1Z5')
+                self.assertEqual(query.gst_address, address)
+                mock_send.assert_called_once_with(query.contact_phone, WHATSAPP_QUERY_QUESTIONS['product_description'])
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_gst_number_alone_is_normalised_and_the_address_is_asked_next(self, mock_send):
         for index, reply in enumerate(['22aaaaa0000a1z5', ' 22 AAAAA 0000 A 1Z5 ']):
             with self.subTest(reply=reply):
-                phone = f'9198000000{index:02d}'
-                _query_awaiting('gst_number', phone=phone)
-                self._post_payload(self._message_payload(phone, reply))
-                self.assertEqual(Query.objects.get(contact_phone=phone).gst_number, '22AAAAA0000A1Z5')
+                query = self._gst_reply(mock_send, reply, phone=f'9198000000{index:02d}')
+                self.assertEqual(query.gst_number, '22AAAAA0000A1Z5')
+                self.assertEqual(query.gst_address, '')
+                mock_send.assert_called_once_with(query.contact_phone, WHATSAPP_QUERY_QUESTIONS['gst_address'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_unregistered_customer_can_answer_na(self, mock_send):
+    def test_address_question_after_a_number_only_reply_saves_the_address(self, mock_send):
+        _query_awaiting('gst_address')
+        self._post_payload(self._message_payload('919876543210', '12 Industrial Area, Faridabad'))
+
+        query = Query.objects.get(contact_phone='919876543210')
+        self.assertEqual(query.gst_address, '12 Industrial Area, Faridabad')
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['product_description'])
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_unregistered_customer_can_answer_na_alone_or_with_an_address(self, mock_send):
         for index, reply in enumerate(['NA', 'n/a', 'No', 'none', 'Not registered']):
             with self.subTest(reply=reply):
-                mock_send.reset_mock()
-                phone = f'9198100000{index:02d}'
-                _query_awaiting('gst_number', phone=phone)
-                self._post_payload(self._message_payload(phone, reply))
-                self.assertEqual(Query.objects.get(contact_phone=phone).gst_number, 'NA')
-                mock_send.assert_called_once_with(phone, WHATSAPP_QUERY_QUESTIONS['gst_address'])
+                query = self._gst_reply(mock_send, reply, phone=f'9198100000{index:02d}')
+                self.assertEqual(query.gst_number, 'NA')
+                self.assertEqual(query.gst_address, '')
+                mock_send.assert_called_once_with(query.contact_phone, WHATSAPP_QUERY_QUESTIONS['gst_address'])
+        query = self._gst_reply(mock_send, 'NA, 45 Mall Road', phone='919810000099')
+        self.assertEqual((query.gst_number, query.gst_address), ('NA', '45 Mall Road'))
+        mock_send.assert_called_once_with('919810000099', WHATSAPP_QUERY_QUESTIONS['product_description'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_invalid_gst_number_reasks_without_saving(self, mock_send):
-        for index, reply in enumerate(['GST pending', '22AAAAA0000A1Z', '1234567890ABCDE', 'my number is 22AAAAA0000A1Z5']):
+    def test_invalid_gst_reply_reasks_without_saving(self, mock_send):
+        replies = ['GST pending', '22AAAAA0000A1Z', '1234567890ABCDE', '12 Industrial Area, Faridabad', 'no. 5 Mall Road']
+        for index, reply in enumerate(replies):
             with self.subTest(reply=reply):
-                mock_send.reset_mock()
-                phone = f'9198200000{index:02d}'
-                _query_awaiting('gst_number', phone=phone)
-                self._post_payload(self._message_payload(phone, reply))
-                self.assertEqual(Query.objects.get(contact_phone=phone).gst_number, '')
-                mock_send.assert_called_once_with(phone, WHATSAPP_GST_INVALID_MESSAGE)
+                query = self._gst_reply(mock_send, reply, phone=f'9198200000{index:02d}')
+                self.assertEqual(query.gst_number, '')
+                self.assertEqual(query.gst_address, '')
+                mock_send.assert_called_once_with(query.contact_phone, WHATSAPP_GST_INVALID_MESSAGE)
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_no_is_a_real_answer_that_advances_the_sequence(self, mock_send):
-        _query_awaiting('mechanical_properties')
+        _query_awaiting('technical_requirements')
         self._post_payload(self._message_payload('919876543210', 'no'))
 
         query = Query.objects.get(contact_phone='919876543210')
-        self.assertEqual(query.mechanical_properties, 'no')
-        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['process_required'])
+        self.assertEqual(query.technical_requirements, 'no')
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['end_use_delivery'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_text_reply_to_drawing_question_saves_as_drawing_notes_and_asks_for_grade_next(self, mock_send):
@@ -246,10 +276,10 @@ class WhatsAppWebhookTests(TestCase):
         call. Even a query that already has both (entered by staff) isn't
         matched behind their back."""
         ProductType.objects.create(item_code='Catalogue Bar', grade='EN8D', size='1.200')
-        query = _query_awaiting('frequency')
+        query = _query_awaiting('quantity_text')
         query.size = Decimal('1.2')
         query.save(update_fields=['size'])
-        self._post_payload(self._message_payload('919876543210', 'monthly'))
+        self._post_payload(self._message_payload('919876543210', '2 tons monthly'))
 
         query.refresh_from_db()
         self.assertIsNone(query.product_type)
