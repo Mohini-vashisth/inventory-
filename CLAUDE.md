@@ -191,7 +191,7 @@ Checked once, at `order_confirm` (`materials/views/orders.py`) — not at quote 
 **Access control is declared with decorators, not hand-written per view** (`materials/decorators.py`). Every routed view in `materials/urls.py` carries one of:
 - `@employee_required` — session flag set by `employee_login` (shared PIN); otherwise redirects to `/employee-login/?next=<path>`.
 - `@staff_required` — `request.user.is_staff`; otherwise redirects `home`. Takes `on_denied=` for a different refusal: the two dashboards use `redirect_to_admin_login`, and `customer_autocomplete` returns an empty JSON list.
-- ...or is listed in `MaterialsRouteGuardTests.PUBLIC` (`materials/tests.py`) with a one-line reason: `home`, `admin_login`, `employee_login`, `employee_logout`, `quote_form` (the UUID token is the credential), `whatsapp_webhook` (HMAC-verified inside the view).
+- ...or is listed in `MaterialsRouteGuardTests.PUBLIC` (`materials/tests/test_auth.py`) with a one-line reason: `home`, `admin_login`, `employee_login`, `employee_logout`, `quote_form` (the UUID token is the credential), `whatsapp_webhook` (HMAC-verified inside the view).
 
 `MaterialsRouteGuardTests` walks the URLconf, so **a new view with neither a decorator nor a PUBLIC entry fails CI by name** — the whole point, since previously a forgotten two-line guard was a silent unauthenticated hole. It also checks that anonymous requests, an employee-PIN-only session, and a non-staff login are all denied on every guarded route, and that the REST API rejects anonymous requests. When adding a view, add the decorator above the `def`; only add to `PUBLIC` for something that is genuinely meant to be open.
 
@@ -310,6 +310,26 @@ Read-only DRF API under `/api/` — `orders`, `coils`, `jobs`, `product-types`. 
 ## Tests, lint and CI
 
 `.github/workflows/tests.yml` runs on every push/PR to `main`: `ruff check .` → `manage.py check` → `makemigrations --check` → the full test suite, on Python 3.12 (matching production), installing `requirements-dev.txt`. Run the same locally with `ruff check .` (from the repo root) and `python3 manage.py test materials` (from `inventory/`).
+
+**Tests are a package, one module per area** (`materials/tests/`; `tests.py` was a single ~3,700-line file until 2026-10-05). `manage.py test materials` discovers every `test_*.py` in it:
+
+| Module | Covers |
+|---|---|
+| `test_models.py` | Coil usage/archiving, product-type uniqueness, gate entry and lot model behaviour |
+| `test_gate_entry.py` | Gate entry / lot / coil-registration forms and views, the autosuggest |
+| `test_auth.py` | Employee PIN login and throttle, **`MaterialsRouteGuardTests`** (access control on every route), public/employee landing pages |
+| `test_picking.py` | Order-first coil picking: spec filtering, best-fit sort, ratios, scanning |
+| `test_production.py` | Step unlock, job status rollup, the scan gate |
+| `test_orders.py` | Order numbering, stock check on confirm, workflow, dashboard |
+| `test_quotations.py` | The Send Quote form, drafts, the PDF |
+| `test_queries.py` | The Query dashboard |
+| `test_whatsapp.py` | The WhatsApp bot: webhook, question sequence, drawing download |
+| `test_api.py` | The read-only REST API |
+| `test_commands.py` | `import_excel`, `backfill_options`, `backup_db` (and its media mirror) |
+| `test_uploads_and_admin.py` | Staff-only media serving; a smoke test that renders every admin page |
+| `helpers.py` | `quotation_item_post_data`, shared by the quotation and query tests |
+
+Mirror the layout when adding tests (new view in `views/orders.py` → tests in `test_orders.py`). Mock targets use the *new* module path — e.g. `patch('materials.views.whatsapp._send_whatsapp_text_message_background')`; see "Code layout" above for why a caller must go through the module for that to work.
 
 `ruff.toml` is deliberately small — `E4`, `E7`, `E9`, `F` only (syntax errors, undefined names, unused imports/variables, ambiguous names, one-statement-per-line), not style. Ruff's own default rule set is far broader (~290 findings on this codebase at the time, mostly stylistic), and a linter nobody can get to green gets ignored; widen the rule set deliberately, not by accident. `ruff` is pinned in `requirements-dev.txt` so a new release can't add rules and fail CI unprompted. Migrations, `staticfiles/`, `media/` and `db_backups/` are excluded.
 
