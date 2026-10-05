@@ -9,6 +9,7 @@ the Django admin (the Add product code form fills Item Code from these three
 and a script keeps it live); quotes only ever *look codes up* and refuse to be
 sent until the code for each item exists.
 """
+import re
 from decimal import Decimal, InvalidOperation
 
 from django.db.models import Max
@@ -34,12 +35,34 @@ def size_digits(size):
     return f"{int(hundredths):05d}"
 
 
+def grade_key(grade):
+    """What makes two spellings the same grade: case, spaces and punctuation are
+    ignored, so "EN8D", "en-8d" and "EN 8D" are one grade ("EN-8D CR" stays
+    different from "EN-8D"). The browser scripts apply the same rule."""
+    return re.sub(r'[^a-z0-9]', '', (grade or '').lower())
+
+
+def find_grade_option(grade):
+    """The listed GradeOption this grade is a spelling of, or None."""
+    key = grade_key(grade)
+    if not key:
+        return None
+    return next((o for o in GradeOption.objects.order_by('pk') if grade_key(o.name) == key), None)
+
+
+def find_product_code(category, grade, size, exclude_pk=None):
+    """The existing code for this type + grade + size, whichever way the grade is spelled."""
+    key = grade_key(grade)
+    candidates = ProductType.objects.exclude(pk=exclude_pk).filter(category=category, size=size)
+    return next((c for c in candidates if grade_key(c.grade) == key), None)
+
+
 def canonical_grade(grade):
-    """The grade as it's spelled in the grade list when it matches one regardless of
-    case ("en8d" -> "EN8D"), otherwise the text as typed (trimmed). Keeps one
-    grade from being written several ways, without ever refusing a new one."""
+    """The grade as it's spelled in the grade list when it is a spelling of a listed
+    one ("en8d" or "EN8D" -> "EN-8D"), otherwise the text as typed (trimmed). Keeps
+    one grade from being written several ways, without ever refusing a new one."""
     text = (grade or '').strip()
-    option = GradeOption.objects.filter(name__iexact=text).first() if text else None
+    option = find_grade_option(text)
     return option.name if option else text
 
 
@@ -48,7 +71,7 @@ def _next_grade_number():
 
 
 def _find_code(category, grade, size):
-    return ProductType.objects.filter(category=category, grade__iexact=grade.strip(), size=size).first()
+    return find_product_code(category, grade, size)
 
 
 def _why_not(category, grade, size):
@@ -59,7 +82,7 @@ def _why_not(category, grade, size):
         return "The grade is longer than 20 characters."
     if size_digits(size) is None:
         return "An automatic code needs a size above 0 up to 999.99 mm, with at most 2 decimals."
-    existing = GradeOption.objects.filter(name__iexact=grade.strip()).first()
+    existing = find_grade_option(grade)
     if (existing is None or existing.number is None) and _next_grade_number() > MAX_GRADE_NUMBER:
         return "All 999 grade numbers are in use."
     return ""
@@ -81,7 +104,7 @@ def describe_product_code(category, grade, size):
     reason = _why_not(category, grade, size)
     if reason:
         return {'exists': False, 'item_code': None, 'reason': reason}
-    option = GradeOption.objects.filter(name__iexact=grade.strip()).first()
+    option = find_grade_option(grade)
     number = option.number if option and option.number is not None else _next_grade_number()
     return {'exists': False, 'item_code': _build(category, number, size), 'reason': ''}
 
@@ -90,7 +113,7 @@ def _grade_number(grade):
     """The grade's number, adding the grade to the list and numbering it the
     first time it is used. Returns (GradeOption, number)."""
     name = grade.strip()
-    option = GradeOption.objects.filter(name__iexact=name).first() or GradeOption(name=name)
+    option = find_grade_option(name) or GradeOption(name=name)
     if option.number is None:
         option.number = _next_grade_number()
         option.save()
@@ -113,14 +136,13 @@ def item_code_for(category, grade, size, exclude_pk=None):
     being edited, which doesn't count as a duplicate of itself)."""
     if not (category and grade and grade.strip() and size is not None):
         return None, "Pick a product type and fill in grade and size, or type an item code yourself."
-    existing = ProductType.objects.exclude(pk=exclude_pk).filter(
-        category=category, grade__iexact=grade.strip(), size=size).first()
+    existing = find_product_code(category, grade, size, exclude_pk)
     if existing:
         return None, f"A product code for this type, grade and size already exists: {existing.item_code}."
     reason = _why_not(category, grade, size)
     if reason:
         return None, reason
-    option = GradeOption.objects.filter(name__iexact=grade.strip()).first()
+    option = find_grade_option(grade)
     number = option.number if option and option.number is not None else _next_grade_number()
     return _unique_item_code(_build(category, number, size), exclude_pk), ""
 

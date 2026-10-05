@@ -8,7 +8,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from ..models import Customer, GradeOption, ProductCategory, ProductType, Quotation, QuotationLineItem
-from ..product_codes import canonical_grade, describe_product_code, item_code_for, reserve_grade_number, size_digits
+from ..product_codes import grade_key, canonical_grade, describe_product_code, item_code_for, reserve_grade_number, size_digits
 from .helpers import quotation_item_post_data
 
 
@@ -369,3 +369,47 @@ class QuoteSendRequiresACodeTests(TestCase):
         self.assertIn(reverse('product_code_lookup'), html)
         self.assertIn('code-hint', html)
         self.assertIn('Add it in the admin before sending', html)
+
+
+class GradeSpellingTests(TestCase):
+    """EN8D, en-8d and EN 8D are the same grade; EN-8D CR is not."""
+
+    def setUp(self):
+        self.flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        GradeOption.objects.create(name='EN-8D', number=9)
+        GradeOption.objects.create(name='EN-8D CR', number=10)
+        self.code = ProductType.objects.create(item_code='FBB00900120', category=self.flat, grade='EN-8D', size='1.200')
+
+    def test_the_key_ignores_case_spaces_and_punctuation(self):
+        self.assertEqual({grade_key(g) for g in ('EN8D', 'en-8d', 'EN 8D', ' EN-8D ')}, {'en8d'})
+        self.assertNotEqual(grade_key('EN-8D CR'), grade_key('EN8D'))
+        self.assertEqual(grade_key(None), '')
+
+    def test_a_typed_spelling_settles_on_the_listed_one(self):
+        self.assertEqual(canonical_grade('EN8D'), 'EN-8D')
+        self.assertEqual(canonical_grade('en 8d cr'), 'EN-8D CR')
+        self.assertEqual(canonical_grade('NEW-1'), 'NEW-1')
+
+    def test_the_code_is_found_whichever_way_the_grade_is_spelled(self):
+        from ..views.common import _match_product_type
+        for typed in ('EN8D', 'en-8d', 'EN 8D'):
+            with self.subTest(typed=typed):
+                self.assertEqual(_match_product_type(typed, Decimal('1.2'), self.flat), self.code)
+                self.assertEqual(describe_product_code(self.flat, typed, Decimal('1.2'))['item_code'], 'FBB00900120')
+        self.assertIsNone(_match_product_type('EN8D CR', Decimal('1.2'), self.flat))
+
+    def test_a_differently_spelled_duplicate_is_refused_and_reuses_the_grade_number(self):
+        code, reason = item_code_for(self.flat, 'EN8D', Decimal('1.2'))
+        self.assertIsNone(code)
+        self.assertIn('FBB00900120', reason)
+        self.assertEqual(item_code_for(self.flat, 'EN8D', Decimal('3'))[0], 'FBB00900300')   # EN-8D's number, 9
+        reserve_grade_number('EN8D')
+        self.assertEqual(GradeOption.objects.filter(name__startswith='EN').count(), 2)   # no second option
+
+    def test_the_forms_code_maps_use_the_same_key(self):
+        staff = User.objects.create_user('key_staff', password='pw', is_staff=True)
+        self.client.force_login(staff)
+        from ..models import Query
+        query = Query.objects.create(source='call', contact_phone='9123456780')
+        html = self.client.get(reverse('query_edit', kwargs={'pk': query.pk})).content.decode()
+        self.assertIn('"grade": "en8d"', html)
