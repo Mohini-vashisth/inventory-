@@ -100,6 +100,9 @@ def query_edit(request, pk):
             query.size = raw_size
             query.quantity = raw_quantity
             query.notes = request.POST.get('notes', '').strip()
+            for field, _label in Query.INTAKE_TEXT_FIELDS:
+                setattr(query, field, request.POST.get(field, '').strip())
+            query.gst_number = query.gst_number.replace(' ', '').upper()
             query.full_clean(exclude=['source', 'status', 'customer'])
         except ValidationError as e:
             error = e.messages[0] if e.messages else "Check the values entered."
@@ -109,11 +112,13 @@ def query_edit(request, pk):
             query.save(update_fields=[
                 'company_name', 'contact_phone', 'contact_email',
                 'product_type', 'grade', 'size', 'quantity', 'notes',
+                *[field for field, _label in Query.INTAKE_TEXT_FIELDS],
             ])
             return redirect('query_dashboard')
 
     return render(request, 'materials/query_edit.html', {
         'query': query,
         'product_types': product_types,
+        'intake_fields': [(f, label, getattr(query, f)) for f, label in Query.INTAKE_TEXT_FIELDS],
         'error': error,
     })

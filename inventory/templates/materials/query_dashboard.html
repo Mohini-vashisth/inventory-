@@ -183,6 +183,18 @@
             {% if query.drawing %}
             <br><a href="{{ query.drawing.url }}" target="_blank" class="muted" style="color:#4e73df;">📎 Drawing</a>
             {% endif %}
+            {% with details=query.intake_details %}
+            {% if details %}
+            <details style="margin-top:0.35rem;">
+              <summary class="muted" style="cursor:pointer;">Requirements</summary>
+              <div class="muted" style="font-size:0.85em; max-width:260px;">
+                {% for label, value in details %}
+                <div><strong>{{ label }}:</strong> <span style="white-space:pre-wrap;">{{ value }}</span></div>
+                {% endfor %}
+              </div>
+            </details>
+            {% endif %}
+            {% endwith %}
           </td>
           <td>
             {% if query.notes %}

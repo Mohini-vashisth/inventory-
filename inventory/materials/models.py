@@ -367,15 +367,33 @@ class Query(models.Model):
     grade         = models.CharField(max_length=100, blank=True)
     size          = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     quantity      = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
-    # Both optional, gathered by the WhatsApp intake bot after size — an
-    # image/PDF the customer sends is saved here; drawing_notes holds
-    # either their reply if they didn't attach one (typically "no") or a
-    # short text description if they described it instead of attaching.
-    # drawing_notes doubles as the "this question was actually asked and
-    # answered" marker for _next_expected_query_field, since a FileField
-    # alone can't distinguish "not asked yet" from "asked, no drawing".
+    # Collected by the WhatsApp intake bot, in this order, after email: GST
+    # number + address, then what product they need, then the drawing/sample
+    # (an image/PDF the customer sends is saved in `drawing`; drawing_notes
+    # holds either their reply if they didn't attach one — typically "no" —
+    # or a short description if they described it instead). drawing_notes
+    # doubles as the "this question was actually asked and answered" marker
+    # for _next_expected_query_field, since a FileField alone can't
+    # distinguish "not asked yet" from "asked, no drawing".
     drawing       = models.FileField(upload_to='query_drawings/%Y/%m/', blank=True, null=True)
     drawing_notes = models.CharField(max_length=255, blank=True)
+    # The customer's own words, saved as typed (a reply of "no" is a real
+    # answer and is kept, since a non-blank value is what marks each
+    # question answered). gst_number is the one validated field: a
+    # well-formed 15-character GSTIN, or "NA" for an unregistered customer.
+    gst_number            = models.CharField(max_length=15, blank=True)
+    gst_address           = models.TextField(blank=True)
+    product_description   = models.TextField(blank=True)
+    make                  = models.TextField(blank=True)
+    mechanical_properties = models.TextField(blank=True)
+    process_required      = models.TextField(blank=True)
+    end_use               = models.TextField(blank=True)
+    delivery_form         = models.TextField(blank=True)
+    # Free text on purpose ("2 tons", "500 kg/month"): the numeric `quantity`
+    # above is kg and feeds the quotation form, and guessing units from a
+    # customer's sentence would put a wrong number into a quote.
+    quantity_text         = models.TextField(blank=True)
+    frequency             = models.TextField(blank=True)
     notes         = models.TextField(blank=True)
     status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new', db_index=True)
     # Set only once a quote is actually sent — before that, a query is just
@@ -384,8 +402,27 @@ class Query(models.Model):
     customer      = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='queries')
     created_at    = models.DateTimeField(auto_now_add=True)
 
+    # (field, label) for the free-text answers above, in the order the bot asks
+    # them — the one list the dashboard, the edit form and the bot all read.
+    INTAKE_TEXT_FIELDS = [
+        ('gst_number', 'GST number'),
+        ('gst_address', 'GST address'),
+        ('product_description', 'Product'),
+        ('make', 'Make'),
+        ('mechanical_properties', 'Mechanical properties'),
+        ('process_required', 'Process required'),
+        ('end_use', 'End use'),
+        ('delivery_form', 'Delivery form'),
+        ('quantity_text', 'Quantity required'),
+        ('frequency', 'Frequency'),
+    ]
+
     class Meta:
         ordering = ['-created_at']
+
+    def intake_details(self):
+        """[(label, value)] for every intake answer that's been given."""
+        return [(label, getattr(self, field)) for field, label in self.INTAKE_TEXT_FIELDS if getattr(self, field)]
 
     def __str__(self):
         label = self.company_name or self.contact_phone or f"Query #{self.pk}"

@@ -126,6 +126,19 @@
           </div>
         </div>
 
+        {% for name, label, value in intake_fields %}
+        <div class="form-row">
+          <div class="form-group">
+            <label>{{ label }}</label>
+            {% if name == 'gst_number' %}
+            <input type="text" name="{{ name }}" maxlength="15" value="{{ value }}" placeholder="15-character GSTIN, or NA">
+            {% else %}
+            <textarea name="{{ name }}" rows="2">{{ value }}</textarea>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+
         <div class="form-row">
           <div class="form-group">
             <label>Notes</label>

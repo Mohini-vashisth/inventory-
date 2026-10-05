@@ -209,7 +209,10 @@ def quotation_form(request, pk=None):
             item_initial = [{}]
             if query:
                 item_initial = [{
-                    'description': query.product_type.item_code if query.product_type else (query.grade or 'Item'),
+                    'description': (
+                        query.product_type.item_code if query.product_type
+                        else (query.product_description.splitlines() or [''])[0][:255] or query.grade or 'Item'
+                    ),
                     'product_type': query.product_type_id,
                     'grade': query.grade,
                     'size': query.size,
@@ -224,7 +227,10 @@ def quotation_form(request, pk=None):
                     'email': request.GET.get('email', ''),
                     'phone': request.GET.get('phone', ''),
                 }
-            form = QuotationForm()
+            address = query.gst_address if query else ''
+            if query and query.gst_number and query.gst_number != 'NA':
+                address = f"{address}\nGSTIN: {query.gst_number}".strip()
+            form = QuotationForm(initial={'customer_address': address} if address else None)
         formset = QuotationLineItemFormSet(initial=item_initial, prefix='item')
 
     return render(request, 'materials/quotation_form.html', {
