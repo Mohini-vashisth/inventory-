@@ -15,7 +15,7 @@ from ..models import ProductType, Query
 from ..views import whatsapp
 from ..views.whatsapp import (
     WhatsAppSendError, WHATSAPP_CLOSING_MESSAGE, WHATSAPP_GST_INVALID_MESSAGE,
-    WHATSAPP_QUERY_FIELDS, WHATSAPP_QUERY_QUESTIONS,
+    WHATSAPP_QUERY_CHOICES, WHATSAPP_QUERY_FIELDS, WHATSAPP_QUERY_QUESTIONS,
 )
 
 
@@ -29,7 +29,7 @@ ANSWERS = {
     'company_name': 'Ramesh Traders', 'contact_email': 'ramesh@example.com',
     'gst_number': '22AAAAA0000A1Z5', 'gst_address': '12 Industrial Area, Faridabad',
     'product_description': 'Round bar', 'drawing': 'no', 'grade': 'EN8D',
-    'technical_requirements': 'no', 'end_use_delivery': 'automotive shafts, coil',
+    'technical_requirements': 'no', 'end_use': 'automotive shafts', 'delivery_form': 'Coil',
     'quantity_text': '2 tons monthly',
 }
 
@@ -67,6 +67,11 @@ class WhatsAppWebhookTests(TestCase):
         value = {'messages': [{'from': phone, 'type': 'text', 'text': {'body': text}}]}
         if profile_name is not None:
             value['contacts'] = [{'profile': {'name': profile_name}}]
+        return {'entry': [{'changes': [{'value': value}]}]}
+
+    def _interactive_payload(self, phone, title):
+        reply = {'type': 'button_reply', 'button_reply': {'id': title.lower(), 'title': title}}
+        value = {'messages': [{'from': phone, 'type': 'interactive', 'interactive': reply}]}
         return {'entry': [{'changes': [{'value': value}]}]}
 
     def _media_payload(self, phone, media_type, media_id, mime_type='image/jpeg'):
@@ -130,31 +135,107 @@ class WhatsAppWebhookTests(TestCase):
     def test_intake_sequence_is_in_the_requested_order(self):
         self.assertEqual(WHATSAPP_QUERY_FIELDS, [
             'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_description',
-            'drawing', 'grade', 'technical_requirements', 'end_use_delivery', 'quantity_text',
+            'drawing', 'grade', 'technical_requirements', 'end_use', 'delivery_form', 'quantity_text',
         ])
 
     def test_every_question_after_company_name_has_wording(self):
         # company_name is asked by the opening template, not by this table.
         self.assertEqual(set(WHATSAPP_QUERY_QUESTIONS), set(WHATSAPP_QUERY_FIELDS) - {'company_name'})
 
+    @patch('materials.views.whatsapp._send_whatsapp_buttons_message_background')
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_each_answer_is_saved_and_the_next_question_asked(self, mock_send):
+    def test_each_answer_is_saved_and_the_next_question_asked(self, mock_send, mock_buttons):
         fields = WHATSAPP_QUERY_FIELDS
         for index, field in enumerate(fields[1:], start=1):
             if field in ('gst_number', 'gst_address'):
                 continue  # the GST reply is split in two; covered by the GST tests below
             with self.subTest(field=field):
                 mock_send.reset_mock()
+                mock_buttons.reset_mock()
                 phone = f'9198765432{index:02d}'
                 _query_awaiting(field, phone=phone)
-                reply = ANSWERS[field] if field == 'contact_email' else f'reply for {field}'
+                reply = ANSWERS[field] if field in ('contact_email', 'delivery_form') else f'reply for {field}'
                 self._post_payload(self._message_payload(phone, reply))
 
                 query = Query.objects.get(contact_phone=phone)
                 self.assertEqual(getattr(query, _answered_field(field)), reply)
                 following = fields[index + 1] if index + 1 < len(fields) else None
-                expected = WHATSAPP_QUERY_QUESTIONS[following] if following else WHATSAPP_CLOSING_MESSAGE
-                mock_send.assert_called_once_with(phone, expected)
+                if following in WHATSAPP_QUERY_CHOICES:
+                    mock_buttons.assert_called_once_with(
+                        phone, WHATSAPP_QUERY_QUESTIONS[following], WHATSAPP_QUERY_CHOICES[following])
+                    mock_send.assert_not_called()
+                else:
+                    expected = WHATSAPP_QUERY_QUESTIONS[following] if following else WHATSAPP_CLOSING_MESSAGE
+                    mock_send.assert_called_once_with(phone, expected)
+                    mock_buttons.assert_not_called()
+
+    def test_choice_questions_fit_whatsapp_reply_button_limits(self):
+        for field, choices in WHATSAPP_QUERY_CHOICES.items():
+            with self.subTest(field=field):
+                self.assertIn(field, WHATSAPP_QUERY_FIELDS)
+                self.assertLessEqual(len(choices), 3)  # Meta allows at most 3 reply buttons
+                for _value, label in choices:
+                    self.assertLessEqual(len(label), 20)  # and 20 characters per title
+
+    def test_delivery_form_offers_coil_and_bar(self):
+        self.assertEqual(WHATSAPP_QUERY_CHOICES['delivery_form'], [('Coil', 'Coil'), ('Bar', 'Bar')])
+
+    @patch('materials.views.whatsapp._whatsapp_graph_request')
+    def test_buttons_message_payload_matches_the_cloud_api_format(self, mock_request):
+        whatsapp._send_whatsapp_buttons_message('919876543210', 'Pick one', [('Coil', 'Coil'), ('Bar', 'Bar')])
+        mock_request.assert_called_once_with({
+            'messaging_product': 'whatsapp', 'to': '919876543210', 'type': 'interactive',
+            'interactive': {
+                'type': 'button',
+                'body': {'text': 'Pick one'},
+                'action': {'buttons': [
+                    {'type': 'reply', 'reply': {'id': 'Coil', 'title': 'Coil'}},
+                    {'type': 'reply', 'reply': {'id': 'Bar', 'title': 'Bar'}},
+                ]},
+            },
+        })
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_tapping_a_delivery_form_button_saves_it_and_asks_for_quantity(self, mock_send):
+        for index, title in enumerate(['Coil', 'Bar']):
+            with self.subTest(title=title):
+                mock_send.reset_mock()
+                phone = f'9198400000{index:02d}'
+                _query_awaiting('delivery_form', phone=phone)
+                self._post_payload(self._interactive_payload(phone, title))
+                self.assertEqual(Query.objects.get(contact_phone=phone).delivery_form, title)
+                mock_send.assert_called_once_with(phone, WHATSAPP_QUERY_QUESTIONS['quantity_text'])
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_typed_delivery_form_answers_are_normalised(self, mock_send):
+        cases = {'coil': 'Coil', 'Coils please': 'Coil', 'BAR': 'Bar', 'bars': 'Bar', 'in a coil form': 'Coil'}
+        for index, (reply, expected) in enumerate(cases.items()):
+            with self.subTest(reply=reply):
+                phone = f'9198500000{index:02d}'
+                _query_awaiting('delivery_form', phone=phone)
+                self._post_payload(self._message_payload(phone, reply))
+                self.assertEqual(Query.objects.get(contact_phone=phone).delivery_form, expected)
+
+    @patch('materials.views.whatsapp._send_whatsapp_buttons_message_background')
+    def test_unrecognised_delivery_form_reasks_with_the_buttons(self, mock_buttons):
+        for index, reply in enumerate(['straight lengths', 'coil or bar', 'sheet', 'no', 'barely']):
+            with self.subTest(reply=reply):
+                mock_buttons.reset_mock()
+                phone = f'9198600000{index:02d}'
+                _query_awaiting('delivery_form', phone=phone)
+                self._post_payload(self._message_payload(phone, reply))
+                self.assertEqual(Query.objects.get(contact_phone=phone).delivery_form, '')
+                mock_buttons.assert_called_once_with(
+                    phone, WHATSAPP_QUERY_QUESTIONS['delivery_form'], WHATSAPP_QUERY_CHOICES['delivery_form'])
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_list_reply_is_treated_like_a_button_tap(self, mock_send):
+        _query_awaiting('delivery_form')
+        reply = {'type': 'list_reply', 'list_reply': {'id': 'bar', 'title': 'Bar'}}
+        payload = {'entry': [{'changes': [{'value': {'messages': [
+            {'from': '919876543210', 'type': 'interactive', 'interactive': reply}]}}]}]}
+        self._post_payload(payload)
+        self.assertEqual(Query.objects.get(contact_phone='919876543210').delivery_form, 'Bar')
 
     def _gst_reply(self, mock_send, reply, phone='919876543210'):
         mock_send.reset_mock()
@@ -228,7 +309,7 @@ class WhatsAppWebhookTests(TestCase):
 
         query = Query.objects.get(contact_phone='919876543210')
         self.assertEqual(query.technical_requirements, 'no')
-        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['end_use_delivery'])
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['end_use'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_text_reply_to_drawing_question_saves_as_drawing_notes_and_asks_for_grade_next(self, mock_send):

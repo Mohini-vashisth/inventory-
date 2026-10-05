@@ -365,6 +365,7 @@ class Query(models.Model):
         ('converted', 'Converted'),
         ('not_interested', 'Not Interested'),
     ]
+    DELIVERY_FORM_CHOICES = [('Coil', 'Coil'), ('Bar', 'Bar')]
     source        = models.CharField(max_length=20, choices=SOURCE_CHOICES)
     company_name  = models.CharField(max_length=100, blank=True)
     contact_phone = models.CharField(max_length=20, blank=True)
@@ -395,7 +396,10 @@ class Query(models.Model):
     gst_address            = models.TextField(blank=True)
     product_description    = models.TextField(blank=True)
     technical_requirements = models.TextField(blank=True)  # particular make, mechanical properties, process
-    end_use_delivery       = models.TextField(blank=True)  # end use and delivery form
+    end_use                = models.TextField(blank=True)
+    # Only two options, so the bot offers them as tappable buttons (see
+    # WHATSAPP_QUERY_CHOICES) and the edit form/admin get a dropdown from `choices`.
+    delivery_form          = models.CharField(max_length=10, blank=True, choices=DELIVERY_FORM_CHOICES)
     # Free text on purpose ("2 tons monthly"): the numeric `quantity` above is
     # kg and feeds the quotation form, and guessing units from a customer's
     # sentence would put a wrong number into a quote. Also holds frequency.
@@ -415,7 +419,8 @@ class Query(models.Model):
         ('gst_address', 'GST address'),
         ('product_description', 'Requirements'),
         ('technical_requirements', 'Make / properties / process'),
-        ('end_use_delivery', 'End use & delivery form'),
+        ('end_use', 'End use'),
+        ('delivery_form', 'Delivery form'),
         ('quantity_text', 'Quantity & frequency'),
     ]
 

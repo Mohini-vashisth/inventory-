@@ -48,7 +48,7 @@ WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE = "en"
 # gets its own question when the customer sent the number without an address.
 WHATSAPP_QUERY_FIELDS = [
     'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_description',
-    'drawing', 'grade', 'technical_requirements', 'end_use_delivery', 'quantity_text',
+    'drawing', 'grade', 'technical_requirements', 'end_use', 'delivery_form', 'quantity_text',
 ]
 
 
@@ -60,8 +60,19 @@ WHATSAPP_QUERY_QUESTIONS = {
     'drawing': "Please attach a drawing with detailed dimensions, or a photo of a sample. You can send an image or PDF here, or reply 'no' if you don't have one.",
     'grade': "Which grade of material do you require?",
     'technical_requirements': "Any particular make, mechanical properties or processes to be carried out? Reply 'no' if none.",
-    'end_use_delivery': "What is the end use of the material, and in what form do you need it delivered (for example coil, straight lengths or cut pieces)?",
-    'quantity_text': "What quantity do you require, and how often (for example 2 tons, monthly)?",
+    'end_use': "What is the end use of the material?",
+    'delivery_form': "In what form do you need the material delivered?",
+    'quantity_text': "Required quantity and frequency (one time or monthly)?",
+}
+
+
+# Questions with a fixed set of answers are sent as tappable reply buttons
+# instead of plain text (Meta allows at most 3 buttons, each title up to 20
+# characters). A tap arrives as an "interactive" message carrying the button's
+# title, which is handled like a typed answer; a typed answer is still
+# accepted (see _parse_whatsapp_delivery_form).
+WHATSAPP_QUERY_CHOICES = {
+    'delivery_form': Query.DELIVERY_FORM_CHOICES,
 }
 
 
@@ -133,6 +144,23 @@ def _send_whatsapp_text_message(phone, text):
     })
 
 
+def _send_whatsapp_buttons_message(phone, text, choices):
+    """A question with tappable reply buttons. Like free-form text, only usable
+    inside the 24-hour window the customer's own reply opened. `choices` is
+    [(value, label), ...]; the label is both the button text and what comes
+    back when it's tapped."""
+    _whatsapp_graph_request({
+        "messaging_product": "whatsapp", "to": phone, "type": "interactive",
+        "interactive": {
+            "type": "button",
+            "body": {"text": text},
+            "action": {"buttons": [
+                {"type": "reply", "reply": {"id": value, "title": label}} for value, label in choices
+            ]},
+        },
+    })
+
+
 def _send_whatsapp_text_message_background(phone, text):
     """Fire-and-forget a follow-up question from inside the webhook. Meta
     expects a fast ack on every delivery — waiting on the Graph API's own
@@ -150,6 +178,28 @@ def _send_whatsapp_text_message_background(phone, text):
     thread = threading.Thread(target=_send, daemon=True)
     thread.start()
     return thread
+
+
+def _send_whatsapp_buttons_message_background(phone, text, choices):
+    """Same fire-and-forget contract as _send_whatsapp_text_message_background."""
+    def _send():
+        try:
+            _send_whatsapp_buttons_message(phone, text, choices)
+        except WhatsAppSendError as e:
+            logger.warning("WhatsApp follow-up send to %s failed: %s", phone, e)
+    thread = threading.Thread(target=_send, daemon=True)
+    thread.start()
+    return thread
+
+
+def _send_whatsapp_question(phone, field):
+    """Send `field`'s question — as buttons if it has a fixed set of answers,
+    as plain text otherwise."""
+    text = WHATSAPP_QUERY_QUESTIONS[field]
+    choices = WHATSAPP_QUERY_CHOICES.get(field)
+    if choices:
+        return _send_whatsapp_buttons_message_background(phone, text, choices)
+    return _send_whatsapp_text_message_background(phone, text)
 
 
 def _next_expected_query_field(query):
@@ -198,6 +248,18 @@ def _parse_whatsapp_gst_details(text):
         before = _GST_LABEL_AT_END.sub('', text[:found.start()])
         return found.group(0).upper(), _clean_address(f"{before} {text[found.end():]}")
     return None
+
+
+def _parse_whatsapp_delivery_form(text):
+    """"Coil" or "Bar" — what a button tap sends back, but also tolerates a
+    typed "coils", "bar please", ... Returns None for anything else, and for
+    an answer naming both, so the caller can re-ask with the buttons."""
+    lowered = (text or '').lower()
+    has_coil = bool(re.search(r'\bcoils?\b', lowered))
+    has_bar = bool(re.search(r'\bbars?\b', lowered))
+    if has_coil == has_bar:
+        return None
+    return 'Coil' if has_coil else 'Bar'
 
 
 def _is_valid_whatsapp_email(text):
@@ -287,8 +349,8 @@ def _process_whatsapp_change(value):
     ever touch a Query. Text messages are handled inline; an image/document
     reply is only meaningful when 'drawing' is actually the field being
     asked for right now, and downloading one is slow enough to need
-    backgrounding (see _route_whatsapp_media) — every other message type
-    (audio/video/location/etc.) is still not handled."""
+    backgrounding (see _route_whatsapp_media) — a tap on a reply button is treated like a typed answer; every other
+    message type (audio/video/location/etc.) is still not handled."""
     incoming_messages = value.get("messages")
     if not incoming_messages:
         return
@@ -305,6 +367,13 @@ def _process_whatsapp_change(value):
             text = (msg.get("text") or {}).get("body", "").strip()
             if text:
                 _route_whatsapp_message(phone, text, profile_name)
+        elif msg_type == "interactive":
+            # A tap on a reply button (or list row): its title is the answer.
+            interactive = msg.get("interactive") or {}
+            reply = interactive.get("button_reply") or interactive.get("list_reply") or {}
+            title = (reply.get("title") or "").strip()
+            if title:
+                _route_whatsapp_message(phone, title, profile_name)
         elif msg_type in ("image", "document"):
             media = msg.get(msg_type) or {}
             media_id = media.get("id")
@@ -468,6 +537,13 @@ def _process_whatsapp_answer(query_pk, text):
             if address:
                 query.gst_address = address
                 changed.append('gst_address')
+        elif field == 'delivery_form':
+            parsed = _parse_whatsapp_delivery_form(text)
+            if parsed is None:
+                _send_whatsapp_question(query.contact_phone, 'delivery_form')
+                return
+            query.delivery_form = parsed
+            changed = ['delivery_form']
         elif field == 'contact_email':
             candidate = text.strip()
             if not _is_valid_whatsapp_email(candidate):
@@ -497,6 +573,6 @@ def _advance_whatsapp_query(query):
     both need to advance the same way once their field is saved."""
     next_field = _next_expected_query_field(query)
     if next_field:
-        _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_QUERY_QUESTIONS[next_field])
+        _send_whatsapp_question(query.contact_phone, next_field)
     else:
         _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_CLOSING_MESSAGE)
