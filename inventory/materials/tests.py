@@ -3433,3 +3433,81 @@ class EmployeePinSettingTests(SimpleTestCase):
         result = self._import_settings(DJANGO_DEBUG='True')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), '1234')
+
+
+class MaterialsRouteGuardTests(TestCase):
+    """Walks materials/urls.py so a new view can't ship without access control:
+    every route must carry @staff_required / @employee_required, or be listed
+    in PUBLIC below with the reason it's open."""
+
+    PUBLIC = {
+        'home',               # landing page, no data
+        'admin_login',        # login form itself
+        'employee_login',     # PIN form itself
+        'employee_logout',    # only clears this browser's own session
+        'quote_form',         # customer-facing; the unguessable UUID token is the credential
+        'whatsapp_webhook',   # Meta calls it directly; HMAC signature is checked in the view
+    }
+
+    @staticmethod
+    def _patterns():
+        import materials.urls
+        return materials.urls.urlpatterns
+
+    @staticmethod
+    def _url_for(pattern):
+        import re, uuid
+        route = re.sub(r'<int:\w+>', '1', str(pattern.pattern))
+        route = re.sub(r'<uuid:\w+>', str(uuid.uuid4()), route)
+        return '/' + route
+
+    def _guarded(self):
+        return [(p, p.callback) for p in self._patterns() if p.callback.__name__ not in self.PUBLIC]
+
+    def test_every_route_is_guarded_or_explicitly_public(self):
+        unguarded = [cb.__name__ for _, cb in self._guarded() if not hasattr(cb, 'access')]
+        self.assertEqual(unguarded, [], "Add @staff_required/@employee_required, or list the view in PUBLIC with a reason.")
+
+    def test_public_allowlist_has_no_stale_entries(self):
+        routed = {p.callback.__name__ for p in self._patterns()}
+        self.assertEqual(self.PUBLIC - routed, set())
+
+    def _assert_denied(self, response, view_name):
+        if view_name == 'customer_autocomplete':
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json(), [])
+        else:
+            self.assertEqual(response.status_code, 302, f"{view_name} served an unauthorised request")
+
+    def test_anonymous_requests_are_denied_on_every_guarded_route(self):
+        for pattern, cb in self._guarded():
+            url = self._url_for(pattern)
+            for method in (self.client.get, self.client.post):
+                with self.subTest(view=cb.__name__, method=method.__name__):
+                    self._assert_denied(method(url), cb.__name__)
+
+    def test_employee_pin_session_does_not_unlock_staff_routes(self):
+        session = self.client.session
+        session['employee_auth'] = True
+        session.save()
+        for pattern, cb in self._guarded():
+            if getattr(cb, 'access', None) != 'staff':
+                continue
+            for method in (self.client.get, self.client.post):
+                with self.subTest(view=cb.__name__, method=method.__name__):
+                    self._assert_denied(method(self._url_for(pattern)), cb.__name__)
+
+    def test_non_staff_login_does_not_unlock_staff_routes(self):
+        from django.contrib.auth import get_user_model
+        get_user_model().objects.create_user('plain', password='pw')
+        self.client.login(username='plain', password='pw')
+        for pattern, cb in self._guarded():
+            if getattr(cb, 'access', None) != 'staff':
+                continue
+            with self.subTest(view=cb.__name__):
+                self._assert_denied(self.client.get(self._url_for(pattern)), cb.__name__)
+
+    def test_rest_api_rejects_anonymous_requests(self):
+        for name in ('coils', 'orders', 'jobs', 'product-types'):
+            with self.subTest(endpoint=name):
+                self.assertIn(self.client.get(f'/api/{name}/').status_code, (401, 403))

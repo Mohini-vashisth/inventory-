@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Order, Quotation, QuotationLineItem
 from .forms import GateEntryForm, GateEntryLotForm, GateEntryLotFormSet, MaterialForm, OrderForm, QuotationForm, QuotationLineItemFormSet
 from .pdf import generate_quotation_pdf
+from .decorators import employee_required, redirect_to_admin_login, staff_required
 
 
 class _CoilOverCommitted(Exception):
@@ -117,13 +118,6 @@ def employee_logout(request):
     return redirect('employee_login')
 
 
-def _employee_required(request):
-    """Returns a redirect response if not authenticated, else None."""
-    if not request.session.get('employee_auth'):
-        return redirect(f"{reverse('employee_login')}?next={request.path}")
-    return None
-
-
 def home(request):
     return render(request, "home.html")
 
@@ -137,14 +131,13 @@ def _first_formset_error(formset):
     return "Check the lot details below."
 
 
+@employee_required
 def material_field_autocomplete(request):
     """Autosuggest for the free-text company/vendor fields on the gate entry
     form, drawn from values already used in Material — so 'Tata Steel'
     typed once doesn't turn into 'TATA STEEL' and 'Tata steel' as separate
     entries later. `field` is restricted to company/vendor so the query
     param can't be used to probe arbitrary model fields."""
-    guard = _employee_required(request)
-    if guard: return guard
     field = request.GET.get('field')
     if field not in ('company', 'vendor'):
         return JsonResponse([], safe=False)
@@ -161,6 +154,7 @@ def material_field_autocomplete(request):
     return JsonResponse(list(values), safe=False)
 
 
+@employee_required
 def gate_entry_form(request):
     """Log a truck's delivery in one submission: the truck's own details
     (company/vehicle/total weight) plus one or more lots — vendor/grade/
@@ -170,8 +164,6 @@ def gate_entry_form(request):
     registering coils. gate_entry_lot_form (a single extra lot) is the
     follow-up path for a delivery that turns out to have more lots than
     were known about at logging time."""
-    guard = _employee_required(request)
-    if guard: return guard
     error = None
     if request.method == "POST":
         entry_form = GateEntryForm(request.POST)
@@ -197,12 +189,11 @@ def gate_entry_form(request):
     })
 
 
+@employee_required
 def gate_entry_lot_form(request, gate_entry_pk):
     """Add one more lot to an already-logged gate entry — for a delivery
     that turns out to have another grade/size beyond what was entered on
     the main gate entry page. Lands on the gate entry's detail page."""
-    guard = _employee_required(request)
-    if guard: return guard
     gate_entry = get_object_or_404(GateEntry, pk=gate_entry_pk)
     error = None
     if request.method == "POST":
@@ -221,12 +212,11 @@ def gate_entry_lot_form(request, gate_entry_pk):
     })
 
 
+@employee_required
 def gate_entry_detail(request, gate_entry_pk):
     """Shows the lots logged so far for this gate entry, with a link into
     coil registration for each lot that still has room, and a way to add
     another lot for the rest of a mixed-grade/size delivery."""
-    guard = _employee_required(request)
-    if guard: return guard
     gate_entry = get_object_or_404(GateEntry, pk=gate_entry_pk)
     lots = gate_entry.lots.annotate(registered=Count('coils')).order_by('id')
 
@@ -236,6 +226,7 @@ def gate_entry_detail(request, gate_entry_pk):
     })
 
 
+@employee_required
 def gate_entry_edit(request, gate_entry_pk):
     """Fix a mistake in a gate entry's top-level details (date, vendor,
     vehicle no., invoice no., total weight) after it's already been saved —
@@ -243,8 +234,6 @@ def gate_entry_edit(request, gate_entry_pk):
     is locked once coils exist against it, since these fields are just
     paper/reference details, not something coil registration depends on
     being immutable."""
-    guard = _employee_required(request)
-    if guard: return guard
     gate_entry = get_object_or_404(GateEntry, pk=gate_entry_pk)
 
     error = None
@@ -271,12 +260,11 @@ def gate_entry_edit(request, gate_entry_pk):
     })
 
 
+@employee_required
 def gate_entry_lot_delete(request, lot_pk):
     """Remove a lot added by mistake — only while it has no coils registered
     against it yet. (Material.lot uses on_delete=PROTECT, so this would fail
     loudly rather than orphan real coils even without the check below.)"""
-    guard = _employee_required(request)
-    if guard: return guard
     lot = get_object_or_404(GateEntryLot, pk=lot_pk)
     gate_entry_pk = lot.gate_entry_id
     if request.method == "POST" and lot.coils_registered() == 0:
@@ -284,9 +272,8 @@ def gate_entry_lot_delete(request, lot_pk):
     return redirect('gate_entry_detail', gate_entry_pk=gate_entry_pk)
 
 
+@employee_required
 def select_gate_entry(request):
-    guard = _employee_required(request)
-    if guard: return guard
     lots = []
     for lot in (GateEntryLot.objects
                 .select_related('gate_entry')
@@ -299,9 +286,8 @@ def select_gate_entry(request):
     return render(request, "materials/select_gate_entry.html", {"lots": lots})
 
 
+@employee_required
 def material_form(request, lot_pk):
-    guard = _employee_required(request)
-    if guard: return guard
     lot = get_object_or_404(GateEntryLot.objects.select_related('gate_entry'), pk=lot_pk)
     gate_entry = lot.gate_entry
     complete = lot.is_complete()
@@ -356,9 +342,8 @@ def material_form(request, lot_pk):
     })
 
 
+@employee_required
 def coil_tag(request, pk):
-    guard = _employee_required(request)
-    if guard: return guard
     coil = get_object_or_404(Material, pk=pk)
 
     # Generate QR code encoding the formatted coil number
@@ -396,9 +381,8 @@ def admin_login(request):
 
 # ── Order-first coil picking flow ─────────────────────────────
 
+@employee_required
 def select_order(request):
-    guard = _employee_required(request)
-    if guard: return guard
     not_started = (Order.objects
                    .filter(status='confirmed')
                    .select_related('customer', 'product_type')
@@ -462,12 +446,11 @@ def _parse_coil_no(raw):
         return None
 
 
+@employee_required
 def select_coil_for_order(request, order_pk):
     """The order's picking hub: shows how much raw material has been picked
     so far against how much the order needs, lists eligible coils to browse,
     and accepts a scanned/typed coil number to jump straight into picking it."""
-    guard = _employee_required(request)
-    if guard: return guard
     order = get_object_or_404(
         Order.objects.select_related('customer', 'product_type'),
         pk=order_pk,
@@ -549,12 +532,11 @@ def select_coil_for_order(request, order_pk):
     })
 
 
+@employee_required
 def pick_coil_for_order(request, order_pk, coil_pk):
     """Confirm-and-allocate screen for one coil against one order — mirrors
     material_form's single-entity-confirm pattern. Product type comes from
     the order, never resubmitted, so a tampered/stale form can't override it."""
-    guard = _employee_required(request)
-    if guard: return guard
     order = get_object_or_404(Order.objects.select_related('product_type', 'customer'), pk=order_pk)
     coil = get_object_or_404(Material, pk=coil_pk)
 
@@ -645,9 +627,8 @@ def pick_coil_for_order(request, order_pk, coil_pk):
 
 # ── Production jobs ──────────────────────────────────────────
 
+@employee_required
 def job_detail(request, pk):
-    guard = _employee_required(request)
-    if guard: return guard
     job = get_object_or_404(
         ProductionJob.objects.select_related('pick__coil', 'product_type')
                              .prefetch_related('step_logs', 'product_type__steps'),
@@ -695,13 +676,12 @@ def job_detail(request, pk):
     })
 
 
+@employee_required
 def select_job_for_coil(request):
     """Gate into job_detail — progress can only be updated by scanning or
     typing the coil's own number, the same way an order can only be picked
     by scanning the coil being picked. production_board is read-only status
     now; this is the only path into actually updating a job."""
-    guard = _employee_required(request)
-    if guard: return guard
 
     scan_error = None
     jobs = None
@@ -730,9 +710,8 @@ def select_job_for_coil(request):
     })
 
 
+@employee_required
 def production_board(request):
-    guard = _employee_required(request)
-    if guard: return guard
     orders = (Order.objects
               .filter(status='in_production')
               .select_related('customer', 'product_type')
@@ -789,14 +768,14 @@ def production_board(request):
     return render(request, 'materials/production_board.html', {'board': board})
 
 
+@employee_required
 def employee_landing(request):
-    guard = _employee_required(request)
-    if guard: return guard
     return render(request, 'materials/employee_landing.html')
 
 
 # ── Queries (pre-quote leads) ──────────────────────────────────
 
+@staff_required(on_denied=redirect_to_admin_login)
 def query_dashboard(request):
     """Unified log of inbound sales inquiries — phone calls, referrals,
     IndiaMART, WhatsApp — regardless of source, before any of them become a
@@ -804,8 +783,6 @@ def query_dashboard(request):
     intake sequence (see whatsapp_webhook below) — staff only ever type in
     a phone number here; everything else arrives via WhatsApp. Staff decide
     which ones to pursue via query_send_quote once that sequence completes."""
-    if not request.user.is_authenticated or not request.user.is_staff:
-        return redirect(f"{reverse('admin_login')}?next={reverse('query_dashboard')}")
 
     queries = Query.objects.select_related('product_type', 'customer').prefetch_related('quotations').all()
     error = None
@@ -927,6 +904,7 @@ def _parse_draft_line_items(post_data):
     return items
 
 
+@staff_required
 def quotation_form(request, pk=None):
     """Builds and sends an official, multi-line-item Quotation — the one
     page every Send Quote action funnels into, reached three ways:
@@ -945,8 +923,6 @@ def quotation_form(request, pk=None):
     status flips to 'sent', which is what actually assigns quotation_no
     and triggers the email). Both happen atomically. GET never creates or
     changes anything, even with ?query= set or a draft pk."""
-    if not request.user.is_staff:
-        return redirect('home')
 
     draft = get_object_or_404(Quotation, pk=pk, status='draft') if pk else None
 
@@ -1077,19 +1053,17 @@ def quotation_form(request, pk=None):
     })
 
 
+@staff_required
 def quotation_drafts(request):
     """Every in-progress, not-yet-sent Quotation — 'Resume' picks up right
     where it was left off (quotation_form in edit mode); 'Discard' deletes
     it outright, safe because a draft never consumed a quotation_no."""
-    if not request.user.is_staff:
-        return redirect('home')
     drafts = Quotation.objects.filter(status='draft').select_related('customer').prefetch_related('line_items').order_by('-updated_at')
     return render(request, 'materials/quotation_drafts.html', {'drafts': drafts})
 
 
+@staff_required
 def quotation_discard(request, pk):
-    if not request.user.is_staff:
-        return redirect('home')
     if request.method != 'POST':
         return redirect('quotation_drafts')
     draft = get_object_or_404(Quotation, pk=pk, status='draft')
@@ -1099,9 +1073,8 @@ def quotation_discard(request, pk):
     return redirect('quotation_drafts')
 
 
+@staff_required
 def query_not_interested(request, pk):
-    if not request.user.is_staff:
-        return redirect('home')
     if request.method != 'POST':
         return redirect('query_dashboard')
     query = get_object_or_404(Query, pk=pk)
@@ -1110,6 +1083,7 @@ def query_not_interested(request, pk):
     return redirect('query_dashboard')
 
 
+@staff_required
 def query_edit(request, pk):
     """Fix a wrong/incomplete field on a query directly from the dashboard —
     a typo'd company name, a grade the WhatsApp bot mis-parsed, etc.
@@ -1117,8 +1091,6 @@ def query_edit(request, pk):
     and `customer` are deliberately not editable here — status/customer
     changes go through query_send_quote/query_not_interested so they can't
     drift out of sync with what those actions actually did."""
-    if not request.user.is_staff:
-        return redirect('home')
     query = get_object_or_404(Query, pk=pk)
     product_types = ProductType.objects.order_by('item_code')
     error = None
@@ -1154,9 +1126,8 @@ def query_edit(request, pk):
     })
 
 
+@staff_required(on_denied=redirect_to_admin_login)
 def order_dashboard(request):
-    if not request.user.is_authenticated or not request.user.is_staff:
-        return redirect(f"{reverse('admin_login')}?next={reverse('order_dashboard')}")
 
     orders = (Order.objects
               .select_related('customer', 'product_type')
@@ -1223,9 +1194,8 @@ def order_dashboard(request):
     })
 
 
+@staff_required(on_denied=lambda request: JsonResponse([], safe=False))
 def customer_autocomplete(request):
-    if not request.user.is_authenticated or not request.user.is_staff:
-        return JsonResponse([], safe=False)
     q = request.GET.get('q', '').strip()
     if not q:
         return JsonResponse([], safe=False)
@@ -1238,9 +1208,8 @@ def customer_autocomplete(request):
     return JsonResponse(results, safe=False)
 
 
+@staff_required
 def order_confirm(request, pk):
-    if not request.user.is_staff:
-        return redirect('home')
     if request.method != 'POST':
         return redirect('order_dashboard')
     order = get_object_or_404(Order, pk=pk)
@@ -1263,9 +1232,8 @@ def order_confirm(request, pk):
     return redirect('order_dashboard')
 
 
+@staff_required
 def order_dispatch(request, pk):
-    if not request.user.is_staff:
-        return redirect('home')
     if request.method != 'POST':
         return redirect('order_dashboard')
     order = get_object_or_404(Order, pk=pk)
@@ -1276,9 +1244,8 @@ def order_dispatch(request, pk):
     return redirect('order_dashboard')
 
 
+@staff_required
 def order_reject(request, pk):
-    if not request.user.is_staff:
-        return redirect('home')
     if request.method != 'POST':
         return redirect('order_dashboard')
     order = get_object_or_404(Order, pk=pk)
@@ -1383,12 +1350,11 @@ def _dispatch_quote_email(request, customer, quotation):
         messages.error(request, f"Failed to send email: {e}")
 
 
+@staff_required
 def quotation_pdf(request, pk):
     """Standalone download of a quotation's PDF — used for the Copy Link
     fallback (no email on file to attach it to) and for staff wanting to
     re-download/print one already sent."""
-    if not request.user.is_staff:
-        return redirect('home')
     quotation = get_object_or_404(Quotation, pk=pk)
     pdf_bytes = generate_quotation_pdf(quotation)
     response = HttpResponse(pdf_bytes, content_type='application/pdf')
