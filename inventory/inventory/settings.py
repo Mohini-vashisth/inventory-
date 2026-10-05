@@ -31,13 +31,19 @@ if not SECRET_KEY:
 
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if os.environ.get('DJANGO_ALLOWED_HOSTS') else []
 
-# Origins allowed to submit cross-site POSTs (e.g. https://quote.mattadrawing.com,
-# fronted by Cloudflare Tunnel) — required for the CSRF check to pass on any
-# hostname reached through a reverse proxy rather than directly.
-CSRF_TRUSTED_ORIGINS = (
-    os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',')
-    if os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS') else []
-)
+# Origins allowed to submit POSTs from a hostname Django can't prove is secure by itself.
+# The public quote form is reached through Tailscale Funnel, which forwards plain HTTP
+# to this app without an X-Forwarded-Proto header, so Django thinks the site is http://
+# while the browser's Origin is https:// — and the CSRF origin check rejects every
+# submit with a 403 ("Origin checking failed"). PUBLIC_QUOTE_BASE_URL is that public
+# origin, so it is trusted automatically; DJANGO_CSRF_TRUSTED_ORIGINS adds any others.
+def trusted_csrf_origins(extra, public_quote_base_url):
+    origins = [origin.strip() for origin in (extra or '').split(',') if origin.strip()]
+    public = (public_quote_base_url or '').strip().rstrip('/')
+    if public and public not in origins:
+        origins.append(public)
+    return origins
+
 
 # Cloudflare Tunnel terminates HTTPS at Cloudflare's edge and forwards plain
 # HTTP to this app locally, adding X-Forwarded-Proto to say what the original
@@ -55,6 +61,7 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # back to request.build_absolute_uri(), which is fine for local dev/testing
 # but wrong for anything sent to a real customer in production.
 PUBLIC_QUOTE_BASE_URL = os.environ.get('PUBLIC_QUOTE_BASE_URL', '').rstrip('/')
+CSRF_TRUSTED_ORIGINS = trusted_csrf_origins(os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS'), PUBLIC_QUOTE_BASE_URL)
 
 # WhatsApp Cloud API webhook (materials/views/whatsapp.py::whatsapp_webhook) — see
 # CLAUDE.md for the Meta-side setup this depends on (Business/App/phone
