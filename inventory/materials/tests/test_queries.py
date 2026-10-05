@@ -242,6 +242,58 @@ class QueryDashboardTests(TestCase):
         query.refresh_from_db()
         self.assertEqual(query.product_type, product_type)
 
+    def _edit(self, query, **fields):
+        data = {'company_name': '', 'contact_phone': '9123456780', 'contact_email': '', 'product_type': '',
+                'grade': '', 'size': '', 'quantity': '', 'notes': ''}
+        data.update(fields)
+        return self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), data)
+
+    def test_editing_type_grade_and_size_fills_in_the_matching_product_code(self):
+        from ..models import ProductCategory
+        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        from ..models import GradeOption
+        GradeOption.objects.create(name='EN8D')
+        code = ProductType.objects.create(item_code='FBB00100120', category=flat, grade='EN8D', size='1.200')
+        query = Query.objects.create(source='call', contact_phone='9123456780')
+        self.client.force_login(self.staff)
+        self._edit(query, product_category=str(flat.pk), grade='en8d', size='1.2')
+        query.refresh_from_db()
+        self.assertEqual(query.product_type, code)
+        self.assertEqual(query.grade, 'EN8D')   # tidied to the listed spelling too
+
+    def test_a_code_picked_by_hand_is_not_replaced_by_the_match(self):
+        from ..models import ProductCategory
+        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        ProductType.objects.create(item_code='FBB00100120', category=flat, grade='EN8D', size='1.200')
+        picked = ProductType.objects.create(item_code='HAND', grade='SS304', size='5.000')
+        query = Query.objects.create(source='call', contact_phone='9123456780')
+        self.client.force_login(self.staff)
+        self._edit(query, product_category=str(flat.pk), grade='EN8D', size='1.2', product_type=str(picked.pk))
+        query.refresh_from_db()
+        self.assertEqual(query.product_type, picked)
+
+    def test_no_match_leaves_the_code_empty(self):
+        from ..models import ProductCategory
+        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        query = Query.objects.create(source='call', contact_phone='9123456780')
+        self.client.force_login(self.staff)
+        self._edit(query, product_category=str(flat.pk), grade='EN8D', size='1.2')
+        query.refresh_from_db()
+        self.assertIsNone(query.product_type)
+
+    def test_the_edit_page_carries_the_code_map_and_grade_suggestions_for_live_fill(self):
+        from ..models import GradeOption, ProductCategory
+        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        code = ProductType.objects.create(item_code='FBB00100120', category=flat, grade='EN8D', size='1.200')
+        GradeOption.objects.create(name='EN8D')
+        query = Query.objects.create(source='call', contact_phone='9123456780')
+        self.client.force_login(self.staff)
+        html = self.client.get(reverse('query_edit', kwargs={'pk': query.pk})).content.decode()
+        self.assertIn('id="product-code-map"', html)
+        self.assertIn(f'"pk": {code.pk}', html)
+        self.assertIn('"grade": "en8d"', html)
+        self.assertIn('list="grade-options"', html)
+
     def test_edit_query_rejects_invalid_size(self):
         query = Query.objects.create(source='call', contact_phone='9123456780')
         self.client.force_login(self.staff)
