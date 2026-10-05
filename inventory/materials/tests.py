@@ -3349,7 +3349,7 @@ class BackupDbCommandTests(SimpleTestCase):
             live.execute("INSERT INTO t VALUES ('only-in-wal')")
             try:
                 databases = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': db_file}}
-                with override_settings(DATABASES=databases, BASE_DIR=Path(tmp)):
+                with override_settings(DATABASES=databases, BASE_DIR=Path(tmp), MEDIA_ROOT=Path(tmp) / 'no-media-here'):
                     call_command('backup_db', stdout=StringIO())
                 backups = list((Path(tmp) / 'db_backups').glob('db_*.sqlite3'))
                 self.assertEqual(len(backups), 1)
@@ -3572,3 +3572,69 @@ class ServeMediaTests(TestCase):
         self.assertTrue(query.drawing.url.startswith('/media/query_drawings/'))
         self.client.force_login(self.staff)
         self.assertEqual(self.client.get(query.drawing.url).status_code, 200)
+
+
+class BackupMediaMirrorTests(SimpleTestCase):
+    def setUp(self):
+        import sqlite3
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        self.media = root / 'media'
+        self.db = root / 'db.sqlite3'
+        conn = sqlite3.connect(self.db)
+        conn.execute("CREATE TABLE t (x)")
+        conn.commit()
+        conn.close()
+        override = override_settings(
+            DATABASES={'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': self.db}},
+            BASE_DIR=root, MEDIA_ROOT=self.media,
+        )
+        override.enable()
+        self.addCleanup(override.disable)
+        self.mirror = root / 'db_backups' / 'media'
+
+    def _backup(self):
+        from io import StringIO
+        from django.core.management import call_command
+        out = StringIO()
+        call_command('backup_db', stdout=out)
+        return out.getvalue()
+
+    def _upload(self, relpath, data=b'x'):
+        f = self.media / relpath
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_bytes(data)
+        return f
+
+    def test_copies_uploads_preserving_folder_layout(self):
+        self._upload('purchase_orders/2026/10/po.pdf', b'PO')
+        self._upload('query_drawings/2026/10/d.png', b'IMG')
+        self._backup()
+        self.assertEqual((self.mirror / 'purchase_orders/2026/10/po.pdf').read_bytes(), b'PO')
+        self.assertEqual((self.mirror / 'query_drawings/2026/10/d.png').read_bytes(), b'IMG')
+
+    def test_second_run_only_copies_new_files(self):
+        self._upload('a.pdf')
+        self.assertIn("1 new/changed", self._backup())
+        self._upload('b.pdf')
+        self.assertIn("1 new/changed file(s) copied, 2 total", self._backup())
+
+    def test_changed_file_is_recopied(self):
+        f = self._upload('a.pdf', b'old')
+        self._backup()
+        f.write_bytes(b'newer-content')
+        self._backup()
+        self.assertEqual((self.mirror / 'a.pdf').read_bytes(), b'newer-content')
+
+    def test_file_deleted_from_live_folder_stays_in_the_mirror(self):
+        f = self._upload('a.pdf', b'keep me')
+        self._backup()
+        f.unlink()
+        self._backup()
+        self.assertEqual((self.mirror / 'a.pdf').read_bytes(), b'keep me')
+
+    def test_no_media_folder_yet_is_not_an_error(self):
+        output = self._backup()
+        self.assertIn("Backed up to", output)
+        self.assertFalse(self.mirror.exists())
