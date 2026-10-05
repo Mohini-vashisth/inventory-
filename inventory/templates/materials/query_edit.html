@@ -132,6 +132,13 @@
             <label>{{ label }}</label>
             {% if name == 'gst_number' %}
             <input type="text" name="{{ name }}" maxlength="15" value="{{ value }}" placeholder="15-character GSTIN">
+            {% elif name == 'delivery_form' %}
+            <select name="{{ name }}">
+              <option value="">— none —</option>
+              {% for choice, choice_label in delivery_choices %}
+              <option value="{{ choice }}" {% if value == choice %}selected{% endif %}>{{ choice_label }}</option>
+              {% endfor %}
+            </select>
             {% else %}
             <textarea name="{{ name }}" rows="2">{{ value }}</textarea>
             {% endif %}

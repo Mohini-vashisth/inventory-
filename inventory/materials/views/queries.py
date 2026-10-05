@@ -134,5 +134,6 @@ def query_edit(request, pk):
         'query': query,
         'product_types': product_types,
         'intake_fields': [(f, label, getattr(query, f)) for f, label in Query.INTAKE_TEXT_FIELDS],
+        'delivery_choices': Query.DELIVERY_FORM_CHOICES,
         'error': error,
     })

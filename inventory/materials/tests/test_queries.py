@@ -331,7 +331,8 @@ class QueryIntakeDetailsTests(TestCase):
         self.assertEqual(self.query.requirement_rows(), [
             ('Requirements', 'Round bar, 12 mm\nwith chamfer'),
             ('Make / properties / process', 'Tata make'),
-            ('End use & delivery form', ''),  # blank rows are kept so the detail page can show a dash
+            ('End use', ''),  # blank rows are kept so the detail page can show a dash
+            ('Delivery form', ''),
             ('Quantity & frequency', '2 tons monthly'),
         ])
 
@@ -404,21 +405,36 @@ class QueryIntakeDetailsTests(TestCase):
         return self.client.post(reverse('query_edit', kwargs={'pk': self.query.pk}), data)
 
     def test_edit_saves_intake_fields_and_normalises_the_gst_number(self):
-        response = self._edit(gst_number=' 27 bbbbb 1111 b 1z6 ', end_use_delivery='shafts, coil', technical_requirements='polishing')
+        response = self._edit(gst_number=' 27 bbbbb 1111 b 1z6 ', end_use='shafts', delivery_form='Bar', technical_requirements='polishing')
         self.assertRedirects(response, reverse('query_dashboard'))
         self.query.refresh_from_db()
         self.assertEqual(self.query.gst_number, '27BBBBB1111B1Z6')
-        self.assertEqual(self.query.end_use_delivery, 'shafts, coil')
+        self.assertEqual(self.query.end_use, 'shafts')
+        self.assertEqual(self.query.delivery_form, 'Bar')
         self.assertEqual(self.query.technical_requirements, 'polishing')
 
     def test_edit_rejects_a_malformed_gst_number_and_saves_nothing(self):
         for bad in ('X' * 20, 'NA', '22AAAAA0000A1Z', 'not a gstin'):
             with self.subTest(gst_number=bad):
-                response = self._edit(gst_number=bad, end_use_delivery='should not be saved')
+                response = self._edit(gst_number=bad, end_use='should not be saved')
                 self.assertContains(response, 'error-msg')
                 self.query.refresh_from_db()
                 self.assertEqual(self.query.gst_number, '22AAAAA0000A1Z5')
-                self.assertEqual(self.query.end_use_delivery, '')
+                self.assertEqual(self.query.end_use, '')
+
+    def test_edit_rejects_a_delivery_form_that_is_not_coil_or_bar(self):
+        response = self._edit(delivery_form='Sheet', end_use='should not be saved')
+        self.assertContains(response, 'error-msg')
+        self.query.refresh_from_db()
+        self.assertEqual((self.query.delivery_form, self.query.end_use), ('', ''))
+
+    def test_edit_form_offers_delivery_form_as_a_coil_or_bar_dropdown(self):
+        self.query.delivery_form = 'Bar'
+        self.query.save(update_fields=['delivery_form'])
+        html = self.client.get(reverse('query_edit', kwargs={'pk': self.query.pk})).content.decode()
+        self.assertIn('<select name="delivery_form">', html)
+        self.assertIn('<option value="Coil" >Coil</option>', html)
+        self.assertIn('<option value="Bar" selected>Bar</option>', html)
 
     def test_edit_can_leave_the_gst_number_blank(self):
         # Blank just means "not collected yet" (e.g. a phone-call lead); it can't be NA.
