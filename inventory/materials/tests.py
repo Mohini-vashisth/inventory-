@@ -3459,6 +3459,7 @@ class MaterialsRouteGuardTests(TestCase):
         import re, uuid
         route = re.sub(r'<int:\w+>', '1', str(pattern.pattern))
         route = re.sub(r'<uuid:\w+>', str(uuid.uuid4()), route)
+        route = re.sub(r'<path:\w+>', 'purchase_orders/x.pdf', route)
         return '/' + route
 
     def _guarded(self):
@@ -3511,3 +3512,63 @@ class MaterialsRouteGuardTests(TestCase):
         for name in ('coils', 'orders', 'jobs', 'product-types'):
             with self.subTest(endpoint=name):
                 self.assertIn(self.client.get(f'/api/{name}/').status_code, (401, 403))
+
+
+class ServeMediaTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        override = override_settings(MEDIA_ROOT=Path(self.tmp.name))
+        override.enable()
+        self.addCleanup(override.disable)
+        folder = Path(self.tmp.name) / 'purchase_orders'
+        folder.mkdir()
+        (folder / 'po.pdf').write_bytes(b'%PDF-1.4 fake')
+        (folder / 'evil.html').write_text('<script>alert(1)</script>')
+        self.staff = get_user_model().objects.create_user('boss', password='pw', is_staff=True)
+
+    def _read(self, response):
+        return b''.join(response.streaming_content)
+
+    def test_staff_can_open_an_uploaded_pdf_inline(self):
+        self.client.force_login(self.staff)
+        response = self.client.get('/media/purchase_orders/po.pdf')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self._read(response), b'%PDF-1.4 fake')
+        self.assertNotIn('attachment', response.get('Content-Disposition', ''))
+
+    def test_non_displayable_types_are_forced_to_download(self):
+        self.client.force_login(self.staff)
+        response = self.client.get('/media/purchase_orders/evil.html')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Disposition'], 'attachment')
+
+    def test_anonymous_request_is_redirected_to_login_not_served(self):
+        response = self.client.get('/media/purchase_orders/po.pdf')
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/admin-login/', response['Location'])
+
+    def test_employee_pin_session_cannot_read_uploads(self):
+        session = self.client.session
+        session['employee_auth'] = True
+        session.save()
+        self.assertEqual(self.client.get('/media/purchase_orders/po.pdf').status_code, 302)
+
+    def test_path_traversal_is_rejected(self):
+        self.client.force_login(self.staff)
+        for bad in ('/media/../db.sqlite3', '/media/purchase_orders/../../manage.py', '/media/%2e%2e/manage.py'):
+            with self.subTest(url=bad):
+                self.assertIn(self.client.get(bad).status_code, (400, 404))
+
+    def test_missing_file_is_404(self):
+        self.client.force_login(self.staff)
+        self.assertEqual(self.client.get('/media/purchase_orders/nope.pdf').status_code, 404)
+
+    def test_model_file_urls_point_at_the_served_route(self):
+        from django.core.files.base import ContentFile
+        query = Query.objects.create(source='whatsapp', contact_phone='9876543210')
+        query.drawing.save('d.pdf', ContentFile(b'%PDF-1.4'), save=True)
+        self.assertTrue(query.drawing.url.startswith('/media/query_drawings/'))
+        self.client.force_login(self.staff)
+        self.assertEqual(self.client.get(query.drawing.url).status_code, 200)
