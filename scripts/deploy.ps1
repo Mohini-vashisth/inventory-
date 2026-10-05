@@ -78,8 +78,11 @@ try {
     Run $Py @('manage.py', 'check')
 
     Step 'Backing up the database before migrating'
-    $backupLine = (& $Py manage.py backup_db | Select-String 'Backed up to' | Select-Object -First 1)
+    # Capture everything before filtering: piping straight into Select-Object -First 1
+    # stops the pipeline early and leaves a non-zero $LASTEXITCODE on a good backup.
+    $backupOutput = & $Py manage.py backup_db
     if ($LASTEXITCODE -ne 0) { throw 'backup_db failed; not touching the live service.' }
+    $backupLine = ($backupOutput | Select-String 'Backed up to' | Select-Object -First 1)
     Write-Host $backupLine
 
     Step "Stopping $ServiceName"
