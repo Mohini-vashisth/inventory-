@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 import tempfile
+from pathlib import Path
 from decimal import Decimal
 from unittest.mock import patch, MagicMock
 
@@ -12,7 +13,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.core import mail
 from django.db import IntegrityError, transaction
-from django.test import TestCase, TransactionTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -3331,3 +3332,32 @@ class WhatsAppMediaDownloadTests(TestCase):
         self.assertEqual(views._extension_for_mime_type('image/jpeg; charset=binary'), '.jpg')
         self.assertEqual(views._extension_for_mime_type('application/octet-stream'), '')
         self.assertEqual(views._extension_for_mime_type(''), '')
+
+
+class BackupDbCommandTests(SimpleTestCase):
+    def test_backup_includes_rows_still_sitting_in_the_wal_file(self):
+        import sqlite3
+        from io import StringIO
+        from django.core.management import call_command
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_file = Path(tmp) / 'db.sqlite3'
+            live = sqlite3.connect(db_file, isolation_level=None)
+            live.execute("PRAGMA journal_mode=WAL")
+            live.execute("PRAGMA wal_autocheckpoint=0")
+            live.execute("CREATE TABLE t (name TEXT)")
+            live.execute("INSERT INTO t VALUES ('only-in-wal')")
+            try:
+                databases = {'default': {'ENGINE': 'django.db.backends.sqlite3', 'NAME': db_file}}
+                with override_settings(DATABASES=databases, BASE_DIR=Path(tmp)):
+                    call_command('backup_db', stdout=StringIO())
+                backups = list((Path(tmp) / 'db_backups').glob('db_*.sqlite3'))
+                self.assertEqual(len(backups), 1)
+                restored = sqlite3.connect(backups[0])
+                try:
+                    rows = [r[0] for r in restored.execute("SELECT name FROM t")]
+                finally:
+                    restored.close()
+            finally:
+                live.close()
+        self.assertEqual(rows, ['only-in-wal'])
