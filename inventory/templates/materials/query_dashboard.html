@@ -176,6 +176,9 @@
           <td>
             <div style="font-weight:600;">{{ query.company_name|default:query.contact_phone }}</div>
             <div class="muted">{{ query.contact_email|default:"" }}{% if query.contact_email and query.contact_phone %} · {% endif %}{{ query.contact_phone|default:"" }}</div>
+            {% for label, value in query.gst_details %}
+            <div class="muted" style="font-size:0.85em; max-width:260px;"><strong>{{ label }}:</strong> <span style="white-space:pre-wrap;">{{ value }}</span></div>
+            {% endfor %}
           </td>
           <td>
             {% if query.product_type %}{{ query.product_type.item_code }}<br>{% endif %}
@@ -183,7 +186,7 @@
             {% if query.drawing %}
             <br><a href="{{ query.drawing.url }}" target="_blank" class="muted" style="color:#4e73df;">📎 Drawing</a>
             {% endif %}
-            {% with details=query.intake_details %}
+            {% with details=query.requirement_details %}
             {% if details %}
             <details style="margin-top:0.35rem;">
               <summary class="muted" style="cursor:pointer;">Requirements</summary>
