@@ -610,3 +610,36 @@ class OrderFormShowsTheProductTypeTests(TestCase):
         self.assertIn('Flat Wire', html)
         self.assertIn('FW-1', html)
         self.assertNotIn('name="item-0-category"', html)   # shown, not editable
+
+
+class PublicQuoteFormCsrfTests(TestCase):
+    """Tailscale Funnel forwards plain HTTP without X-Forwarded-Proto, while the
+    browser's Origin is https:// — so unless the public origin is trusted, every
+    customer submit on the order form is a 403 ("Origin checking failed")."""
+
+    PUBLIC = 'https://mdw.tail2734e7.ts.net'
+
+    def _post_like_funnel(self):
+        from django.test import Client
+        customer = Customer.objects.create(name='Funnel Co')
+        client = Client(enforce_csrf_checks=True)
+        url = reverse('quote_form', kwargs={'token': customer.quote_token})
+        client.get(url, HTTP_HOST='mdw.tail2734e7.ts.net')   # sets the CSRF cookie
+        token = client.cookies['csrftoken'].value
+        return client.post(url, {'csrfmiddlewaretoken': token}, HTTP_HOST='mdw.tail2734e7.ts.net',
+                           HTTP_ORIGIN=self.PUBLIC)
+
+    def test_the_public_origin_is_trusted_automatically(self):
+        from inventory.settings import trusted_csrf_origins
+        self.assertEqual(trusted_csrf_origins('', self.PUBLIC + '/'), [self.PUBLIC])
+        self.assertEqual(trusted_csrf_origins(f' https://a.example , {self.PUBLIC}', self.PUBLIC),
+                         ['https://a.example', self.PUBLIC])   # no duplicate, blanks and spaces dropped
+        self.assertEqual(trusted_csrf_origins('', ''), [])
+
+    @override_settings(ALLOWED_HOSTS=['mdw.tail2734e7.ts.net'], CSRF_TRUSTED_ORIGINS=[])
+    def test_without_the_trusted_origin_the_submit_is_a_403(self):
+        self.assertEqual(self._post_like_funnel().status_code, 403)
+
+    @override_settings(ALLOWED_HOSTS=['mdw.tail2734e7.ts.net'], CSRF_TRUSTED_ORIGINS=[PUBLIC])
+    def test_with_the_trusted_origin_the_submit_gets_past_csrf(self):
+        self.assertNotEqual(self._post_like_funnel().status_code, 403)
