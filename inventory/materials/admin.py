@@ -1,11 +1,14 @@
 from django.contrib import admin
 from django.utils import timezone
-from django.utils.html import format_html
+from django.utils.html import format_html, format_html_join
+from django.utils.safestring import mark_safe
 from django.urls import reverse
 from decimal import Decimal
 
 from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
+from django import forms
+from .product_codes import canonical_grade, item_code_for, reserve_grade_number
 from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductCategory, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
 
 
@@ -103,12 +106,64 @@ class ProductCategoryAdmin(admin.ModelAdmin):
         return obj.product_codes.count()
 
 
+class GradeInput(forms.TextInput):
+    """A text box that suggests the grades already in the list as you type (a browser
+    datalist), so a grade isn't spelled several ways. Anything can still be typed."""
+
+    def render(self, name, value, attrs=None, renderer=None):
+        attrs = {**(attrs or {}), 'list': 'grade-options', 'autocomplete': 'off'}
+        options = format_html_join('', '<option value="{}">', ((n,) for n in GradeOption.objects.values_list('name', flat=True)))
+        return mark_safe(super().render(name, value, attrs, renderer) + format_html('<datalist id="grade-options">{}</datalist>', options))
+
+
+class ProductTypeAdminForm(forms.ModelForm):
+    """Leave Item Code blank and it's generated from the product type, grade and size
+    in the agreed format (see product_codes.py); type one yourself to override it."""
+
+    class Meta:
+        model = ProductType
+        fields = ['category', 'item_code', 'grade', 'size', 'description']
+        widgets = {'grade': GradeInput}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.generated_code = False
+        item_code = self.fields['item_code']
+        item_code.required = False
+        item_code.help_text = ("Leave blank: it is generated from the product type, grade and size "
+                               "(e.g. FBB00100120). It fills in as you pick them.")
+        item_code.widget.attrs['data-lookup-url'] = reverse('product_code_lookup')
+
+    def clean_grade(self):
+        return canonical_grade(self.cleaned_data.get('grade'))
+
+    def clean(self):
+        cleaned = super().clean()
+        if not cleaned.get('item_code'):
+            code, reason = item_code_for(
+                cleaned.get('category'), cleaned.get('grade') or '', cleaned.get('size'), self.instance.pk)
+            if reason:
+                raise forms.ValidationError(reason)
+            cleaned['item_code'] = code
+            self.generated_code = True
+        return cleaned
+
+
 @admin.register(ProductType)
 class ProductTypeAdmin(admin.ModelAdmin):
+    form = ProductTypeAdminForm
     inlines = [ProcessStepInline, AllowedCoilSpecInline]
     list_display = ['item_code', 'category', 'grade', 'size', 'step_count', 'allowed_spec_summary']
     list_filter = ['category']
     fields = ['category', 'item_code', 'grade', 'size', 'description']
+
+    class Media:
+        js = ('materials/admin_product_code.js',)
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if form.generated_code:
+            reserve_grade_number(obj.grade)   # the number just used in the code is now taken
 
     def step_count(self, obj):
         return obj.steps.count()

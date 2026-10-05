@@ -4,12 +4,13 @@
     001      the grade's number (EN8D)
     00120    the size in hundredths of a mm (1.2 mm)
 
-This is the only place that knows the format. A code is created when a quote
-using a new type + grade + size is sent; the quote form previews it first.
+This is the only place that knows the format. Codes are created by the admin in
+the Django admin (the Add product code form fills Item Code from these three
+and a script keeps it live); quotes only ever *look codes up* and refuse to be
+sent until the code for each item exists.
 """
 from decimal import Decimal, InvalidOperation
 
-from django.db import IntegrityError, transaction
 from django.db.models import Max
 
 from .models import GradeOption, ProductType
@@ -31,6 +32,15 @@ def size_digits(size):
     if hundredths != hundredths.to_integral_value() or not (0 < hundredths <= MAX_SIZE_HUNDREDTHS):
         return None
     return f"{int(hundredths):05d}"
+
+
+def canonical_grade(grade):
+    """The grade as it's spelled in the grade list when it matches one regardless of
+    case ("en8d" -> "EN8D"), otherwise the text as typed (trimmed). Keeps one
+    grade from being written several ways, without ever refusing a new one."""
+    text = (grade or '').strip()
+    option = GradeOption.objects.filter(name__iexact=text).first() if text else None
+    return option.name if option else text
 
 
 def _next_grade_number():
@@ -87,25 +97,36 @@ def _grade_number(grade):
     return option, option.number
 
 
-def get_or_create_product_code(category, grade, size):
-    """The product code for this type + grade + size, created if it's new.
-    Returns (ProductType or None, created); None when a code can't be generated
-    (see describe_product_code for the reason)."""
+def _unique_item_code(base, exclude_pk=None):
+    """`base`, or `base-2`, `base-3`... if a hand-made code already uses that text."""
+    item_code, suffix = base, 1
+    while ProductType.objects.exclude(pk=exclude_pk).filter(item_code=item_code).exists():
+        suffix += 1
+        item_code = f"{base}-{suffix}"
+    return item_code
+
+
+def item_code_for(category, grade, size, exclude_pk=None):
+    """For the admin's Add/Change product code form when Item Code is left blank:
+    (item_code, '') for the code to use, or (None, reason). A combination that
+    already has a code is refused rather than duplicated (`exclude_pk` is the code
+    being edited, which doesn't count as a duplicate of itself)."""
     if not (category and grade and grade.strip() and size is not None):
-        return None, False
-    existing = _find_code(category, grade, size)
+        return None, "Pick a product type and fill in grade and size, or type an item code yourself."
+    existing = ProductType.objects.exclude(pk=exclude_pk).filter(
+        category=category, grade__iexact=grade.strip(), size=size).first()
     if existing:
-        return existing, False
-    if _why_not(category, grade, size):
-        return None, False
-    try:
-        with transaction.atomic():
-            option, number = _grade_number(grade)
-            item_code = _build(category, number, size)
-            suffix = 1
-            while ProductType.objects.filter(item_code=item_code).exists():   # a hand-made code already uses it
-                suffix += 1
-                item_code = f"{_build(category, number, size)}-{suffix}"
-            return ProductType.objects.create(category=category, item_code=item_code, grade=option.name, size=size), True
-    except IntegrityError:   # someone else created it a moment ago
-        return _find_code(category, grade, size), False
+        return None, f"A product code for this type, grade and size already exists: {existing.item_code}."
+    reason = _why_not(category, grade, size)
+    if reason:
+        return None, reason
+    option = GradeOption.objects.filter(name__iexact=grade.strip()).first()
+    number = option.number if option and option.number is not None else _next_grade_number()
+    return _unique_item_code(_build(category, number, size), exclude_pk), ""
+
+
+def reserve_grade_number(grade):
+    """Add the grade to the list and number it if it isn't yet — called after a code
+    using it is saved, so the number in that code is now taken and the next new
+    grade gets the one after."""
+    _grade_number(grade)

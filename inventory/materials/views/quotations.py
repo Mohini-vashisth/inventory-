@@ -1,6 +1,7 @@
 """Official quotations: the Send Quote / Save Draft form, drafts, PDF, and the email."""
 
 from django.utils import timezone
+from django.utils.http import urlencode
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.core.mail import EmailMessage
@@ -10,10 +11,10 @@ from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from decimal import Decimal, InvalidOperation
 
-from ..models import ProductCategory, ProductType, Customer, Query, Quotation, QuotationLineItem
+from ..models import GradeOption, ProductCategory, ProductType, Customer, Query, Quotation, QuotationLineItem
 from ..forms import QuotationForm, QuotationLineItemFormSet
 from ..pdf import generate_quotation_pdf
-from ..product_codes import describe_product_code, get_or_create_product_code
+from ..product_codes import canonical_grade, describe_product_code
 from ..decorators import staff_required
 from .common import _first_form_error, _first_formset_error, _match_product_type, _safe_get
 
@@ -63,7 +64,11 @@ def product_code_lookup(request):
         size = Decimal(request.GET.get('size', ''))
     except InvalidOperation:
         size = None
-    return JsonResponse(describe_product_code(category, request.GET.get('grade', ''), size))
+    grade = request.GET.get('grade', '').strip()
+    result = describe_product_code(category, grade, size)
+    if category and grade and size is not None and not result['exists']:
+        result['add_url'] = _admin_add_code_url(category, grade, size)   # for "add it in the admin"
+    return JsonResponse(result)
 
 
 def _saved_values(form, is_draft):
@@ -78,32 +83,39 @@ def _saved_values(form, is_draft):
     return values
 
 
-def _autofill_product_codes(item_dicts, create=False):
-    """Give each item its product code without the owner choosing one: a code is
-    its product type + grade + size, so once those are filled in it's either an
-    existing code (matched) or, when the quote is actually being sent
-    (`create=True`), a new one built in the agreed format (see product_codes.py).
-    A code picked by hand is never overridden. Returns (codes created, warnings):
-    warnings explain an item that couldn't get a code, e.g. a size finer than
-    0.01 mm. An item left without a code gets one assigned when its order is
-    confirmed."""
-    created, warnings = [], []
+def _autofill_product_codes(item_dicts):
+    """Give each item its product code without the owner choosing one: a code is its
+    product type + grade + size, so once those are filled in the catalogue's code is
+    matched. A code picked by hand is never overridden. Quotes never create codes —
+    a missing one is added by the admin first (see _items_missing_a_code)."""
     for item in item_dicts:
-        if item.get('product_type'):
+        if not item.get('product_type'):
+            item['product_type'] = _match_product_type(item.get('grade'), item.get('size'), item.get('category'))
+
+
+def _admin_add_code_url(category, grade, size):
+    """The admin's Add product code page with this type, grade and size already filled in
+    (the page then generates the item code itself)."""
+    return reverse('admin:materials_producttype_add') + '?' + urlencode(
+        {'category': category.pk, 'grade': grade, 'size': size})
+
+
+def _items_missing_a_code(item_dicts):
+    """What stops a quote being sent: items where the owner picked a product type, grade
+    and size but the catalogue has no code for that combination yet.
+    [{'label', 'url'}] with `url` the admin's prefilled Add product code page. An item
+    with no (or only part of a) spec isn't blocked — it simply has no code, which is
+    assigned when its order is confirmed."""
+    missing = []
+    for item in item_dicts:
+        category, grade, size = item.get('category'), (item.get('grade') or '').strip(), item.get('size')
+        if item.get('product_type') or not (category and grade and size is not None):
             continue
-        category, grade, size = item.get('category'), item.get('grade'), item.get('size')
-        if create and category:
-            code, was_created = get_or_create_product_code(category, grade, size)
-            if code:
-                item['product_type'] = code
-                if was_created:
-                    created.append(code)
-                continue
-            reason = describe_product_code(category, grade, size)['reason']
-            if reason:
-                warnings.append(f"No product code for \"{item.get('description', '')}\": {reason}")
-        item['product_type'] = _match_product_type(grade, size, category)
-    return created, warnings
+        missing.append({
+            'label': f"{category.name} · {grade} · {size:g} mm",
+            'url': _admin_add_code_url(category, grade, size),
+        })
+    return missing
 
 
 def _parse_draft_line_items(post_data):
@@ -137,7 +149,7 @@ def _parse_draft_line_items(post_data):
             'description': description,
             'category': category,
             'product_type': product_type,
-            'grade': post_data.get(prefix + 'grade', '').strip(),
+            'grade': canonical_grade(post_data.get(prefix + 'grade', '')),
             'size': _dec(post_data.get(prefix + 'size')),
             'quantity': _dec(post_data.get(prefix + 'quantity')),
             'unit': post_data.get(prefix + 'unit', '').strip() or 'KGS',
@@ -182,6 +194,7 @@ def quotation_form(request, pk=None):
     new_customer_initial = {'name': '', 'email': '', 'phone': ''}
 
     error = None
+    missing_codes = []
     if request.method == 'POST':
         action = request.POST.get('action', 'send')
         form = QuotationForm(request.POST)
@@ -207,17 +220,27 @@ def quotation_form(request, pk=None):
             error = _first_form_error(form)
         elif action == 'send' and not formset.is_valid():
             error = _first_formset_error(formset)
+        elif action == 'send':
+            send_items = [dict(item_data) for item_data in formset.cleaned_data]
+            _autofill_product_codes(send_items)
+            missing_codes = _items_missing_a_code(send_items)
+            if missing_codes:
+                error = (
+                    "Can't send yet \u2014 no product code exists for: "
+                    + "; ".join(m['label'] for m in missing_codes)
+                    + ". Ask the admin to add it from the admin dashboard (link below), then send the quote."
+                )
 
         if error is None:
             email = request.POST.get('customer_email', '').strip()
             phone = request.POST.get('customer_phone', '').strip()
             status = 'sent' if action == 'send' else 'draft'
             if action == 'send':
-                item_dicts = [dict(item_data) for item_data in formset.cleaned_data]
+                item_dicts = send_items
             else:
                 item_dicts = _parse_draft_line_items(request.POST)
+                _autofill_product_codes(item_dicts)
             with transaction.atomic():
-                created_codes, code_warnings = _autofill_product_codes(item_dicts, create=(action == 'send'))
                 customer = _resolve_quotation_customer(customer_name, query, existing_customer, email, phone)
 
                 if draft:
@@ -243,15 +266,6 @@ def quotation_form(request, pk=None):
             if action == 'save_draft':
                 messages.success(request, f"Draft saved for {customer.name}.")
                 return redirect('quotation_edit', pk=quotation.pk)
-
-            for code in created_codes:
-                messages.success(
-                    request,
-                    f"New product code {code.item_code} created ({code.category.name}, {code.grade}, {code.size:g} mm) — "
-                    f"it's in the admin under Product codes.",
-                )
-            for warning in code_warnings:
-                messages.warning(request, warning)
 
             if customer.email:
                 _dispatch_quote_email(request, customer, quotation)
@@ -320,6 +334,7 @@ def quotation_form(request, pk=None):
             {'pk': pt.pk, 'category': pt.category_id, 'grade': pt.grade.lower(), 'size': f"{pt.size:.3f}"}
             for pt in ProductType.objects.exclude(size=None)
         ],
+        'grade_options': list(GradeOption.objects.values_list('name', flat=True)),
         'form': form,
         'formset': formset,
         'query': query,
@@ -327,6 +342,7 @@ def quotation_form(request, pk=None):
         'new_customer_initial': new_customer_initial,
         'draft': draft,
         'error': error,
+        'missing_codes': missing_codes,
         'post': request.POST if error else _saved_values(form, is_draft=draft is not None),
     })
 

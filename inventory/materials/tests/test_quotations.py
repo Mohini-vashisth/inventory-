@@ -500,10 +500,11 @@ class ProductCodeMatchingTests(TestCase):
     def test_without_a_type_a_grade_and_size_only_one_code_has_still_matches(self):
         self.assertEqual(self._send(grade='ss304', size='2').product_type, self.wire_code)
 
-    def test_sending_for_a_type_with_no_code_for_that_grade_and_size_creates_one(self):
-        line = self._send(category=str(self.flat_wire.pk), grade='EN8D', size='12')
-        self.assertEqual(line.product_type.category, self.flat_wire)
-        self.assertEqual(line.product_type.item_code[:3], 'FLW')
+    def test_sending_for_a_type_grade_and_size_with_no_code_is_refused_not_created(self):
+        before = ProductType.objects.count()
+        self._send(category=str(self.flat_wire.pk), grade='EN8D', size='12')
+        self.assertEqual(ProductType.objects.count(), before)   # quotes never create codes
+        self.assertFalse(QuotationLineItem.objects.exists())   # and the send was refused
 
     def test_saving_a_draft_for_such_a_combination_leaves_the_code_unassigned(self):
         line = self._send(action='save_draft', category=str(self.flat_wire.pk), grade='EN8D', size='12')
