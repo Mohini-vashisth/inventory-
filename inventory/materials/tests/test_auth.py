@@ -281,6 +281,9 @@ class MaterialsRouteGuardTests(TestCase):
         if view_name == 'customer_autocomplete':
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json(), [])
+        elif view_name == 'product_code_lookup':   # a JSON endpoint called by script: 403, not a redirect
+            self.assertEqual(response.status_code, 403)
+            self.assertEqual(response.json(), {'error': 'forbidden'})
         else:
             self.assertEqual(response.status_code, 302, f"{view_name} served an unauthorised request")
 

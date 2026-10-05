@@ -475,6 +475,32 @@
       return isNaN(n) ? '' : n.toFixed(3);
     }
 
+    var lookupUrl = "{% url 'product_code_lookup' %}";
+    var timers = new WeakMap();
+
+    // No existing code fits: show the one sending the quote will create (or why none can be).
+    function previewNewCode(row, select, category, grade, size) {
+      var hint = row.querySelector('.code-hint');
+      if (!hint) {
+        hint = document.createElement('div');
+        hint.className = 'code-hint';
+        select.closest('.form-group').appendChild(hint);
+      }
+      clearTimeout(timers.get(row));
+      if (select.value || !category || !grade || !size) { hint.textContent = ''; return; }
+      timers.set(row, setTimeout(function () {
+        var query = '?category=' + encodeURIComponent(category) + '&grade=' + encodeURIComponent(grade) + '&size=' + encodeURIComponent(size);
+        fetch(lookupUrl + query, {credentials: 'same-origin'})
+          .then(function (response) { return response.json(); })
+          .then(function (data) {
+            if (select.value) { hint.textContent = ''; return; }
+            hint.className = 'code-hint' + (data.item_code ? '' : ' code-hint-warn');
+            hint.textContent = data.item_code ? 'New code ' + data.item_code + ' will be created when you send' : (data.reason || '');
+          })
+          .catch(function () { hint.textContent = ''; });
+      }, 250));
+    }
+
     function matchRow(row) {
       var grade = (row.querySelector('[name$="-grade"]').value || '').trim().toLowerCase();
       var size = normSize(row.querySelector('[name$="-size"]').value);
@@ -490,6 +516,7 @@
       }
       select.value = found ? String(found.pk) : '';
       select.dataset.auto = found ? '1' : '';
+      previewNewCode(row, select, category, row.querySelector('[name$="-grade"]').value.trim(), row.querySelector('[name$="-size"]').value);
     }
 
     container.addEventListener('input', function (event) {

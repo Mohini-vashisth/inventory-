@@ -500,8 +500,14 @@ class ProductCodeMatchingTests(TestCase):
     def test_without_a_type_a_grade_and_size_only_one_code_has_still_matches(self):
         self.assertEqual(self._send(grade='ss304', size='2').product_type, self.wire_code)
 
-    def test_a_type_with_no_code_for_that_grade_and_size_matches_nothing(self):
-        self.assertIsNone(self._send(category=str(self.flat_wire.pk), grade='EN8D', size='12').product_type)
+    def test_sending_for_a_type_with_no_code_for_that_grade_and_size_creates_one(self):
+        line = self._send(category=str(self.flat_wire.pk), grade='EN8D', size='12')
+        self.assertEqual(line.product_type.category, self.flat_wire)
+        self.assertEqual(line.product_type.item_code[:3], 'FLW')
+
+    def test_saving_a_draft_for_such_a_combination_leaves_the_code_unassigned(self):
+        line = self._send(action='save_draft', category=str(self.flat_wire.pk), grade='EN8D', size='12')
+        self.assertIsNone(line.product_type)
 
     def test_a_code_picked_by_hand_is_never_overridden(self):
         line = self._send(category=str(self.round_bar.pk), grade='EN8D', size='12', product_type=str(self.wire_code.pk))

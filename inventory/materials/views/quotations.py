@@ -7,12 +7,13 @@ from django.core.mail import EmailMessage
 from django.conf import settings
 from django.urls import reverse
 from django.db import transaction
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from decimal import Decimal, InvalidOperation
 
 from ..models import ProductCategory, ProductType, Customer, Query, Quotation, QuotationLineItem
 from ..forms import QuotationForm, QuotationLineItemFormSet
 from ..pdf import generate_quotation_pdf
+from ..product_codes import describe_product_code, get_or_create_product_code
 from ..decorators import staff_required
 from .common import _first_form_error, _first_formset_error, _match_product_type, _safe_get
 
@@ -49,6 +50,22 @@ def _resolve_quotation_customer(customer_name, query, existing_customer, email, 
     return customer
 
 
+@staff_required(on_denied=lambda request: JsonResponse({'error': 'forbidden'}, status=403))
+def product_code_lookup(request):
+    """For the quote form's live preview: given a product type, grade and size, the
+    existing product code, or the one sending the quote would create, or why none
+    can be (see product_codes.describe_product_code). Read-only."""
+    try:
+        category = ProductCategory.objects.filter(pk=int(request.GET.get('category', ''))).first()
+    except ValueError:
+        category = None
+    try:
+        size = Decimal(request.GET.get('size', ''))
+    except InvalidOperation:
+        size = None
+    return JsonResponse(describe_product_code(category, request.GET.get('grade', ''), size))
+
+
 def _saved_values(form, is_draft):
     """What the header fields show on a normal page load: the draft's saved values, or
     whatever was prefilled (from a query, the customer's last quote, or a revision).
@@ -61,15 +78,32 @@ def _saved_values(form, is_draft):
     return values
 
 
-def _autofill_product_codes(item_dicts):
-    """When the owner has filled in grade and size but not picked a product
-    code, match the catalogue code for them — the code identifies a grade+size
-    (they're unique together), so there's nothing for them to choose. A code
-    picked by hand is never overridden, and no match leaves it blank (the
-    order's code is then assigned when it's confirmed)."""
+def _autofill_product_codes(item_dicts, create=False):
+    """Give each item its product code without the owner choosing one: a code is
+    its product type + grade + size, so once those are filled in it's either an
+    existing code (matched) or, when the quote is actually being sent
+    (`create=True`), a new one built in the agreed format (see product_codes.py).
+    A code picked by hand is never overridden. Returns (codes created, warnings):
+    warnings explain an item that couldn't get a code, e.g. a size finer than
+    0.01 mm. An item left without a code gets one assigned when its order is
+    confirmed."""
+    created, warnings = [], []
     for item in item_dicts:
-        if not item.get('product_type'):
-            item['product_type'] = _match_product_type(item.get('grade'), item.get('size'), item.get('category'))
+        if item.get('product_type'):
+            continue
+        category, grade, size = item.get('category'), item.get('grade'), item.get('size')
+        if create and category:
+            code, was_created = get_or_create_product_code(category, grade, size)
+            if code:
+                item['product_type'] = code
+                if was_created:
+                    created.append(code)
+                continue
+            reason = describe_product_code(category, grade, size)['reason']
+            if reason:
+                warnings.append(f"No product code for \"{item.get('description', '')}\": {reason}")
+        item['product_type'] = _match_product_type(grade, size, category)
+    return created, warnings
 
 
 def _parse_draft_line_items(post_data):
@@ -182,9 +216,8 @@ def quotation_form(request, pk=None):
                 item_dicts = [dict(item_data) for item_data in formset.cleaned_data]
             else:
                 item_dicts = _parse_draft_line_items(request.POST)
-            _autofill_product_codes(item_dicts)
-
             with transaction.atomic():
+                created_codes, code_warnings = _autofill_product_codes(item_dicts, create=(action == 'send'))
                 customer = _resolve_quotation_customer(customer_name, query, existing_customer, email, phone)
 
                 if draft:
@@ -210,6 +243,15 @@ def quotation_form(request, pk=None):
             if action == 'save_draft':
                 messages.success(request, f"Draft saved for {customer.name}.")
                 return redirect('quotation_edit', pk=quotation.pk)
+
+            for code in created_codes:
+                messages.success(
+                    request,
+                    f"New product code {code.item_code} created ({code.category.name}, {code.grade}, {code.size:g} mm) — "
+                    f"it's in the admin under Product codes.",
+                )
+            for warning in code_warnings:
+                messages.warning(request, warning)
 
             if customer.email:
                 _dispatch_quote_email(request, customer, quotation)
