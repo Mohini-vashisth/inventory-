@@ -5,7 +5,9 @@ from django.contrib import messages
 from decimal import InvalidOperation
 from django.core.exceptions import ValidationError
 
-from ..models import ProductCategory, ProductType, Query
+from ..models import GradeOption, ProductCategory, ProductType, Query
+from ..product_codes import canonical_grade
+from .common import _match_product_type
 from ..decorators import redirect_to_admin_login, staff_required
 from .quotations import _public_quote_base_url
 from . import whatsapp
@@ -127,7 +129,7 @@ def query_edit(request, pk):
             query.contact_email = request.POST.get('contact_email', '').strip()
             query.product_type_id = request.POST.get('product_type') or None
             query.product_category_id = request.POST.get('product_category') or None
-            query.grade = request.POST.get('grade', '').strip()
+            query.grade = canonical_grade(request.POST.get('grade'))
             query.size = raw_size
             query.quantity = raw_quantity
             query.notes = request.POST.get('notes', '').strip()
@@ -145,6 +147,8 @@ def query_edit(request, pk):
         except (InvalidOperation, ValueError):
             error = "Check that size and quantity are valid numbers."
         else:
+            if not query.product_type_id:   # no code picked by hand: look it up from type + grade + size
+                query.product_type = _match_product_type(query.grade, query.size, query.product_category)
             query.save(update_fields=[
                 'company_name', 'contact_phone', 'contact_email',
                 'product_type', 'product_category', 'grade', 'size', 'quantity', 'notes',
@@ -159,5 +163,11 @@ def query_edit(request, pk):
         'intake_fields': [(f, label, getattr(query, f)) for f, label in Query.INTAKE_TEXT_FIELDS],
         'delivery_choices': Query.DELIVERY_FORM_CHOICES,
         'categories': ProductCategory.objects.all(),
+        # type + grade + size -> product code, for the form's live auto-match (same as the quote form)
+        'product_code_map': [
+            {'pk': pt.pk, 'category': pt.category_id, 'grade': pt.grade.lower(), 'size': f"{pt.size:.3f}"}
+            for pt in ProductType.objects.exclude(size=None)
+        ],
+        'grade_options': list(GradeOption.objects.values_list('name', flat=True)),
         'error': error,
     })
