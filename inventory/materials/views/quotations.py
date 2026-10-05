@@ -318,7 +318,8 @@ def _dispatch_quote_email(request, customer, quotation):
                 f"If you wish to proceed, please log your order using the link below — "
                 f"you're welcome to attach your own Purchase Order there too, if you have one:\n\n"
                 f"{quote_url}\n\n"
-                f"This link is unique to your company.\n\n"
+                f"This link is personal to your company and can be used once, to place the order for "
+                f"this quotation. For any later order we will send you a new quotation and link.\n\n"
                 f"Regards,\n{settings.COMPANY_NAME}"
             ),
             from_email=settings.DEFAULT_FROM_EMAIL,
