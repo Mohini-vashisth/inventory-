@@ -3361,3 +3361,75 @@ class BackupDbCommandTests(SimpleTestCase):
             finally:
                 live.close()
         self.assertEqual(rows, ['only-in-wal'])
+
+
+class EmployeeLoginThrottleTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.url = reverse('employee_login')
+
+    def _fail(self, times, **extra):
+        for _ in range(times):
+            self.client.post(self.url, {'pin': 'wrong'}, **extra)
+
+    def test_locks_out_after_max_failures_even_for_the_correct_pin(self):
+        self._fail(settings.EMPLOYEE_LOGIN_MAX_FAILURES)
+        response = self.client.post(self.url, {'pin': settings.EMPLOYEE_PIN})
+        self.assertContains(response, "Too many incorrect attempts")
+        self.assertFalse(self.client.session.get('employee_auth'))
+
+    def test_correct_pin_still_works_below_the_limit(self):
+        self._fail(settings.EMPLOYEE_LOGIN_MAX_FAILURES - 1)
+        self.client.post(self.url, {'pin': settings.EMPLOYEE_PIN})
+        self.assertTrue(self.client.session.get('employee_auth'))
+
+    def test_successful_login_resets_the_failure_count(self):
+        self._fail(settings.EMPLOYEE_LOGIN_MAX_FAILURES - 1)
+        self.client.post(self.url, {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('employee_logout'))
+        self._fail(settings.EMPLOYEE_LOGIN_MAX_FAILURES - 1)
+        self.client.post(self.url, {'pin': settings.EMPLOYEE_PIN})
+        self.assertTrue(self.client.session.get('employee_auth'))
+
+    def test_lockout_is_per_ip(self):
+        self._fail(settings.EMPLOYEE_LOGIN_MAX_FAILURES, REMOTE_ADDR='10.0.0.1')
+        self.client.post(self.url, {'pin': settings.EMPLOYEE_PIN}, REMOTE_ADDR='10.0.0.2')
+        self.assertTrue(self.client.session.get('employee_auth'))
+
+    def test_spoofed_forwarded_for_header_does_not_dodge_the_lockout(self):
+        for i in range(settings.EMPLOYEE_LOGIN_MAX_FAILURES):
+            self.client.post(self.url, {'pin': 'wrong'}, HTTP_X_FORWARDED_FOR=f'9.9.9.{i}')
+        response = self.client.post(self.url, {'pin': settings.EMPLOYEE_PIN}, HTTP_X_FORWARDED_FOR='1.2.3.4')
+        self.assertContains(response, "Too many incorrect attempts")
+
+
+class EmployeePinSettingTests(SimpleTestCase):
+    def _import_settings(self, **env):
+        import os, subprocess, sys
+        base_env = {k: v for k, v in os.environ.items()
+                    if k not in ('EMPLOYEE_PIN', 'DJANGO_DEBUG', 'DJANGO_SECRET_KEY')}
+        # Explicit empty values, not absent ones: load_dotenv fills in absent
+        # vars from a developer's real .env, but never overrides a set one.
+        base_env.update({'EMPLOYEE_PIN': '', 'DJANGO_SECRET_KEY': ''})
+        base_env.update(env)
+        return subprocess.run(
+            [sys.executable, '-c', 'import inventory.settings as s; print(s.EMPLOYEE_PIN)'],
+            cwd=settings.BASE_DIR, env=base_env, capture_output=True, text=True,
+        )
+
+    def test_production_refuses_to_start_without_an_employee_pin(self):
+        result = self._import_settings(DJANGO_DEBUG='False', DJANGO_SECRET_KEY='x' * 50)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("EMPLOYEE_PIN must be set", result.stderr)
+
+    def test_production_starts_with_an_employee_pin(self):
+        result = self._import_settings(DJANGO_DEBUG='False', DJANGO_SECRET_KEY='x' * 50, EMPLOYEE_PIN='4821')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), '4821')
+
+    def test_debug_falls_back_to_the_dev_pin(self):
+        result = self._import_settings(DJANGO_DEBUG='True')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), '1234')

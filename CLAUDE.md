@@ -33,7 +33,7 @@ python3 manage.py migrate
 | `DJANGO_ALLOWED_HOSTS` | Comma-separated hostnames/IPs Django will answer to. Required once `DJANGO_DEBUG=False` |
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | Comma-separated, full origin with scheme. Only needed for a hostname reached through a reverse proxy rather than directly — not required for the current Tailscale Funnel setup (Funnel terminates HTTPS at the Tailscale node itself, not a separate proxy in front of Django) |
 | `PUBLIC_QUOTE_BASE_URL` | Full origin, no trailing slash (e.g. `https://mdw.tail2734e7.ts.net`). The link a quote-request email points to. Admins only ever reach this app over plain Tailscale, so leaving this unset would put that private address in an email sent to an external customer — see the "Public quote form" section below |
-| `EMPLOYEE_PIN` | Shared PIN for employee portal (default: `1234`) |
+| `EMPLOYEE_PIN` | Shared PIN for the employee portal. Falls back to `1234` only when `DJANGO_DEBUG=True`; **raises `ImproperlyConfigured` at startup if `DJANGO_DEBUG=False` and this isn't set**, same fail-closed rule as `DJANGO_SECRET_KEY` — a prod deploy can't silently run on the publicly-known default |
 | `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_USE_TLS` | SMTP config |
 | `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` | SMTP credentials — Gmail needs an App Password, not the account password |
 | `DEFAULT_FROM_EMAIL` | Sender address for quote emails |
@@ -165,6 +165,7 @@ Checked once, at `order_confirm` (`materials/views.py`) — not at quote submiss
 
 **Employee** (PIN-based session):
 - Access via `/employee/` — requires PIN (`EMPLOYEE_PIN` in `.env`)
+- Login is throttled per client IP (`employee_login`, `settings.EMPLOYEE_LOGIN_MAX_FAILURES` = 5 wrong PINs, then locked out for `EMPLOYEE_LOGIN_LOCKOUT_SECONDS` = 15 min, even for the correct PIN; a successful login clears the count). Counts live in Django's default cache (`LocMemCache`, per-process — fine for the single waitress process, resets on restart). Keyed on `REMOTE_ADDR` only, never `X-Forwarded-For` (client-supplied, would let an attacker dodge the lockout). Trade-off: everyone behind one shared IP (e.g. several tablets behind one NAT) shares one counter, so five typos across them lock them all out for 15 minutes — restart the service (`sc stop`/`sc start InventoryApp`) to clear it early. A 4-digit PIN is still only 10,000 combinations; this makes guessing slow (~480/day per IP), not impossible — the portal is only reachable over Tailscale/LAN, not the public Funnel paths.
 - Can register coils, pick coils against orders, update production step progress
 - "Log out" button on the portal (`/employee-logout/`, POST-only) clears the session — the shared PIN stays valid, only that browser's login is ended
 
