@@ -1,7 +1,7 @@
 import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
-from django.core.validators import RegexValidator
+from django.core.validators import MaxValueValidator, RegexValidator
 from django.db import models
 from django.contrib.auth.models import User
 from django.db.models.functions import Coalesce
@@ -149,6 +149,14 @@ class Material(models.Model):
 
 class GradeOption(models.Model):
     name = models.CharField(max_length=20, unique=True)
+    # The grade's number inside product codes (EN8D = 001 -> FBB001...). Handed out
+    # automatically the first time a grade is used in a code and then kept, so a code
+    # already printed on a document never changes meaning; editable in the admin.
+    number = models.PositiveIntegerField(
+        null=True, blank=True, unique=True,
+        validators=[MaxValueValidator(999)],
+        help_text="Used in product codes, 1-999. Assigned automatically when the grade is first used.",
+    )
     class Meta:
         ordering = ['name']
     def __str__(self):
@@ -170,6 +178,13 @@ class ProductCategory(models.Model):
     model that holds product codes is `ProductType` (an older name kept so as
     not to rename every table, field and URL) — see CLAUDE.md."""
     name     = models.CharField(max_length=100, unique=True)
+    # The 3 letters this type starts every product code with (FBB = Flat Bright Bar).
+    # Explicit rather than initials, because initials clash (Square vs Shaped Bright Bar).
+    code     = models.CharField(
+        max_length=3, unique=True, null=True,
+        validators=[RegexValidator(r'^[A-Z]{3}$', 'Exactly 3 capital letters, e.g. FBB.')],
+        help_text="Exactly 3 capital letters; the start of every product code of this type.",
+    )
     position = models.PositiveIntegerField(default=0, help_text="Order in menus and dropdowns (lowest first).")
 
     class Meta:
@@ -605,6 +620,10 @@ class Quotation(models.Model):
     # to be copied onto the old single-rate Quotation: a quote is a point-
     # in-time snapshot, not a live view of mutable customer data.
     customer_address = models.TextField(blank=True)
+    customer_gstin   = models.CharField(
+        max_length=15, blank=True,
+        validators=[RegexValidator(rf'^{GSTIN_PATTERN}$', 'Enter a valid 15-character GST number.')],
+    )
 
     same_state_as_us = models.BooleanField(
         default=True,

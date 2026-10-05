@@ -324,6 +324,12 @@
             <textarea name="customer_address">{{ post.customer_address|default:'' }}</textarea>
           </div>
         </div>
+        <div class="form-row cols-3">
+          <div class="form-group">
+            <label>Customer GSTIN</label>
+            <input type="text" name="customer_gstin" maxlength="20" value="{{ post.customer_gstin|default:'' }}" placeholder="15-character GST number">
+          </div>
+        </div>
         <div class="form-row cols-2">
           <div class="form-group">
             <label>Freight Amount</label>

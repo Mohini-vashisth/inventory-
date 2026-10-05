@@ -49,6 +49,18 @@ def _resolve_quotation_customer(customer_name, query, existing_customer, email, 
     return customer
 
 
+def _saved_values(form, is_draft):
+    """What the header fields show on a normal page load: the draft's saved values, or
+    whatever was prefilled (from a query, the customer's last quote, or a revision).
+    Dates are ISO strings so <input type="date"> accepts them. Without this the
+    template saw an empty `post` and showed every header field blank."""
+    values = {key: (value.isoformat() if hasattr(value, 'isoformat') else value)
+              for key, value in (form.initial or {}).items()}
+    if not is_draft:
+        values.setdefault('same_state_as_us', True)   # a new quotation starts as an in-state one
+    return values
+
+
 def _autofill_product_codes(item_dicts):
     """When the owner has filled in grade and size but not picked a product
     code, match the catalogue code for them — the code identifies a grade+size
@@ -244,10 +256,16 @@ def quotation_form(request, pk=None):
                     'email': request.GET.get('email', ''),
                     'phone': request.GET.get('phone', ''),
                 }
-            address = query.gst_address if query else ''
-            if query and query.gst_number:
-                address = f"{address}\nGSTIN: {query.gst_number}".strip()
-            form_initial = {'customer_address': address} if address else {}
+            # Address and GSTIN print as their own rows in the "Quotation to" box. From the
+            # query when there is one (what the customer told the bot); otherwise from the
+            # last quote sent to this customer, so a repeat quote doesn't start blank.
+            form_initial = {}
+            if query and (query.gst_address or query.gst_number):
+                form_initial = {'customer_address': query.gst_address, 'customer_gstin': query.gst_number}
+            elif existing_customer:
+                last = existing_customer.quotations.filter(status='sent').order_by('-quotation_no').first()
+                if last and (last.customer_address or last.customer_gstin):
+                    form_initial = {'customer_address': last.customer_address, 'customer_gstin': last.customer_gstin}
             if query and query.sent_quotations():
                 # Sending again means the quote is being updated: Rev. 1, 2, ... dated today.
                 form_initial.update({'rev_no': len(query.sent_quotations()), 'rev_date': timezone.localdate()})
@@ -267,7 +285,7 @@ def quotation_form(request, pk=None):
         'new_customer_initial': new_customer_initial,
         'draft': draft,
         'error': error,
-        'post': request.POST if error else {},
+        'post': request.POST if error else _saved_values(form, is_draft=draft is not None),
     })
 
 

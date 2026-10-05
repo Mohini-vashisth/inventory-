@@ -1,6 +1,8 @@
+import re
+
 from django import forms
 from django.forms import formset_factory
-from .models import GateEntry, Material, GradeOption, SizeOption, Order
+from .models import GSTIN_PATTERN, GateEntry, Material, GradeOption, SizeOption, Order
 
 
 class GateEntryForm(forms.ModelForm):
@@ -182,6 +184,7 @@ class QuotationForm(forms.Form):
     kind_attn       = forms.CharField(max_length=100, required=False)
     subject         = forms.CharField(max_length=200, required=False)
     customer_address = forms.CharField(widget=forms.Textarea, required=False)
+    customer_gstin   = forms.CharField(required=False)   # spaces are stripped in clean, so no max_length here
     same_state_as_us = forms.BooleanField(required=False, initial=True)
     freight_amount  = forms.DecimalField(max_digits=10, decimal_places=2, required=False, initial=0, min_value=0)
     pf_amount       = forms.DecimalField(max_digits=10, decimal_places=2, required=False, initial=0, min_value=0)
@@ -192,6 +195,12 @@ class QuotationForm(forms.Form):
     payment_terms   = forms.CharField(max_length=200, required=False, initial='100% Advance')
     delivery_terms  = forms.CharField(max_length=200, required=False)
     validity_terms  = forms.CharField(max_length=200, required=False, initial='7 Days from date of offer')
+
+    def clean_customer_gstin(self):
+        gstin = re.sub(r'\s+', '', self.cleaned_data.get('customer_gstin') or '').upper()
+        if gstin and not re.fullmatch(GSTIN_PATTERN, gstin):
+            raise forms.ValidationError('Enter a valid 15-character GST number.')
+        return gstin
 
     def clean_rev_no(self):
         # IntegerField(required=False) yields None when left blank, but
