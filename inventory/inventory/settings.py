@@ -70,7 +70,7 @@ WHATSAPP_PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '')
 # Blank defaults are deliberate — an incomplete-looking PDF is a visible
 # reminder to fill these in with the real business details before this
 # ever goes out to an actual customer.
-COMPANY_NAME = os.environ.get('COMPANY_NAME', 'Matta Drawing')
+COMPANY_NAME = os.environ.get('COMPANY_NAME', 'Matta Drawing Works')
 COMPANY_ADDRESS = os.environ.get('COMPANY_ADDRESS', '')
 COMPANY_PHONE = os.environ.get('COMPANY_PHONE', '')
 COMPANY_EMAIL = os.environ.get('COMPANY_EMAIL', '')
