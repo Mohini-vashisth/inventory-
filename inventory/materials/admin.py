@@ -122,12 +122,14 @@ class ProductTypeAdminForm(forms.ModelForm):
 
     class Meta:
         model = ProductType
-        fields = ['category', 'item_code', 'grade', 'size', 'description']
+        fields = ['item_code', 'category', 'grade', 'size', 'description']
         widgets = {'grade': GradeInput}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.generated_code = False
+        for name in ('category', 'grade', 'size'):   # optional on the model only for older codes
+            self.fields[name].required = True
         item_code = self.fields['item_code']
         item_code.required = False
         item_code.help_text = ("Leave blank: it is generated from the product type, grade and size "
@@ -155,7 +157,7 @@ class ProductTypeAdmin(admin.ModelAdmin):
     inlines = [ProcessStepInline, AllowedCoilSpecInline]
     list_display = ['item_code', 'category', 'grade', 'size', 'step_count', 'allowed_spec_summary']
     list_filter = ['category']
-    fields = ['category', 'item_code', 'grade', 'size', 'description']
+    fields = ['item_code', 'category', 'grade', 'size', 'description']
 
     class Media:
         js = ('materials/admin_product_code.js',)

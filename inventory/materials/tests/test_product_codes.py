@@ -212,6 +212,18 @@ class AdminGeneratesTheCodeTests(TestCase):
         self.assertEqual(ProductType.objects.get().item_code, 'MY-OWN-CODE')
         self.assertEqual(GradeOption.objects.count(), 0)
 
+    def test_type_grade_and_size_are_required_even_with_a_hand_typed_code(self):
+        for field in ('category', 'grade', 'size'):
+            with self.subTest(field=field):
+                response = self._add(item_code='MY-CODE', **{field: ''})
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, 'This field is required')
+                self.assertEqual(ProductType.objects.count(), 0)
+
+    def test_item_code_is_the_first_field_on_the_form(self):
+        html = self.client.get(self.add_url).content.decode()
+        self.assertLess(html.index('id="id_item_code"'), html.index('id="id_category"'))
+
     def test_blank_code_with_a_missing_part_is_an_error_not_a_guess(self):
         for label, change in {'no size': {'size': ''}, 'no grade': {'grade': ''}, 'no type': {'category': ''}}.items():
             with self.subTest(case=label):
