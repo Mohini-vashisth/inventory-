@@ -4,7 +4,7 @@ Read-only REST API over the core domain (orders, coils, jobs, product types).
 Deliberately read-only: the mutating rules for this domain — an order can't
 be confirmed without a product type, a coil part can't be cut past its
 remaining weight, a production step only unlocks once every step before it
-is completed — live in materials.views and are exercised through the
+is completed — live in the materials.views package and are exercised through the
 guarded web forms. Re-exposing writes here would mean re-implementing every
 one of those guards a second time, which is exactly how they'd eventually
 drift out of sync. Consumers that need to change state use the existing

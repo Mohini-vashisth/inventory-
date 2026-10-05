@@ -343,7 +343,7 @@ class Query(models.Model):
     eventually fills is pre-populated with whatever was already captured
     here. `company_name` is often blank at creation time — a manually
     logged query starts as just a phone number, and a WhatsApp-sourced one
-    (see `materials/views.py::whatsapp_webhook`) only has a name if Meta's
+    (see `materials/views/whatsapp.py::whatsapp_webhook`) only has a name if Meta's
     payload included one — it gets filled in later (via the admin) once
     staff actually know who they're talking to."""
     SOURCE_CHOICES = [
@@ -434,8 +434,8 @@ def _indian_number_to_words(n):
 
 class Quotation(models.Model):
     """A record of an official quotation actually sent to a customer —
-    created every time Send Quote fires, from quotation_form (materials/
-    views.py). Immutable once **sent** — correcting anything means sending
+    created every time Send Quote fires, from quotation_form (materials/views/
+    quotations.py). Immutable once **sent** — correcting anything means sending
     a new quotation, not editing history, the same way Order itself is
     never silently rewritten. A quotation in 'draft' status is the one
     exception: an explicitly incomplete, still-being-edited quote that
@@ -679,7 +679,7 @@ class Order(models.Model):
         in-stock raw material matching this order's product type — summed
         across every AllowedCoilSpec (grade/size + ratio), or any non-
         archived coil with remaining weight if none are configured (same
-        wildcard fallback _coil_matches_order_specs uses in views.py).
+        wildcard fallback _coil_matches_order_specs uses in views/picking.py).
         None if there's no product type yet to check against. Used to warn
         an admin confirming an order that raw material may need reordering
         before production can actually happen."""
