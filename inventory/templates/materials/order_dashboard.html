@@ -1,11 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Order Dashboard</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+{% extends "materials/base.html" %}
+
+{% block title %}Order Dashboard{% endblock %}
+
+{% block css %}
+    
     body { font-family: Arial, Helvetica, sans-serif; background: #f4f6f9; color: #333; }
 
     header {
@@ -15,7 +13,6 @@
     }
     header h1 { font-size: 1.3rem; }
     .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; }
-    .back-link:hover { color: white; }
 
     .content { max-width: 1150px; margin: 2rem auto; padding: 0 1.5rem; }
 
@@ -46,10 +43,8 @@
     }
     .section-label:first-child { margin-top: 0; }
 
-    .form-row { display: grid; gap: 0.75rem; margin-bottom: 0.75rem; }
     .cols-4 { grid-template-columns: 2fr 1fr 1fr 1fr; }
-    .cols-3 { grid-template-columns: 1fr 1fr 1fr; }
-    .cols-2 { grid-template-columns: 1fr 1fr; }
+
     .cols-pt { grid-template-columns: 2fr 1fr 1fr; }
 
     .table-scroll { overflow-x: auto; }
@@ -77,39 +72,20 @@
     .btn-send:disabled { background: #a3e4cc; cursor: default; }
 
     /* Autocomplete */
-    .autocomplete-wrapper { position: relative; }
-    .autocomplete-list {
-      position: absolute; top: 100%; left: 0; right: 0;
-      background: white; border: 1px solid #ddd; border-top: none;
-      border-radius: 0 0 8px 8px; z-index: 100;
-      max-height: 200px; overflow-y: auto; display: none;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
-    .autocomplete-list.open { display: block; }
-    .autocomplete-item { padding: 0.55rem 0.75rem; cursor: pointer; font-size: 0.9rem; }
-    .autocomplete-item:hover, .autocomplete-item.active { background: #eff2ff; color: #4e73df; }
+
+    
 
     .submit-row { display: flex; justify-content: flex-end; margin-top: 1rem; }
     .btn-primary {
       padding: 0.65rem 2rem; background: #4e73df; color: white;
       border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
     }
-    .btn-primary:hover { background: #3a5ec0; }
 
-    .error-msg {
-      background: #fee2e2; color: #991b1b;
-      padding: 0.6rem 0.9rem; border-radius: 8px;
-      font-size: 0.87rem; margin-bottom: 1rem;
-    }
+    
 
     /* Alert banners */
-    .alert {
-      padding: 0.75rem 1rem; border-radius: 8px;
-      font-size: 0.88rem; margin-bottom: 1.25rem;
-    }
-    .alert-success { background: #dcfce7; color: #166534; }
-    .alert-error   { background: #fee2e2; color: #991b1b; }
-    .alert-warning { background: #fef3c7; color: #92400e; }
+
+    
 
     /* Table */
     table { width: 100%; border-collapse: collapse; }
@@ -130,8 +106,6 @@
     .badge-in_production { background: #d1fae5; color: #065f46; }
     .badge-completed     { background: #dcfce7; color: #166534; }
     .badge-cancelled     { background: #fee2e2; color: #991b1b; }
-
-    .muted { color: #aaa; font-size: 0.82rem; }
 
     .action-btn {
       border: none; border-radius: 6px; padding: 0.25rem 0.65rem;
@@ -160,14 +134,12 @@
       text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.2rem;
     }
 
-    .empty-row td { text-align: center; color: #bbb; padding: 3rem; }
-
     .icon-btn {
       background: #f3f4f6; border: 1px solid #ddd;
       border-radius: 6px; padding: 0.25rem 0.65rem;
       font-size: 0.75rem; cursor: pointer; color: #4e73df;
     }
-    .icon-btn:hover { background: #eff2ff; }
+    
     .icon-btn.green { background: #dcfce7; border-color: #bbf7d0; color: #166534; margin-left: 4px; }
     .icon-btn.green:hover { background: #bbf7d0; }
     .icon-btn:disabled { background: #f3f4f6; color: #bbb; border-color: #eee; cursor: default; }
@@ -207,10 +179,10 @@
       .choice-row span { margin-left: 0; }
       .btn-send, .btn-manual { width: 100%; text-align: center; }
     }
-  </style>
-</head>
-<body>
+  
+{% endblock %}
 
+{% block content %}
 <header>
   <h1>Order Dashboard</h1>
   <div>
@@ -649,6 +621,4 @@
 
   function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 </script>
-
-</body>
-</html>
+{% endblock %}

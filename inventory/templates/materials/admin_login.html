@@ -1,14 +1,8 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Admin Login</title>
+{% extends "materials/base.html" %}
 
-<style>
+{% block title %}Admin Login{% endblock %}
 
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
+{% block css %}
 body{
     font-family:Arial;
     background:#4e73df;
@@ -40,13 +34,9 @@ button{
     color:white;
     border:none;
 }
+{% endblock %}
 
-</style>
-
-</head>
-
-<body>
-
+{% block content %}
 <div class="login-box">
 
 <h2>Admin Login</h2>
@@ -68,6 +58,4 @@ button{
 {% endif %}
 
 </div>
-
-</body>
-</html>
+{% endblock %}

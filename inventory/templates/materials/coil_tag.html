@@ -1,12 +1,8 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Coil Tag – {{ coil.formatted_coil }}</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+{% extends "materials/base.html" %}
 
+{% block title %}Coil Tag – {{ coil.formatted_coil }}{% endblock %}
+
+{% block css %}
     body {
       font-family: 'Segoe UI', sans-serif;
       background: #f0f2f5;
@@ -141,10 +137,10 @@
       .coil-number { font-size: 1.8rem; }
       .tag-qr { width: 90px; height: 90px; }
     }
-  </style>
-</head>
-<body>
+  
+{% endblock %}
 
+{% block content %}
 <div class="card">
   <p class="card-title">
     🏷️ Tag ready — print and attach to the coil
@@ -215,6 +211,4 @@
     window.print();
   };
 </script>
-
-</body>
-</html>
+{% endblock %}
