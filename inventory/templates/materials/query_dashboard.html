@@ -130,16 +130,36 @@
             <label>Source *</label>
             <select name="source">
               <option value="">— select —</option>
-              <option value="call"      {% if post.source == 'call'      %}selected{% endif %}>Phone Call</option>
-              <option value="referral"  {% if post.source == 'referral'  %}selected{% endif %}>Referral</option>
-              <option value="indiamart" {% if post.source == 'indiamart' %}selected{% endif %}>IndiaMART</option>
-              <option value="whatsapp"  {% if post.source == 'whatsapp'  %}selected{% endif %}>WhatsApp</option>
-              <option value="other"     {% if post.source == 'other'     %}selected{% endif %}>Other</option>
+              {% for value, label in source_choices %}
+              <option value="{{ value }}" {% if post.source == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
             </select>
           </div>
           <div class="form-group">
             <label>Phone *</label>
             <input type="text" name="contact_phone" placeholder="+91 98765 43210" value="{{ post.contact_phone|default:'+91 ' }}">
+          </div>
+        </div>
+
+        <div id="referral-fields" style="display:none;">
+          <div class="form-row cols-2">
+            <div class="form-group">
+              <label>Referred by (optional)</label>
+              <input type="text" name="referrer_name" maxlength="100" placeholder="Who referred them" value="{{ post.referrer_name }}">
+            </div>
+            <div class="form-group">
+              <label>Referrer's phone (optional)</label>
+              <input type="text" name="referrer_phone" maxlength="20" placeholder="Their number" value="{{ post.referrer_phone }}">
+            </div>
+          </div>
+        </div>
+
+        <div id="other-fields" style="display:none;">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Where from? (optional)</label>
+              <input type="text" name="source_detail" maxlength="200" placeholder="e.g. trade fair, walk-in" value="{{ post.source_detail }}">
+            </div>
           </div>
         </div>
 
@@ -193,4 +213,20 @@
 </div>
 
 {% include "materials/_copy_link_script.html" %}
+<script>
+  // Referral and Other each reveal their own optional field(s); the rest stay hidden and disabled.
+  (function () {
+    var select = document.querySelector('select[name="source"]');
+    var groups = {referral: document.getElementById('referral-fields'), other: document.getElementById('other-fields')};
+    function sync() {
+      Object.keys(groups).forEach(function (key) {
+        var show = select.value === key;
+        groups[key].style.display = show ? '' : 'none';
+        groups[key].querySelectorAll('input').forEach(function (input) { input.disabled = !show; });
+      });
+    }
+    select.addEventListener('change', sync);
+    sync();
+  })();
+</script>
 {% endblock %}

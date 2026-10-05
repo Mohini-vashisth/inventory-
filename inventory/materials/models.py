@@ -352,13 +352,19 @@ class Query(models.Model):
     (see `materials/views/whatsapp.py::whatsapp_webhook`) only has a name if Meta's
     payload included one — it gets filled in later (via the admin) once
     staff actually know who they're talking to."""
+    # The four a person can pick when logging a query by hand (MANUAL_SOURCES),
+    # then two that only exist for other reasons: 'whatsapp' is what the bot
+    # records for a cold inbound message, and 'call' is what older entries
+    # were logged as — both stay valid so existing rows still display.
     SOURCE_CHOICES = [
-        ('call', 'Phone Call'),
-        ('referral', 'Referral'),
         ('indiamart', 'IndiaMART'),
-        ('whatsapp', 'WhatsApp'),
+        ('google', 'Google'),
+        ('referral', 'Referral'),
         ('other', 'Other'),
+        ('whatsapp', 'WhatsApp'),
+        ('call', 'Phone Call'),
     ]
+    MANUAL_SOURCES = ('indiamart', 'google', 'referral', 'other')
     STATUS_CHOICES = [
         ('new', 'New'),
         ('quote_sent', 'Quote Sent'),
@@ -367,6 +373,11 @@ class Query(models.Model):
     ]
     DELIVERY_FORM_CHOICES = [('Coil', 'Coil'), ('Bar', 'Bar')]
     source        = models.CharField(max_length=20, choices=SOURCE_CHOICES)
+    # Optional follow-ups to `source`: who referred them (source='referral'),
+    # or where else they came from (source='other').
+    referrer_name  = models.CharField(max_length=100, blank=True)
+    referrer_phone = models.CharField(max_length=20, blank=True)
+    source_detail  = models.CharField(max_length=200, blank=True)
     company_name  = models.CharField(max_length=100, blank=True)
     contact_phone = models.CharField(max_length=20, blank=True)
     contact_email = models.EmailField(blank=True)
@@ -426,6 +437,10 @@ class Query(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+    @classmethod
+    def manual_source_choices(cls):
+        return [choice for choice in cls.SOURCE_CHOICES if choice[0] in cls.MANUAL_SOURCES]
 
     GST_FIELDS = ('gst_number', 'gst_address')
 

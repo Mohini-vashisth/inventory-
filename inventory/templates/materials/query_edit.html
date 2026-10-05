@@ -90,6 +90,26 @@
           </div>
         </div>
 
+        {% if query.source == 'referral' %}
+        <div class="form-row cols-2">
+          <div class="form-group">
+            <label>Referred by</label>
+            <input type="text" name="referrer_name" maxlength="100" value="{{ query.referrer_name }}">
+          </div>
+          <div class="form-group">
+            <label>Referrer's phone</label>
+            <input type="text" name="referrer_phone" maxlength="20" value="{{ query.referrer_phone }}">
+          </div>
+        </div>
+        {% elif query.source == 'other' %}
+        <div class="form-row">
+          <div class="form-group">
+            <label>Where from</label>
+            <input type="text" name="source_detail" maxlength="200" value="{{ query.source_detail }}">
+          </div>
+        </div>
+        {% endif %}
+
         <div class="form-row cols-2">
           <div class="form-group">
             <label>Email</label>
