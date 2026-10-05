@@ -73,7 +73,7 @@ class ProductionJobSerializer(serializers.ModelSerializer):
     def get_latest_logs(self, obj):
         """Most recent StepLog per step — the same status a step shows on the job detail page."""
         logs_by_step = {}
-        for log in sorted(obj.step_logs.all(), key=lambda l: l.timestamp, reverse=True):
+        for log in sorted(obj.step_logs.all(), key=lambda entry: entry.timestamp, reverse=True):
             logs_by_step.setdefault(log.step_id, log)
         return StepLogSerializer(logs_by_step.values(), many=True).data
 

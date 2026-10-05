@@ -34,11 +34,12 @@ from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
-logger = logging.getLogger(__name__)
-from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Order, Quotation, QuotationLineItem
+from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, ProcessStep, ProductionJob, StepLog, Customer, Query, Order, Quotation, QuotationLineItem
 from .forms import GateEntryForm, GateEntryLotForm, GateEntryLotFormSet, MaterialForm, OrderForm, QuotationForm, QuotationLineItemFormSet
 from .pdf import generate_quotation_pdf
 from .decorators import employee_required, redirect_to_admin_login, staff_required
+
+logger = logging.getLogger(__name__)
 
 
 class _CoilOverCommitted(Exception):
@@ -641,7 +642,7 @@ def job_detail(request, pk):
 
     # Build latest log per step from prefetched data
     logs_by_step = {}
-    for log in sorted(job.step_logs.all(), key=lambda l: l.timestamp, reverse=True):
+    for log in sorted(job.step_logs.all(), key=lambda entry: entry.timestamp, reverse=True):
         logs_by_step.setdefault(log.step_id, log)
 
     # A step is unlocked only if all steps before it are completed
@@ -733,7 +734,7 @@ def production_board(request):
             total = len(steps)
 
             logs_by_step = {}
-            for log in sorted(job.step_logs.all(), key=lambda l: l.timestamp, reverse=True):
+            for log in sorted(job.step_logs.all(), key=lambda entry: entry.timestamp, reverse=True):
                 logs_by_step.setdefault(log.step_id, log)
 
             completed = sum(
@@ -812,7 +813,7 @@ def query_dashboard(request):
             # silently orphaning it in 'new' status forever.
             error = f"A query for {contact_phone} is already in progress — check the table below."
         else:
-            query = Query.objects.create(source=source, contact_phone=contact_phone)
+            Query.objects.create(source=source, contact_phone=contact_phone)
             try:
                 _send_whatsapp_template_message(
                     contact_phone, WHATSAPP_QUERY_INTAKE_TEMPLATE, language=WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE,
@@ -1157,8 +1158,10 @@ def order_dashboard(request):
             email = request.POST.get('email', '').strip()
             phone = request.POST.get('phone', '').strip()
             if email or phone:
-                if email: customer.email = email
-                if phone: customer.phone = phone
+                if email:
+                    customer.email = email
+                if phone:
+                    customer.phone = phone
                 customer.save(update_fields=['email', 'phone'])
 
             order = form.save(commit=False)

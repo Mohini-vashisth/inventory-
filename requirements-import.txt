@@ -1,0 +1,6 @@
+# Only for `manage.py import_excel` (the occasional spreadsheet reimport) and
+# the tests that exercise it. Kept out of requirements.txt so a normal deploy
+# doesn't pull in pandas/numpy.
+-r requirements.txt
+pandas==3.0.5
+openpyxl==3.1.5

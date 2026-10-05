@@ -1,0 +1,3 @@
+# CI and local development: everything above plus the linter.
+-r requirements-import.txt
+ruff==0.16.10

@@ -23,6 +23,7 @@ python3 manage.py migrate
 ## Key dependencies
 
 - Django 4.2, django-jazzmin (admin theme), qrcode + Pillow (coil QR tags), reportlab (official PDF quotations — see "Official PDF quotation" below), python-dotenv, djangorestframework, whitenoise (static files in production), gunicorn (production WSGI server)
+- Requirements are split by purpose, all pinned to what production runs (office PC: Python 3.12): `requirements.txt` (runtime only), `requirements-import.txt` (adds `pandas`/`openpyxl` — only needed for `manage.py import_excel` and its tests, so a normal deploy doesn't pull in pandas/numpy; `import_excel` fails with a clear "pip install -r requirements-import.txt" message if they're missing), `requirements-dev.txt` (adds `ruff`; what CI and local development install). `python-dotenv` was unpinned until 2026-10-05.
 
 ## Environment variables (`.env` in `inventory/`, template at `inventory/.env.example`)
 
@@ -64,7 +65,13 @@ Local dev (`DEBUG=True`, `manage.py runserver`) skips several things a real depl
 
 On the office PC, `waitress-serve` above isn't run by hand — it's wrapped as a Windows service named `InventoryApp` via `nssm` (`C:\Users\MATTA\Desktop\nssm-2.24`), so it survives reboots and doesn't need an interactive login session. Repo lives at `C:\Users\MATTA\Desktop\inventory-` (the office PC's Windows user is `MATTA`/`mdw\matta` — a different path than the home PC's `lm110` user mentioned in the global remote-access instructions).
 
-A normal deploy after `git pull` (and `migrate`/`collectstatic` if needed) is just restarting that service — but **use `sc stop InventoryApp` / `sc start InventoryApp` (native Windows `sc.exe`), not `nssm restart InventoryApp` or `nssm status`**. `nssm`'s own restart/status subcommands hang indefinitely over a non-interactive SSH session on this machine — confirmed by testing a plainly-wrong service name too, which hung identically rather than erroring, so it's not a naming issue. The likely cause is `nssm` triggering a UAC elevation prompt that sits waiting on the office PC's own desktop with nobody there to click it through. `sc.exe` doesn't elevate and returns immediately:
+**Deploying: run `scripts\deploy.ps1`** (from an elevated shell — an SSH session to the office PC already is):
+```
+ssh officepc "powershell -ExecutionPolicy Bypass -File C:\Users\MATTA\Desktop\inventory-\scripts\deploy.ps1"
+```
+It does, in order: refuse if tracked files have local changes → `git pull --ff-only` → `pip install -r requirements.txt` → `manage.py check` → **`backup_db` (aborts the deploy if the backup fails)** → stop the service → `migrate` → `collectstatic` → start the service → poll `/employee-login/` until it returns 200 (30 s). Paths come from the script's own location, so it isn't tied to this one checkout. On any failure it prints the previous commit (for `git checkout <hash>`) and the pre-deploy DB snapshot path, and restarts the service if it had already stopped it, so the plant isn't left without the app; it never rolls back automatically (a half-applied migration plus an automatic code rollback is how data gets lost).
+
+Why it uses `sc.exe` rather than `nssm`: **`nssm restart`/`nssm status` hang indefinitely over a non-interactive SSH session on this machine** — confirmed with a deliberately wrong service name, which hung identically instead of erroring, so it's not a naming issue. The likely cause is `nssm` triggering a UAC elevation prompt on the office PC's own desktop with nobody there to click it. `sc.exe` doesn't elevate and returns immediately. By hand:
 ```
 sc stop InventoryApp
 sc start InventoryApp
@@ -276,6 +283,12 @@ Uploaded files (customer Purchase Orders in `Order.purchase_order`, WhatsApp dra
 ## REST API (`materials/api.py`, `materials/serializers.py`)
 
 Read-only DRF API under `/api/` — `orders`, `coils`, `jobs`, `product-types`. Staff-only (`IsAdminUser`, session auth — same login as `/admin/`). Deliberately read-only: the state-transition rules (product type required to confirm, sequential step unlock, atomic pick creation) live in `materials/views.py` and aren't re-implemented here — this surface is for reading data out, not changing it. `coils` supports `?remaining=true` and `?include_archived=true` (archived coils excluded by default); `orders` and `jobs` support `?status=`; `jobs` also supports `?order=<id>` and exposes `coil_no`/`weight_allocated` (from its `OrderCoilPick`). Browsable API login at `/api-auth/`.
+
+## Tests, lint and CI
+
+`.github/workflows/tests.yml` runs on every push/PR to `main`: `ruff check .` → `manage.py check` → `makemigrations --check` → the full test suite, on Python 3.12 (matching production), installing `requirements-dev.txt`. Run the same locally with `ruff check .` (from the repo root) and `python3 manage.py test materials` (from `inventory/`).
+
+`ruff.toml` is deliberately small — `E4`, `E7`, `E9`, `F` only (syntax errors, undefined names, unused imports/variables, ambiguous names, one-statement-per-line), not style. Ruff's own default rule set is far broader (~290 findings on this codebase at the time, mostly stylistic), and a linter nobody can get to green gets ignored; widen the rule set deliberately, not by accident. `ruff` is pinned in `requirements-dev.txt` so a new release can't add rules and fail CI unprompted. Migrations, `staticfiles/`, `media/` and `db_backups/` are excluded.
 
 ## Commit style
 

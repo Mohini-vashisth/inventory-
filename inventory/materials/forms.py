@@ -1,6 +1,6 @@
 from django import forms
 from django.forms import formset_factory
-from .models import GateEntry, GateEntryLot, Material, GradeOption, SizeOption, Order, Quotation, QuotationLineItem
+from .models import GateEntry, Material, GradeOption, SizeOption, Order
 
 
 class GateEntryForm(forms.ModelForm):

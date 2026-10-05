@@ -197,8 +197,10 @@ class AllowedCoilSpec(models.Model):
 
     def __str__(self):
         parts = []
-        if self.grade: parts.append(self.grade)
-        if self.size:  parts.append(f"{self.size} mm")
+        if self.grade:
+            parts.append(self.grade)
+        if self.size:
+            parts.append(f"{self.size} mm")
         return f"{self.product_type.item_code} — {' / '.join(parts) or 'Any'}"
 
 
