@@ -59,7 +59,7 @@ WHATSAPP_QUERY_QUESTIONS = {
     'product_description': "Your requirements, please.",
     'drawing': "Please attach a drawing with detailed dimensions, or a photo of a sample. You can send an image or PDF here, or reply 'no' if you don't have one.",
     'grade': "Which grade of material do you require?",
-    'technical_requirements': "Any particular make (brand), mechanical properties (for example tensile strength, hardness, yield strength, elongation) or process to be carried out on the material? Please share the details, or reply 'no' if none.",
+    'technical_requirements': "Any particular make, mechanical properties or processes to be carried out? Reply 'no' if none.",
     'end_use_delivery': "What is the end use of the material, and in what form do you need it delivered (for example coil, straight lengths or cut pieces)?",
     'quantity_text': "What quantity do you require, and how often (for example 2 tons, monthly)?",
 }
