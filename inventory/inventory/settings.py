@@ -230,4 +230,14 @@ DEFAULT_FROM_EMAIL  = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
 
 LOGOUT_REDIRECT_URL = '/'
 
-EMPLOYEE_PIN = os.environ.get('EMPLOYEE_PIN', '1234')
+EMPLOYEE_PIN = os.environ.get('EMPLOYEE_PIN')
+if not EMPLOYEE_PIN:
+    if not DEBUG:
+        raise ImproperlyConfigured(
+            "EMPLOYEE_PIN must be set in the environment when DJANGO_DEBUG is False."
+        )
+    EMPLOYEE_PIN = '1234'
+
+# Wrong PINs allowed per client IP before employee login locks that IP out.
+EMPLOYEE_LOGIN_MAX_FAILURES = 5
+EMPLOYEE_LOGIN_LOCKOUT_SECONDS = 15 * 60
