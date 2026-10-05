@@ -56,13 +56,13 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # but wrong for anything sent to a real customer in production.
 PUBLIC_QUOTE_BASE_URL = os.environ.get('PUBLIC_QUOTE_BASE_URL', '').rstrip('/')
 
-# WhatsApp Cloud API webhook (materials/views.py::whatsapp_webhook) — see
+# WhatsApp Cloud API webhook (materials/views/whatsapp.py::whatsapp_webhook) — see
 # CLAUDE.md for the Meta-side setup this depends on (Business/App/phone
 # number registration happens in Meta's own dashboard, not in this codebase).
 WHATSAPP_VERIFY_TOKEN = os.environ.get('WHATSAPP_VERIFY_TOKEN', '')
 WHATSAPP_APP_SECRET = os.environ.get('WHATSAPP_APP_SECRET', '')
 # Used to actually send messages (the intake template + follow-up
-# questions) via the Graph API — see materials/views.py's WhatsApp helpers.
+# questions) via the Graph API — see materials/views/whatsapp.py's helpers.
 WHATSAPP_ACCESS_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN', '')
 WHATSAPP_PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '')
 
@@ -200,7 +200,7 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Uploaded files (customer POs, WhatsApp drawings). WhiteNoise only serves
 # STATIC_ROOT, and Django's static() URL helper does nothing when DEBUG=False,
-# so materials.views.serve_media (staff-only) serves MEDIA_URL instead.
+# so materials.views.media.serve_media (staff-only) serves MEDIA_URL instead.
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 STORAGES = {
