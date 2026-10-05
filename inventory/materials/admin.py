@@ -63,7 +63,7 @@ class GateEntryLotAdmin(admin.ModelAdmin):
 
 @admin.register(GradeOption)
 class GradeOptionAdmin(admin.ModelAdmin):
-    list_display = ['name']
+    list_display = ['name', 'number']
     ordering = ['name']
 
 
@@ -95,7 +95,7 @@ class AllowedCoilSpecInline(admin.TabularInline):
 class ProductCategoryAdmin(admin.ModelAdmin):
     """The product types (Round Bright Bar, Key Steel, ...): a product code is one of
     these in a particular grade and size."""
-    list_display = ['name', 'position', 'code_count']
+    list_display = ['name', 'code', 'position', 'code_count']
     list_editable = ['position']
 
     @admin.display(description='Product codes')
