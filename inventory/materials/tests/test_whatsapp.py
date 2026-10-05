@@ -11,10 +11,10 @@ from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from unittest.mock import patch, MagicMock
 
-from ..models import ProductType, Query
+from ..models import ProductCategory, ProductType, Query
 from ..views import whatsapp
 from ..views.whatsapp import (
-    WhatsAppSendError, WHATSAPP_CLOSING_MESSAGE, WHATSAPP_GST_INVALID_MESSAGE,
+    WhatsAppSendError, WHATSAPP_CLOSING_MESSAGE, WHATSAPP_GST_INVALID_MESSAGE, _detect_product_category,
     WHATSAPP_QUERY_CHOICES, WHATSAPP_QUERY_FIELDS, WHATSAPP_QUERY_QUESTIONS,
 )
 
@@ -168,6 +168,47 @@ class WhatsAppWebhookTests(TestCase):
                     expected = WHATSAPP_QUERY_QUESTIONS[following] if following else WHATSAPP_CLOSING_MESSAGE
                     mock_send.assert_called_once_with(phone, expected)
                     mock_buttons.assert_not_called()
+
+    def test_the_product_type_is_detected_from_the_requirements_answer(self):
+        cases = {
+            'Round bright bar 12mm': 'Round Bright Bar',
+            'we need ROUND  BRIGHT BARS': 'Round Bright Bar',
+            'half round bright bar, 20 mm': 'Half Round Bright Bar',   # not the shorter "Round Bright Bar" inside it
+            'Flat wire for springs': 'Flat Wire',
+            'key steel 8x7': 'Key Steel',
+            'cold rolled strip 0.5 thick': 'Cold Rolled Strip',
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(_detect_product_category(text).name, expected)
+
+    def test_an_unclear_requirements_answer_detects_nothing(self):
+        for text in ('need steel', 'square bar', 'round bright bar and flat wire', '', None):
+            with self.subTest(text=text):
+                self.assertIsNone(_detect_product_category(text))
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_answering_requirements_sets_the_product_type_on_the_query(self, mock_send):
+        _query_awaiting('product_description')
+        self._post_payload(self._message_payload('919876543210', 'Hexagonal bright bar, 17 mm'))
+        query = Query.objects.get(contact_phone='919876543210')
+        self.assertEqual(query.product_description, 'Hexagonal bright bar, 17 mm')
+        self.assertEqual(query.product_category.name, 'Hexagonal Bright Bar')
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_an_ambiguous_answer_leaves_the_product_type_for_staff(self, mock_send):
+        _query_awaiting('product_description')
+        self._post_payload(self._message_payload('919876543210', 'round bright bar and flat wire'))
+        self.assertIsNone(Query.objects.get(contact_phone='919876543210').product_category)
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_a_product_type_staff_already_set_is_not_overwritten(self, mock_send):
+        query = _query_awaiting('product_description')
+        query.product_category = ProductCategory.objects.get(name='Key Steel')
+        query.save(update_fields=['product_category'])
+        self._post_payload(self._message_payload('919876543210', 'Round bright bar 12mm'))
+        query.refresh_from_db()
+        self.assertEqual(query.product_category.name, 'Key Steel')
 
     def test_choice_questions_fit_whatsapp_reply_button_limits(self):
         for field, choices in WHATSAPP_QUERY_CHOICES.items():

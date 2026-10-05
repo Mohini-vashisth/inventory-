@@ -5,7 +5,7 @@ from django.contrib import messages
 from decimal import InvalidOperation
 from django.core.exceptions import ValidationError
 
-from ..models import ProductType, Query
+from ..models import ProductCategory, ProductType, Query
 from ..decorators import redirect_to_admin_login, staff_required
 from .quotations import _public_quote_base_url
 from . import whatsapp
@@ -126,6 +126,7 @@ def query_edit(request, pk):
             query.contact_phone = whatsapp._normalize_phone(request.POST.get('contact_phone', ''))
             query.contact_email = request.POST.get('contact_email', '').strip()
             query.product_type_id = request.POST.get('product_type') or None
+            query.product_category_id = request.POST.get('product_category') or None
             query.grade = request.POST.get('grade', '').strip()
             query.size = raw_size
             query.quantity = raw_quantity
@@ -146,7 +147,7 @@ def query_edit(request, pk):
         else:
             query.save(update_fields=[
                 'company_name', 'contact_phone', 'contact_email',
-                'product_type', 'grade', 'size', 'quantity', 'notes',
+                'product_type', 'product_category', 'grade', 'size', 'quantity', 'notes',
                 'referrer_name', 'referrer_phone', 'source_detail',
                 *[field for field, _label in Query.INTAKE_TEXT_FIELDS],
             ])
@@ -157,5 +158,6 @@ def query_edit(request, pk):
         'product_types': product_types,
         'intake_fields': [(f, label, getattr(query, f)) for f, label in Query.INTAKE_TEXT_FIELDS],
         'delivery_choices': Query.DELIVERY_FORM_CHOICES,
+        'categories': ProductCategory.objects.all(),
         'error': error,
     })

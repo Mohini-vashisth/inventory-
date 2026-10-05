@@ -116,6 +116,18 @@
             <input type="email" name="contact_email" value="{{ query.contact_email }}">
           </div>
           <div class="form-group">
+            <label>Product Type</label>
+            <select name="product_category">
+              <option value="">— none —</option>
+              {% for category in categories %}
+              <option value="{{ category.pk }}" {% if query.product_category_id == category.pk %}selected{% endif %}>{{ category.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row cols-2">
+          <div class="form-group">
             <label>Product Code</label>
             <select name="product_type">
               <option value="">— none —</option>

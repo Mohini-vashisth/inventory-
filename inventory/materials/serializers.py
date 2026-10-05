@@ -12,10 +12,11 @@ class ProcessStepSerializer(serializers.ModelSerializer):
 
 class ProductTypeSerializer(serializers.ModelSerializer):
     steps = ProcessStepSerializer(many=True, read_only=True)
+    category = serializers.StringRelatedField()  # the product type's name, e.g. "Round Bright Bar"
 
     class Meta:
         model = ProductType
-        fields = ['id', 'item_code', 'grade', 'size', 'description', 'steps']
+        fields = ['id', 'item_code', 'category', 'grade', 'size', 'description', 'steps']
 
 
 class MaterialSerializer(serializers.ModelSerializer):

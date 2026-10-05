@@ -5,8 +5,9 @@ from django.contrib.auth.models import User
 from django.core import mail
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from unittest.mock import patch
 
-from ..models import Customer, Query, Quotation, QuotationLineItem
+from ..models import Customer, ProductCategory, ProductType, Query, Quotation, QuotationLineItem
 from ..pdf import generate_quotation_pdf
 from .helpers import quotation_item_post_data
 
@@ -462,3 +463,68 @@ class QuotationPdfSignatureTests(TestCase):
         Quotation.objects.filter(pk=self.quotation.pk).update(sent_at=sent)
         self.quotation.refresh_from_db()
         self.assertIn('Date: 14/03/2026', self._pdf_text())
+
+
+class ProductCodeMatchingTests(TestCase):
+    """A product code depends on product type + grade + size, and the quote
+    maker matches it — the owner doesn't choose a code."""
+
+    def setUp(self):
+        self.staff = User.objects.create_user('match_staff', password='pw', is_staff=True)
+        self.client.force_login(self.staff)
+        self.customer = Customer.objects.create(name='Match Co', email='match@example.com')
+        self.round_bar = ProductCategory.objects.get(name='Round Bright Bar')
+        self.hex_bar = ProductCategory.objects.get(name='Hexagonal Bright Bar')
+        self.flat_wire = ProductCategory.objects.get(name='Flat Wire')
+        self.round_code = ProductType.objects.create(item_code='RB-EN8D-12', category=self.round_bar, grade='EN8D', size='12.000')
+        self.hex_code = ProductType.objects.create(item_code='HB-EN8D-12', category=self.hex_bar, grade='EN8D', size='12.000')
+        self.wire_code = ProductType.objects.create(item_code='FW-SS304-2', category=self.flat_wire, grade='SS304', size='2.000')
+
+    def _send(self, action='send', **item):
+        data = quotation_item_post_data(**{f'item-0-{k}': v for k, v in item.items()}, **{'action': action})
+        with patch('materials.views.quotations._dispatch_quote_email'):
+            self.client.post(f"{reverse('quotation_form')}?customer={self.customer.pk}", data)
+        return QuotationLineItem.objects.order_by('-pk').first()
+
+    def test_the_code_is_matched_from_type_grade_and_size(self):
+        self.assertEqual(self._send(category=str(self.round_bar.pk), grade='EN8D', size='12').product_type, self.round_code)
+
+    def test_the_same_grade_and_size_gives_a_different_code_for_a_different_type(self):
+        line = self._send(category=str(self.hex_bar.pk), grade='EN8D', size='12')
+        self.assertEqual(line.product_type, self.hex_code)
+        self.assertEqual(line.category, self.hex_bar)
+
+    def test_without_a_type_an_ambiguous_grade_and_size_matches_nothing(self):
+        self.assertIsNone(self._send(grade='EN8D', size='12').product_type)
+
+    def test_without_a_type_a_grade_and_size_only_one_code_has_still_matches(self):
+        self.assertEqual(self._send(grade='ss304', size='2').product_type, self.wire_code)
+
+    def test_a_type_with_no_code_for_that_grade_and_size_matches_nothing(self):
+        self.assertIsNone(self._send(category=str(self.flat_wire.pk), grade='EN8D', size='12').product_type)
+
+    def test_a_code_picked_by_hand_is_never_overridden(self):
+        line = self._send(category=str(self.round_bar.pk), grade='EN8D', size='12', product_type=str(self.wire_code.pk))
+        self.assertEqual(line.product_type, self.wire_code)
+
+    def test_save_draft_matches_the_code_too(self):
+        line = self._send(action='save_draft', category=str(self.hex_bar.pk), grade='EN8D', size='12')
+        self.assertEqual(line.product_type, self.hex_code)
+
+    def test_the_form_prefills_the_product_type_from_the_query_and_the_owner_fills_the_size(self):
+        query = Query.objects.create(source='indiamart', contact_phone='9123456780', company_name='Match Co',
+                                     product_category=self.hex_bar, grade='EN8D')
+        response = self.client.get(f"{reverse('quotation_form')}?query={query.pk}")
+        self.assertEqual(response.context['formset'].forms[0].initial['category'], self.hex_bar.pk)
+        html = response.content.decode()
+        self.assertRegex(html, rf'<option value="{self.hex_bar.pk}"\s+selected>Hexagonal Bright Bar</option>')
+
+    def test_the_form_embeds_the_type_grade_size_map_for_live_matching(self):
+        response = self.client.get(reverse('quotation_form'))
+        by_pk = {entry['pk']: entry for entry in response.context['product_code_map']}
+        self.assertEqual(by_pk[self.hex_code.pk], {'pk': self.hex_code.pk, 'category': self.hex_bar.pk, 'grade': 'en8d', 'size': '12.000'})
+
+    def test_the_form_labels_say_product_type_and_product_code(self):
+        html = self.client.get(reverse('quotation_form')).content.decode()
+        self.assertIn('<label>Product Type</label>', html)
+        self.assertIn('<label>Product Code</label>', html)

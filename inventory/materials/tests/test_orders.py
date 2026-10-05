@@ -9,7 +9,8 @@ from django.urls import reverse
 from django.utils import timezone
 
 from ..models import (
-    AllowedCoilSpec, Customer, Material, Order, OrderCoilPick, ProductType, Query, Quotation, QuotationLineItem,
+    AllowedCoilSpec, Customer, Material, Order, OrderCoilPick, ProductCategory, ProductType, Query, Quotation,
+    QuotationLineItem,
 )
 
 
@@ -593,3 +594,19 @@ class OrderFormPrefillFromQueryTests(TestCase):
         html = self.client.get(reverse('quote_form', kwargs={'token': other.quote_token})).content.decode()
         self.assertIn('value="structural"', html)
         self.assertRegex(html, r'<option value="bar"\s+selected>')  # hand-written markup pads the attribute
+
+
+class OrderFormShowsTheProductTypeTests(TestCase):
+    def test_the_quoted_items_product_type_is_shown_with_its_code_locked(self):
+        customer = Customer.objects.create(name='Type Show Co')
+        category = ProductCategory.objects.get(name='Flat Wire')
+        code = ProductType.objects.create(item_code='FW-1', category=category, grade='SS304', size='2.000')
+        quotation = Quotation.objects.create(customer=customer, status='sent')
+        QuotationLineItem.objects.create(quotation=quotation, order=1, description='Wire', category=category,
+                                         product_type=code, grade='SS304', size=Decimal('2.000'),
+                                         quantity=Decimal('100'), rate_per_kg=1)
+        html = self.client.get(reverse('quote_form', kwargs={'token': customer.quote_token})).content.decode()
+        self.assertIn('Product type', html)
+        self.assertIn('Flat Wire', html)
+        self.assertIn('FW-1', html)
+        self.assertNotIn('name="item-0-category"', html)   # shown, not editable
