@@ -43,7 +43,7 @@ python3 manage.py migrate
 | `WHATSAPP_APP_SECRET` | Meta App Secret (App Dashboard → Settings → Basic). Verifies `X-Hub-Signature-256` on every inbound webhook POST — the only thing authenticating that public endpoint, so guard it like `DJANGO_SECRET_KEY`. Blank means the signature check always fails closed rather than becoming forgeable |
 | `WHATSAPP_ACCESS_TOKEN` | Permanent System User token from Meta Business Manager (`whatsapp_business_messaging` scope) — used to actually send the intake template and follow-up questions |
 | `WHATSAPP_PHONE_NUMBER_ID` | The numeric ID Meta assigns the connected WhatsApp number (App Dashboard → WhatsApp → API Setup) — not the phone number itself |
-| `COMPANY_NAME` / `COMPANY_ADDRESS` / `COMPANY_PHONE` / `COMPANY_EMAIL` / `COMPANY_GST` | Printed on the official PDF quotation attached to every Send Quote email (see "Official PDF quotation" below). `COMPANY_NAME` defaults to `Matta Drawing`; the rest default to blank — deliberately, so an unfilled-in PDF looks obviously incomplete rather than silently going out with placeholder details |
+| `COMPANY_NAME` / `COMPANY_ADDRESS` / `COMPANY_PHONE` / `COMPANY_EMAIL` / `COMPANY_GST` | Printed on the official PDF quotation attached to every Send Quote email (see "Official PDF quotation" below). `COMPANY_NAME` defaults to `Matta Drawing Works` (the legal/trading name; it's also the name on the quote email subject/sign-off); the rest default to blank — deliberately, so an unfilled-in PDF looks obviously incomplete rather than silently going out with placeholder details |
 
 ## Deploying to a real machine (not local dev)
 
