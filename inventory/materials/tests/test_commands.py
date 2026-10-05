@@ -2,6 +2,7 @@
 
 import pandas as pd
 import tempfile
+from io import StringIO
 
 from decimal import Decimal
 from django.core.management import call_command
@@ -298,3 +299,32 @@ class BackupMediaMirrorTests(SimpleTestCase):
         output = self._backup()
         self.assertIn("Backed up to", output)
         self.assertFalse(self.mirror.exists())
+
+
+class MergeGradesCommandTests(TestCase):
+    def setUp(self):
+        GradeOption.objects.all().delete()
+        self.keep = GradeOption.objects.create(name='EN-9', number=11)
+        GradeOption.objects.create(name='EN9', number=12)
+        Material.objects.create(grade='EN9', size='6.500', quantity=500)
+        Material.objects.create(grade='en9', size='6.500', quantity=500)
+        Material.objects.create(grade='EN-9', size='6.500', quantity=500)
+
+    def test_dry_run_changes_nothing(self):
+        call_command('merge_grades', 'EN9=EN-9', stdout=StringIO())
+        self.assertEqual(Material.objects.filter(grade='EN9').count(), 1)
+        self.assertTrue(GradeOption.objects.filter(name='EN9').exists())
+
+    def test_apply_rewrites_every_record_and_drops_the_variant_option(self):
+        call_command('merge_grades', 'EN9=EN-9', '--apply', stdout=StringIO())
+        self.assertEqual(Material.objects.filter(grade='EN-9').count(), 3)
+        self.assertEqual(list(GradeOption.objects.values_list('name', 'number')), [('EN-9', 11)])
+
+    def test_the_kept_option_is_created_if_missing(self):
+        call_command('merge_grades', 'EN9=EN 9', '--apply', stdout=StringIO())
+        self.assertTrue(GradeOption.objects.filter(name='EN 9').exists())
+        self.assertEqual(Material.objects.filter(grade='EN 9').count(), 2)
+
+    def test_a_malformed_pair_is_rejected(self):
+        with self.assertRaises(CommandError):
+            call_command('merge_grades', 'EN9', stdout=StringIO())
