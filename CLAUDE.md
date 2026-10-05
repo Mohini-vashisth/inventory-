@@ -58,7 +58,7 @@ Local dev (`DEBUG=True`, `manage.py runserver`) skips several things a real depl
    waitress-serve --host=0.0.0.0 --port=8000 --threads=12 inventory.wsgi:application
    ```
    `--threads=12` (waitress defaults to 4) — sized for concurrent use across gate entry, coil picking, and production-step updates once more than a handful of people are on the app at once (e.g. a second plant, or heavier per-step logging from a future QA module); raise further only if a real slowdown is actually observed under peak concurrent load.
-4. Schedule `python3 manage.py backup_db` (cron/Task Scheduler, e.g. nightly) — copies `db.sqlite3` to `db_backups/` with a timestamp and prunes anything older than `--keep-days` (default 30).
+4. Schedule `python3 manage.py backup_db` (cron/Task Scheduler, e.g. nightly) — backs up `db.sqlite3` to `db_backups/` with a timestamp and prunes anything older than `--keep-days` (default 30). It uses SQLite's online backup API (`sqlite3.Connection.backup`), **not** a file copy: the DB runs in WAL mode, where recent commits can sit only in the `-wal` file, so a raw `shutil.copy2` of `db.sqlite3` silently produces an incomplete backup (`BackupDbCommandTests` proves this against a WAL-mode DB).
 
 ### Office PC: the app runs as a Windows service (`InventoryApp`, via `nssm`)
 
