@@ -43,40 +43,46 @@ WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE = "en"
 # blank on the Query, so there's no separate "stage" field to drift out of
 # sync with the actual data (and a field filled some other way, e.g. a staff
 # edit, is simply skipped). The first reply, to the opening template, is the
-# company name.
+# company name. gst_address is normally filled by the same reply as
+# gst_number (see _parse_whatsapp_gst_details) and so is skipped; it only
+# gets its own question when the customer sent the number without an address.
 WHATSAPP_QUERY_FIELDS = [
     'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_description',
-    'drawing', 'grade', 'make', 'mechanical_properties', 'process_required',
-    'end_use', 'delivery_form', 'quantity_text', 'frequency',
+    'drawing', 'grade', 'technical_requirements', 'end_use_delivery', 'quantity_text',
 ]
 
 
 WHATSAPP_QUERY_QUESTIONS = {
     'contact_email': "Thanks! What's the best email address to send your quote to?",
-    'gst_number': "Please share your GST number (GSTIN). If you don't have one, reply NA.",
-    'gst_address': "And the address registered under your GST? (If you don't have a GST number, your billing address.)",
+    'gst_number': "Please share your GST number (GSTIN) and the address registered under it, in one message. If you don't have a GST number, reply NA followed by your billing address.",
+    'gst_address': "Thanks! And the address registered under your GST (or your billing address)?",
     'product_description': "What product do you need?",
     'drawing': "Please attach a drawing with detailed dimensions, or a photo of a sample. You can send an image or PDF here, or reply 'no' if you don't have one.",
     'grade': "Which grade of material do you require?",
-    'make': "Do you need any particular make (brand/manufacturer)? Reply 'no' if no preference.",
-    'mechanical_properties': "Are any mechanical properties required, for example tensile strength, hardness, yield strength or elongation? Please share the values, or reply 'no' if none.",
-    'process_required': "Is any process to be carried out on the material? Please describe it, or reply 'no' if none.",
-    'end_use': "What is the end use of the material?",
-    'delivery_form': "In what form do you need the material delivered, for example coil, straight lengths or cut pieces?",
-    'quantity_text': "What quantity do you require? (for example 2 tons)",
-    'frequency': "How often will you need it: a one-time requirement, or regular (for example monthly)?",
+    'technical_requirements': "Any particular make (brand), mechanical properties (for example tensile strength, hardness, yield strength, elongation) or process to be carried out on the material? Please share the details, or reply 'no' if none.",
+    'end_use_delivery': "What is the end use of the material, and in what form do you need it delivered (for example coil, straight lengths or cut pieces)?",
+    'quantity_text': "What quantity do you require, and how often (for example 2 tons, monthly)?",
 }
 
 
 WHATSAPP_GST_INVALID_MESSAGE = (
-    "That doesn't look like a valid 15-character GST number (for example 22AAAAA0000A1Z5). "
-    "Please check and send it again, or reply NA if you don't have one."
+    "I couldn't find a valid 15-character GST number in that (for example 22AAAAA0000A1Z5). "
+    "Please send your GST number and address together, or reply NA followed by your billing address "
+    "if you don't have a GST number."
 )
 
 
 # Format check only (state code, PAN, entity number, 'Z', checksum character) —
 # not the checksum itself, which would need the GST portal to verify.
 _GSTIN_PATTERN = re.compile(r'^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$')
+# The same shape found inside a longer message, bounded so it can't be carved
+# out of the middle of some other alphanumeric string.
+_GSTIN_IN_TEXT = re.compile(r'(?<![A-Za-z0-9])\d{2}[A-Za-z]{5}\d{4}[A-Za-z][1-9A-Za-z][Zz][0-9A-Za-z](?![A-Za-z0-9])')
+_GST_LABEL_AT_END = re.compile(r'(?i)(?:gstin|gst\s*(?:no\.?|number)?)\s*[:\-\u2013]?\s*$')
+# "NA, 12 Industrial Area". A bare leading "no" is deliberately not treated as
+# NA here, since "No. 5 Mall Road" is an address; a reply that is *only* "no"
+# is still NA (see _NO_GST_ANSWERS).
+_NA_PREFIX = re.compile(r'(?is)^\s*(?:na|n/a|nil|none|not\s+registered|unregistered|not\s+applicable)\b[\s,;:\-\u2013.]*(.*)$')
 _NO_GST_ANSWERS = {'na', 'n/a', 'no', 'none', 'nil', 'not applicable', 'not registered', 'unregistered'}
 
 
@@ -177,15 +183,31 @@ def _normalize_phone(phone):
     return re.sub(r'\D', '', phone or '')
 
 
-def _parse_whatsapp_gstin(text):
-    """A well-formed GSTIN (spaces and case ignored) comes back normalised;
-    "NA"/"no"/... for an unregistered customer comes back as "NA"; anything
-    else is None so the caller can re-ask rather than save a typo."""
-    candidate = re.sub(r'\s+', '', text or '').upper()
-    if _GSTIN_PATTERN.match(candidate):
-        return candidate
-    if (text or '').strip().lower() in _NO_GST_ANSWERS:
-        return 'NA'
+def _clean_address(text):
+    return re.sub(r'[ \t]+', ' ', text).strip(' ,;:-\u2013\n\r\t')
+
+
+def _parse_whatsapp_gst_details(text):
+    """Splits a reply to the GST question into (gst_number, address), or None
+    if there's neither a valid GSTIN nor an NA — so the caller can re-ask
+    rather than save a typo. gst_number is a normalised GSTIN or "NA"; address
+    is whatever else the customer wrote ("" if nothing, in which case the
+    sequence asks for it separately). Accepts the number alone (any case,
+    spaces ignored), "NA"/"no"/"none"/... alone, a GSTIN anywhere in a longer
+    message (before or after the address, with or without a "GSTIN:" label),
+    or NA followed by an address."""
+    text = (text or '').strip()
+    if _GSTIN_PATTERN.match(re.sub(r'\s+', '', text).upper()):
+        return re.sub(r'\s+', '', text).upper(), ''
+    if text.lower() in _NO_GST_ANSWERS:
+        return 'NA', ''
+    found = _GSTIN_IN_TEXT.search(text)
+    if found:
+        before = _GST_LABEL_AT_END.sub('', text[:found.start()])
+        return found.group(0).upper(), _clean_address(f"{before} {text[found.end():]}")
+    na = _NA_PREFIX.match(text)
+    if na:
+        return 'NA', _clean_address(na.group(1))
     return None
 
 
@@ -448,12 +470,15 @@ def _process_whatsapp_answer(query_pk, text):
             return
 
         if field == 'gst_number':
-            parsed = _parse_whatsapp_gstin(text)
+            parsed = _parse_whatsapp_gst_details(text)
             if parsed is None:
                 _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_GST_INVALID_MESSAGE)
                 return
-            query.gst_number = parsed
+            query.gst_number, address = parsed
             changed = ['gst_number']
+            if address:
+                query.gst_address = address
+                changed.append('gst_address')
         elif field == 'contact_email':
             candidate = text.strip()
             if not _is_valid_whatsapp_email(candidate):

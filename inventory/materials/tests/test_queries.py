@@ -317,7 +317,7 @@ class QueryIntakeDetailsTests(TestCase):
         self.query = Query.objects.create(
             source='whatsapp', contact_phone='919876543210', company_name='Intake Co',
             gst_number='22AAAAA0000A1Z5', gst_address='12 Industrial Area, Faridabad',
-            product_description='Round bar, 12 mm\nwith chamfer', make='Tata', frequency='monthly',
+            product_description='Round bar, 12 mm\nwith chamfer', technical_requirements='Tata make', quantity_text='2 tons monthly',
         )
 
     def test_intake_details_lists_only_answered_fields_in_asking_order(self):
@@ -325,8 +325,8 @@ class QueryIntakeDetailsTests(TestCase):
             ('GST number', '22AAAAA0000A1Z5'),
             ('GST address', '12 Industrial Area, Faridabad'),
             ('Product', 'Round bar, 12 mm\nwith chamfer'),
-            ('Make', 'Tata'),
-            ('Frequency', 'monthly'),
+            ('Make / properties / process', 'Tata make'),
+            ('Quantity & frequency', '2 tons monthly'),
         ])
 
     def test_dashboard_shows_requirements_only_when_there_are_some(self):
@@ -335,7 +335,7 @@ class QueryIntakeDetailsTests(TestCase):
         self.assertContains(response, 'Requirements', count=1)
         self.assertContains(response, 'GST number')
         self.assertContains(response, '22AAAAA0000A1Z5')
-        self.assertContains(response, 'Tata')
+        self.assertContains(response, 'Tata make')
 
     def test_edit_form_shows_the_collected_answers(self):
         response = self.client.get(reverse('query_edit', kwargs={'pk': self.query.pk}))
@@ -353,19 +353,19 @@ class QueryIntakeDetailsTests(TestCase):
         return self.client.post(reverse('query_edit', kwargs={'pk': self.query.pk}), data)
 
     def test_edit_saves_intake_fields_and_normalises_the_gst_number(self):
-        response = self._edit(gst_number=' 27 bbbbb 1111 b 1z6 ', end_use='shafts', process_required='polishing')
+        response = self._edit(gst_number=' 27 bbbbb 1111 b 1z6 ', end_use_delivery='shafts, coil', technical_requirements='polishing')
         self.assertRedirects(response, reverse('query_dashboard'))
         self.query.refresh_from_db()
         self.assertEqual(self.query.gst_number, '27BBBBB1111B1Z6')
-        self.assertEqual(self.query.end_use, 'shafts')
-        self.assertEqual(self.query.process_required, 'polishing')
+        self.assertEqual(self.query.end_use_delivery, 'shafts, coil')
+        self.assertEqual(self.query.technical_requirements, 'polishing')
 
     def test_edit_rejects_an_overlong_gst_number_and_saves_nothing(self):
-        response = self._edit(gst_number='X' * 20, end_use='should not be saved')
+        response = self._edit(gst_number='X' * 20, end_use_delivery='should not be saved')
         self.assertContains(response, 'error-msg')
         self.query.refresh_from_db()
         self.assertEqual(self.query.gst_number, '22AAAAA0000A1Z5')
-        self.assertEqual(self.query.end_use, '')
+        self.assertEqual(self.query.end_use_delivery, '')
 
     def test_quote_form_prefills_address_gstin_and_product_description(self):
         response = self.client.get(f"{reverse('quotation_form')}?query={self.query.pk}")
