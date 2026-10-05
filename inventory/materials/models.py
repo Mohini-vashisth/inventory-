@@ -412,9 +412,17 @@ class Query(models.Model):
     class Meta:
         ordering = ['-created_at']
 
-    def intake_details(self):
-        """[(label, value)] for every intake answer that's been given."""
-        return [(label, getattr(self, field)) for field, label in self.INTAKE_TEXT_FIELDS if getattr(self, field)]
+    def _answered(self, fields):
+        return [(label, getattr(self, field)) for field, label in self.INTAKE_TEXT_FIELDS
+                if field in fields and getattr(self, field)]
+
+    def gst_details(self):
+        """[(label, value)] of the GST answers given — shown with the company on the dashboard."""
+        return self._answered({'gst_number', 'gst_address'})
+
+    def requirement_details(self):
+        """[(label, value)] of the product-related answers given (everything except GST)."""
+        return self._answered({field for field, _ in self.INTAKE_TEXT_FIELDS} - {'gst_number', 'gst_address'})
 
     def __str__(self):
         label = self.company_name or self.contact_phone or f"Query #{self.pk}"

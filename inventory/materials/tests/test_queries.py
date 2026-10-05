@@ -320,22 +320,40 @@ class QueryIntakeDetailsTests(TestCase):
             product_description='Round bar, 12 mm\nwith chamfer', technical_requirements='Tata make', quantity_text='2 tons monthly',
         )
 
-    def test_intake_details_lists_only_answered_fields_in_asking_order(self):
-        self.assertEqual(self.query.intake_details(), [
+    def test_gst_and_requirement_details_are_kept_apart_and_in_asking_order(self):
+        self.assertEqual(self.query.gst_details(), [
             ('GST number', '22AAAAA0000A1Z5'),
             ('GST address', '12 Industrial Area, Faridabad'),
+        ])
+        self.assertEqual(self.query.requirement_details(), [
             ('Product', 'Round bar, 12 mm\nwith chamfer'),
             ('Make / properties / process', 'Tata make'),
             ('Quantity & frequency', '2 tons monthly'),
         ])
 
-    def test_dashboard_shows_requirements_only_when_there_are_some(self):
+    def test_dashboard_shows_gst_with_the_company_and_only_product_details_under_requirements(self):
+        import re
         Query.objects.create(source='call', contact_phone='9000000000', company_name='Bare Co')
-        response = self.client.get(reverse('query_dashboard'))
-        self.assertContains(response, 'Requirements', count=1)
-        self.assertContains(response, 'GST number')
-        self.assertContains(response, '22AAAAA0000A1Z5')
-        self.assertContains(response, 'Tata make')
+        html = self.client.get(reverse('query_dashboard')).content.decode()
+
+        requirements = re.findall(r'<details.*?</details>', html, re.S)
+        self.assertEqual(len(requirements), 1)  # only the query that has product details gets one
+        self.assertIn('Tata make', requirements[0])
+        self.assertIn('Round bar', requirements[0])
+        self.assertNotIn('GST', requirements[0])
+        self.assertNotIn('22AAAAA0000A1Z5', requirements[0])
+
+        company_cell = re.search(r'Intake Co.*?</td>', html, re.S).group(0)
+        self.assertIn('GST number:', company_cell)
+        self.assertIn('22AAAAA0000A1Z5', company_cell)
+        self.assertIn('12 Industrial Area, Faridabad', company_cell)
+
+    def test_gst_shows_even_when_there_are_no_product_details(self):
+        Query.objects.all().delete()
+        Query.objects.create(source='whatsapp', contact_phone='9111111111', company_name='Gst Only Co', gst_number='NA')
+        html = self.client.get(reverse('query_dashboard')).content.decode()
+        self.assertIn('GST number:', html)
+        self.assertNotIn('<details', html)
 
     def test_edit_form_shows_the_collected_answers(self):
         response = self.client.get(reverse('query_edit', kwargs={'pk': self.query.pk}))
