@@ -29,7 +29,7 @@ def _sign_whatsapp_payload(body_bytes, secret):
 ANSWERS = {
     'company_name': 'Ramesh Traders', 'contact_email': 'ramesh@example.com',
     'gst_number': '22AAAAA0000A1Z5', 'gst_address': '12 Industrial Area, Faridabad',
-    'product_category': 'Flat Bright Bar', 'product_description': 'Round bar', 'drawing': 'no', 'grade': 'EN8D', 'width': '50', 'thickness': '6',
+    'product_category': 'Flat Bright Bar', 'drawing': 'no', 'grade': 'EN8D', 'width': '50', 'thickness': '6',
     'technical_requirements': 'no', 'end_use': 'automotive shafts', 'delivery_form': 'Coil',
     'quantity_text': '2 tons monthly',
 }
@@ -141,7 +141,7 @@ class WhatsAppWebhookTests(TestCase):
 
     def test_intake_sequence_is_in_the_requested_order(self):
         self.assertEqual(WHATSAPP_QUERY_FIELDS, [
-            'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_category', 'product_description',
+            'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_category',
             'drawing', 'grade', 'width', 'thickness', 'technical_requirements', 'end_use', 'delivery_form',
             'quantity_text',
         ])
@@ -197,19 +197,17 @@ class WhatsAppWebhookTests(TestCase):
             with self.subTest(text=text):
                 self.assertIsNone(_detect_product_category(text))
 
-    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_the_requirements_answer_is_saved_as_typed_and_does_not_touch_the_type(self, mock_send):
-        query = _query_awaiting('product_description')
-        self._post_payload(self._message_payload('919876543210', 'Triangle bright bar, 17 mm'))
-        query.refresh_from_db()
-        self.assertEqual(query.product_description, 'Triangle bright bar, 17 mm')
-        self.assertEqual(query.product_category.name, 'Flat Bright Bar')   # chosen from the list earlier
+    def test_the_bot_no_longer_asks_a_free_text_requirements_question(self):
+        self.assertNotIn('product_description', WHATSAPP_QUERY_FIELDS)
+        self.assertNotIn('product_description', WHATSAPP_QUERY_QUESTIONS)
+        self.assertNotIn('product_description', [f for f, _ in Query.INTAKE_TEXT_FIELDS])
+        self.assertEqual(WHATSAPP_QUERY_FIELDS[WHATSAPP_QUERY_FIELDS.index('product_category') + 1], 'drawing')
 
     def test_a_product_type_staff_already_set_skips_the_question(self):
         query = Query.objects.create(source='call', contact_phone='919876543299',
                                      product_category=ProductCategory.objects.get(name='Chamfer Steel'),
                                      **{k: v for k, v in _answered_values('product_category').items() if k != 'product_category'})
-        self.assertEqual(whatsapp._next_expected_query_field(query), 'product_description')
+        self.assertEqual(whatsapp._next_expected_query_field(query), 'drawing')
 
     def test_choice_questions_fit_whatsapp_reply_button_limits(self):
         for field, choices in WHATSAPP_QUERY_CHOICES.items():
@@ -323,7 +321,7 @@ class WhatsAppWebhookTests(TestCase):
             {'from': '919876543210', 'type': 'interactive', 'interactive': reply}]}}]}]})
         query = Query.objects.get(contact_phone='919876543210')
         self.assertEqual(query.product_category, category)
-        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['product_description'])
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['drawing'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_typing_a_type_name_instead_of_tapping_works(self, mock_send):

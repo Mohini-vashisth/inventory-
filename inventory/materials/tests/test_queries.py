@@ -388,7 +388,6 @@ class QueryIntakeDetailsTests(TestCase):
             ('GST address', '12 Industrial Area, Faridabad'),
         ])
         self.assertEqual(self.query.requirement_rows(), [
-            ('Requirements', 'Round bar, 12 mm\nwith chamfer'),
             ('Make / properties / process', 'Tata make'),
             ('End use', ''),  # blank rows are kept so the detail page can show a dash
             ('Delivery form', ''),
@@ -414,7 +413,7 @@ class QueryIntakeDetailsTests(TestCase):
         response = self.client.get(reverse('query_detail', kwargs={'pk': self.query.pk}))
         self.assertEqual(response.status_code, 200)
         for text in ('Intake Co', '919876543210', 'intake@example.com', 'WhatsApp', 'EN8D', '22AAAAA0000A1Z5',
-                     '12 Industrial Area, Faridabad', 'Round bar, 12 mm', 'Tata make', '2 tons monthly'):
+                     '12 Industrial Area, Faridabad', 'Tata make', '2 tons monthly'):
             with self.subTest(text=text):
                 self.assertContains(response, text)
 
@@ -452,7 +451,6 @@ class QueryIntakeDetailsTests(TestCase):
         response = self.client.get(reverse('query_edit', kwargs={'pk': self.query.pk}))
         self.assertContains(response, '22AAAAA0000A1Z5')
         self.assertContains(response, '12 Industrial Area, Faridabad')
-        self.assertContains(response, 'Round bar, 12 mm')
 
     def _edit(self, **overrides):
         data = {
