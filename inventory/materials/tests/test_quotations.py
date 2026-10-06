@@ -518,6 +518,22 @@ class ProductCodeMatchingTests(TestCase):
         line = self._send(action='save_draft', category=str(self.hex_bar.pk), grade='EN8D', size='12')
         self.assertEqual(line.product_type, self.hex_code)
 
+    def test_grade_size_and_quantity_the_bot_collected_are_in_the_quote_form(self):
+        query = Query.objects.create(source='whatsapp', contact_phone='9123456780', company_name='Bot Co',
+                                     product_category=self.hex_bar, grade='EN-8D', size='12.000', quantity='8000')
+        response = self.client.get(f"{reverse('quotation_form')}?query={query.pk}")
+        initial = response.context['formset'].forms[0].initial
+        self.assertEqual(initial['grade'], 'EN-8D')
+        self.assertEqual(initial['size'], Decimal('12.000'))
+        self.assertEqual(initial['quantity'], Decimal('8000'))
+        html = response.content.decode()
+        self.assertIn('value="EN-8D"', html)
+        self.assertIn('value="12.000"', html)
+        self.assertIn('value="8000.000"', html)
+        detail = self.client.get(reverse('query_detail', kwargs={'pk': query.pk})).content.decode()
+        self.assertIn('12.000 mm', detail)
+        self.assertIn('8000', detail)
+
     def test_the_form_prefills_the_product_type_from_the_query_and_the_owner_fills_the_size(self):
         query = Query.objects.create(source='indiamart', contact_phone='9123456780', company_name='Match Co',
                                      product_category=self.hex_bar, grade='EN8D')

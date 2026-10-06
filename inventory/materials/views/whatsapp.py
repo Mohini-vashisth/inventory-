@@ -300,6 +300,35 @@ def _parse_whatsapp_size(text):
     return value
 
 
+_KG_NUMBER = re.compile(r'(\d[\d,]*(?:\.\d+)?)\s*(?:kgs?|kilos?|kilograms?)\b', re.I)
+_ANY_NUMBER = re.compile(r'\d[\d,]*(?:\.\d+)?')
+_OTHER_UNITS = re.compile(r'\b(?:tons?|tonnes?|mts?|quintals?|qtl|lbs?|pounds?)\b', re.I)
+
+
+def _parse_whatsapp_quantity_kg(text):
+    """The quantity in kg from a reply like "8000 kgs monthly", or None when it can't be
+    read safely: another unit (tons, quintals) is named, or there's no number, or several
+    numbers and none is marked kg ("3 months 8000" could be either). The customer's own
+    words are always kept in quantity_text; this only decides whether the numeric
+    Query.quantity (which the quote form pre-fills) can be filled in too."""
+    if _OTHER_UNITS.search(text or ''):
+        return None
+    marked = _KG_NUMBER.findall(text or '')
+    if len(marked) == 1:
+        candidates = marked
+    elif not marked:
+        candidates = _ANY_NUMBER.findall(text or '')
+        if len(candidates) != 1:
+            return None
+    else:
+        return None
+    try:
+        value = Decimal(candidates[0].replace(',', ''))
+    except InvalidOperation:
+        return None
+    return value if 0 < value < 10_000_000 and value == value.quantize(Decimal('0.001')) else None
+
+
 def _is_valid_whatsapp_email(text):
     """Reject an obviously-wrong reply at the email step (a typo, or an
     answer to the wrong question) rather than saving it and only finding
@@ -610,6 +639,11 @@ def _process_whatsapp_answer(query_pk, text):
         else:
             setattr(query, field, text.strip())
             changed = [field]
+            if field == 'quantity_text' and query.quantity is None:
+                kg = _parse_whatsapp_quantity_kg(text)
+                if kg is not None:
+                    query.quantity = kg
+                    changed.append('quantity')
             if field == 'product_description' and not query.product_category_id:
                 # "Your requirements" is where they name the product type.
                 detected = _detect_product_category(text)

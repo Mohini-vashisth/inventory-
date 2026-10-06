@@ -16,7 +16,7 @@ from ..views import whatsapp
 from ..views.whatsapp import (
     WhatsAppSendError, WHATSAPP_CLOSING_MESSAGE, WHATSAPP_GST_INVALID_MESSAGE, _detect_product_category,
     WHATSAPP_QUERY_CHOICES, WHATSAPP_QUERY_FIELDS, WHATSAPP_QUERY_QUESTIONS, WHATSAPP_SIZE_INVALID_MESSAGE,
-    _parse_whatsapp_size,
+    _parse_whatsapp_quantity_kg, _parse_whatsapp_size,
 )
 
 
@@ -385,6 +385,43 @@ class WhatsAppWebhookTests(TestCase):
         for text, expected in cases.items():
             with self.subTest(text=text):
                 self.assertEqual(_parse_whatsapp_size(text), Decimal(expected) if expected else None)
+
+    def test_quantity_parsing_only_trusts_kilograms(self):
+        cases = {
+            '8000 kgs monthly': '8000', '8000kg': '8000', '8,000 KG one time': '8000', '1500.5 kgs': '1500.5',
+            'monthly 8000': '8000', 'one time, 5000 kgs': '5000',
+            '8 ton monthly': None, '2 tons': None, '10 quintal': None,       # other units are not guessed
+            '3 months 8000': None, '5000 kgs and 3000 kgs': None,            # ambiguous
+            'monthly': None, '': None, '0 kgs': None,
+        }
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(_parse_whatsapp_quantity_kg(text), Decimal(expected) if expected else None)
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_a_kg_answer_also_fills_the_numeric_quantity(self, mock_send):
+        _query_awaiting('quantity_text')
+        self._post_payload(self._message_payload('919876543210', '8000 kgs monthly'))
+        query = Query.objects.get(contact_phone='919876543210')
+        self.assertEqual(query.quantity_text, '8000 kgs monthly')
+        self.assertEqual(query.quantity, Decimal('8000'))
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_a_tons_answer_leaves_the_numeric_quantity_for_staff(self, mock_send):
+        _query_awaiting('quantity_text')
+        self._post_payload(self._message_payload('919876543210', '8 ton monthly'))
+        query = Query.objects.get(contact_phone='919876543210')
+        self.assertEqual(query.quantity_text, '8 ton monthly')
+        self.assertIsNone(query.quantity)
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_a_quantity_staff_already_set_is_not_overwritten(self, mock_send):
+        query = _query_awaiting('quantity_text')
+        query.quantity = Decimal('1234')
+        query.save()
+        self._post_payload(self._message_payload('919876543210', '8000 kgs monthly'))
+        query.refresh_from_db()
+        self.assertEqual(query.quantity, Decimal('1234'))
 
     def test_the_quantity_question_asks_for_kgs_only(self):
         text = WHATSAPP_QUERY_QUESTIONS['quantity_text']
