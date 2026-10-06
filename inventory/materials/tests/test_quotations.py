@@ -64,6 +64,19 @@ class QuotationFormDispatchTests(TestCase):
         item = QuotationLineItem.objects.get()
         self.assertEqual((item.width, item.thickness), (Decimal('50'), Decimal('6')))
 
+    @override_settings(EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com')
+    def test_the_quote_email_lists_each_item_with_its_product_type(self):
+        from ..models import ProductCategory
+        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        ProductType.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        self.client.force_login(self.staff)
+        self.client.post(f"{reverse('quotation_form')}?customer={self.customer.pk}",
+                         self._item_data(**{'item-0-category': str(flat.pk), 'item-0-grade': 'en-8d',
+                                            'item-0-width': '50', 'item-0-thickness': '6.5'}))
+        body = mail.outbox[0].body
+        self.assertIn('1. Steel Bar — Flat Bright Bar / EN8D / 50 x 6.5 mm', body)
+        self.assertIn('If you wish to proceed', body)
+
     def test_new_customer_form_prefilled_from_get_params(self):
         """'Send Form to Them' on the Orders dashboard carries the already-
         typed Company Name/Email/Phone into the URL rather than losing it."""

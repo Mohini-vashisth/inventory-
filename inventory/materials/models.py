@@ -758,6 +758,17 @@ class QuotationLineItem(models.Model):
     class Meta:
         ordering = ['order']
 
+    def product_type_name(self):
+        """The product type (e.g. Flat Bright Bar): the line's own, else its product code's."""
+        category = self.category or (self.product_type.category if self.product_type else None)
+        return category.name if category else ''
+
+    def spec_text(self):
+        """"Flat Bright Bar / EN8D / 50 x 6.5 mm" — product type, grade and width x thickness,
+        whichever are known. Shown on the PDF under the description and in the quote email."""
+        dims = ' x '.join(format(value.normalize(), 'f') for value in (self.width, self.thickness) if value is not None)
+        return ' / '.join(part for part in (self.product_type_name(), self.grade, f"{dims} mm" if dims else '') if part)
+
     def gross_amount(self):
         if self.quantity is None or self.rate_per_kg is None:
             return Decimal('0')
