@@ -530,6 +530,15 @@ class ProductCodeMatchingTests(TestCase):
         line = self._send(action='save_draft', category=str(self.hex_bar.pk), grade='EN8D')
         self.assertEqual(line.product_type, self.hex_code)
 
+    def test_the_first_quote_line_is_described_from_what_the_query_knows(self):
+        query = Query.objects.create(source='whatsapp', contact_phone='9123456781', company_name='Desc Co',
+                                     product_category=self.hex_bar, grade='EN8D', width='50', thickness='6.5')
+        initial = self.client.get(f"{reverse('quotation_form')}?query={query.pk}").context['formset'].forms[0].initial
+        self.assertEqual(initial['description'], 'Triangle Bright Bar EN8D 50 x 6.5 mm')
+        bare = Query.objects.create(source='call', contact_phone='9123456782')
+        initial = self.client.get(f"{reverse('quotation_form')}?query={bare.pk}").context['formset'].forms[0].initial
+        self.assertEqual(initial['description'], 'Item')
+
     def test_grade_width_thickness_and_quantity_the_bot_collected_are_in_the_quote_form(self):
         query = Query.objects.create(source='whatsapp', contact_phone='9123456780', company_name='Bot Co',
                                      product_category=self.hex_bar, grade='EN8D', width='50.000', thickness='6.000', quantity='8000')

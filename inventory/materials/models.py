@@ -511,7 +511,6 @@ class Query(models.Model):
     INTAKE_TEXT_FIELDS = [
         ('gst_number', 'GST number'),
         ('gst_address', 'GST address'),
-        ('product_description', 'Requirements'),
         ('technical_requirements', 'Make / properties / process'),
         ('end_use', 'End use'),
         ('delivery_form', 'Delivery form'),

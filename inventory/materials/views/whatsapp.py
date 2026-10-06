@@ -48,7 +48,7 @@ WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE = "en"
 # gst_number (see _parse_whatsapp_gst_details) and so is skipped; it only
 # gets its own question when the customer sent the number without an address.
 WHATSAPP_QUERY_FIELDS = [
-    'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_category', 'product_description',
+    'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_category',
     'drawing', 'grade', 'width', 'thickness', 'technical_requirements', 'end_use', 'delivery_form', 'quantity_text',
 ]
 
@@ -58,7 +58,6 @@ WHATSAPP_QUERY_QUESTIONS = {
     'gst_number': "Please share your GST details: your GST number (GSTIN) and the address registered under it.",
     'gst_address': "Thanks! And the address registered under your GST?",
     'product_category': "Which product type do you need? Tap the button below and choose one.",
-    'product_description': "Your requirements, please.",
     'drawing': "Please attach a drawing with detailed dimensions, or a photo of a sample. You can send an image or PDF here, or reply 'no' if you don't have one.",
     'grade': "Which grade of material do you require?",
     'width': "What width do you need, in mm? Please reply with the number, for example 50 or 12.5.",
