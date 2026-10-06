@@ -15,7 +15,8 @@ from ..models import ProductCategory, ProductType, Query
 from ..views import whatsapp
 from ..views.whatsapp import (
     WhatsAppSendError, WHATSAPP_CLOSING_MESSAGE, WHATSAPP_GST_INVALID_MESSAGE, _detect_product_category,
-    WHATSAPP_QUERY_CHOICES, WHATSAPP_QUERY_FIELDS, WHATSAPP_QUERY_QUESTIONS,
+    WHATSAPP_QUERY_CHOICES, WHATSAPP_QUERY_FIELDS, WHATSAPP_QUERY_QUESTIONS, WHATSAPP_SIZE_INVALID_MESSAGE,
+    _parse_whatsapp_size,
 )
 
 
@@ -28,7 +29,7 @@ def _sign_whatsapp_payload(body_bytes, secret):
 ANSWERS = {
     'company_name': 'Ramesh Traders', 'contact_email': 'ramesh@example.com',
     'gst_number': '22AAAAA0000A1Z5', 'gst_address': '12 Industrial Area, Faridabad',
-    'product_description': 'Round bar', 'drawing': 'no', 'grade': 'EN8D',
+    'product_description': 'Round bar', 'drawing': 'no', 'grade': 'EN8D', 'size': '12',
     'technical_requirements': 'no', 'end_use': 'automotive shafts', 'delivery_form': 'Coil',
     'quantity_text': '2 tons monthly',
 }
@@ -135,7 +136,7 @@ class WhatsAppWebhookTests(TestCase):
     def test_intake_sequence_is_in_the_requested_order(self):
         self.assertEqual(WHATSAPP_QUERY_FIELDS, [
             'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_description',
-            'drawing', 'grade', 'technical_requirements', 'end_use', 'delivery_form', 'quantity_text',
+            'drawing', 'grade', 'size', 'technical_requirements', 'end_use', 'delivery_form', 'quantity_text',
         ])
 
     def test_every_question_after_company_name_has_wording(self):
@@ -147,8 +148,8 @@ class WhatsAppWebhookTests(TestCase):
     def test_each_answer_is_saved_and_the_next_question_asked(self, mock_send, mock_buttons):
         fields = WHATSAPP_QUERY_FIELDS
         for index, field in enumerate(fields[1:], start=1):
-            if field in ('gst_number', 'gst_address'):
-                continue  # the GST reply is split in two; covered by the GST tests below
+            if field in ('gst_number', 'gst_address', 'size'):
+                continue  # GST is split in two and size is parsed as a number; covered by their own tests
             with self.subTest(field=field):
                 mock_send.reset_mock()
                 mock_buttons.reset_mock()
@@ -342,6 +343,54 @@ class WhatsAppWebhookTests(TestCase):
                 self.assertEqual(query.gst_number, '')
                 self.assertEqual(query.gst_address, '')
                 mock_send.assert_called_once_with(query.contact_phone, WHATSAPP_GST_INVALID_MESSAGE)
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_the_grade_answer_is_followed_by_the_size_question(self, mock_send):
+        _query_awaiting('grade')
+        self._post_payload(self._message_payload('919876543210', 'EN8D'))
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['size'])
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_a_size_reply_is_saved_in_mm_and_the_next_question_follows(self, mock_send):
+        _query_awaiting('size')
+        self._post_payload(self._message_payload('919876543210', '1.2 mm'))
+        query = Query.objects.get(contact_phone='919876543210')
+        self.assertEqual(query.size, Decimal('1.2'))
+        self.assertEqual(query.notes, '')
+        mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['technical_requirements'])
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_a_reply_with_no_usable_size_re_asks_without_advancing(self, mock_send):
+        for index, reply in enumerate(['as per drawing', 'no', '0', '1.2345', 'big']):
+            with self.subTest(reply=reply):
+                mock_send.reset_mock()
+                query = Query.objects.create(source='call', contact_phone=f'9198300000{index:02d}',
+                                             **{_answered_field(n): ANSWERS[n] for n in WHATSAPP_QUERY_FIELDS[:WHATSAPP_QUERY_FIELDS.index('size')]})
+                self._post_payload(self._message_payload(query.contact_phone, reply))
+                query.refresh_from_db()
+                self.assertIsNone(query.size)
+                mock_send.assert_called_once_with(query.contact_phone, WHATSAPP_SIZE_INVALID_MESSAGE)
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_several_sizes_in_one_reply_keep_the_first_and_show_staff_the_whole_reply(self, mock_send):
+        _query_awaiting('size')
+        self._post_payload(self._message_payload('919876543210', '10 and 12 mm'))
+        query = Query.objects.get(contact_phone='919876543210')
+        self.assertEqual(query.size, Decimal('10'))
+        self.assertIn('Size reply: 10 and 12 mm', query.notes)
+
+    def test_size_parsing(self):
+        cases = {'12': '12', '1.2': '1.2', '12 mm': '12', '12,5 mm round': '12.5', 'Dia 25.4mm': '25.4',
+                 '6.500': '6.5', '0': None, '': None, 'abc': None, '1.2345': None, '99999999': None}
+        for text, expected in cases.items():
+            with self.subTest(text=text):
+                self.assertEqual(_parse_whatsapp_size(text), Decimal(expected) if expected else None)
+
+    def test_the_quantity_question_asks_for_kgs_only(self):
+        text = WHATSAPP_QUERY_QUESTIONS['quantity_text']
+        self.assertIn('kgs only', text)
+        self.assertIn('not 8 tons', text)
+        self.assertIn('frequency', text)
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_no_is_a_real_answer_that_advances_the_sequence(self, mock_send):

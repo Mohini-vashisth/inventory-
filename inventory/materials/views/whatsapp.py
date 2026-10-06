@@ -8,6 +8,7 @@ import re
 import threading
 import urllib.error
 import urllib.request
+from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
 from django.db import transaction, connections
@@ -48,7 +49,7 @@ WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE = "en"
 # gets its own question when the customer sent the number without an address.
 WHATSAPP_QUERY_FIELDS = [
     'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_description',
-    'drawing', 'grade', 'technical_requirements', 'end_use', 'delivery_form', 'quantity_text',
+    'drawing', 'grade', 'size', 'technical_requirements', 'end_use', 'delivery_form', 'quantity_text',
 ]
 
 
@@ -59,10 +60,11 @@ WHATSAPP_QUERY_QUESTIONS = {
     'product_description': "Your requirements, please.",
     'drawing': "Please attach a drawing with detailed dimensions, or a photo of a sample. You can send an image or PDF here, or reply 'no' if you don't have one.",
     'grade': "Which grade of material do you require?",
+    'size': "What size do you need, in mm? Please reply with the number, for example 12 or 1.2.",
     'technical_requirements': "Any particular make, mechanical properties or processes to be carried out? Reply 'no' if none.",
     'end_use': "What is the end use of the material?",
     'delivery_form': "In what form do you need the material delivered?",
-    'quantity_text': "Required quantity and frequency (one time or monthly)?",
+    'quantity_text': "Required quantity in kgs only (for example 8000 kgs, not 8 tons), and the frequency (one time or monthly)?",
 }
 
 
@@ -75,6 +77,10 @@ WHATSAPP_QUERY_CHOICES = {
     'delivery_form': Query.DELIVERY_FORM_CHOICES,
 }
 
+
+WHATSAPP_SIZE_INVALID_MESSAGE = (
+    "I couldn't read a size in that. Please reply with the size in mm as a number, for example 12 or 1.2."
+)
 
 WHATSAPP_GST_INVALID_MESSAGE = (
     "I couldn't find a valid 15-character GST number in that (for example 22AAAAA0000A1Z5). "
@@ -273,6 +279,25 @@ def _parse_whatsapp_delivery_form(text):
     if has_coil == has_bar:
         return None
     return 'Coil' if has_coil else 'Bar'
+
+
+_SIZE_NUMBER = re.compile(r'\d+(?:[.,]\d+)?')
+
+
+def _parse_whatsapp_size(text):
+    """The size in mm from a reply like "12", "1.2 mm" or "12,5 mm round" (the first
+    number; a comma is read as a decimal point), or None if there isn't a usable one:
+    it must be above 0, have at most 3 decimals, and fit the Query.size field."""
+    match = _SIZE_NUMBER.search(text or '')
+    if not match:
+        return None
+    try:
+        value = Decimal(match.group().replace(',', '.'))
+    except InvalidOperation:
+        return None
+    if not (0 < value < 10_000_000) or value != value.quantize(Decimal('0.001')):
+        return None
+    return value
 
 
 def _is_valid_whatsapp_email(text):
@@ -557,6 +582,17 @@ def _process_whatsapp_answer(query_pk, text):
                 return
             query.delivery_form = parsed
             changed = ['delivery_form']
+        elif field == 'size':
+            parsed = _parse_whatsapp_size(text)
+            if parsed is None:
+                _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_SIZE_INVALID_MESSAGE)
+                return
+            query.size = parsed
+            changed = ['size']
+            if len(_SIZE_NUMBER.findall(text)) > 1:   # e.g. "10 and 12 mm": keep the first, show staff the rest
+                stamp = timezone.now().strftime('%d %b %H:%M')
+                query.notes = f"{query.notes}\n[{stamp}] Size reply: {text.strip()}".strip()
+                changed.append('notes')
         elif field == 'contact_email':
             candidate = text.strip()
             if not _is_valid_whatsapp_email(candidate):
