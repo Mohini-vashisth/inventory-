@@ -404,6 +404,26 @@ class CustomerOrderFormTests(TestCase):
         self.assertIn('<b>Product type</b> Flat Bright Bar', html)
         self.assertIn('<b>Product type</b> Square Bright Bar', html)
 
+    def test_the_product_code_is_shown_even_when_the_quote_line_has_none_stored(self):
+        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        code = ProductType.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        self.item_a.product_type = None
+        self.item_a.category = flat
+        self.item_a.save()
+        html = self.client.get(self.url).content.decode()
+        self.assertIn('<b>Product code</b> FBB009', html)
+        self.client.post(self.url, self._post_data())
+        self.assertEqual(Order.objects.filter(customer=self.customer).order_by('pk').first().product_type, code)
+
+    def test_an_item_with_no_code_says_it_is_to_be_assigned(self):
+        self.item_b.product_type = None
+        self.item_b.grade = 'UNKNOWNGRADE'
+        self.item_b.save()
+        self.assertIn('<b>Product code</b> To be assigned', self.client.get(self.url).content.decode())
+
+    def test_the_quantity_label_asks_for_kgs_only(self):
+        self.assertIn('Required Quantity (kgs only)', self.client.get(self.url).content.decode())
+
     def test_quantity_is_prefilled_from_the_quote(self):
         html = self.client.get(self.url).content.decode()
         self.assertIn('value="500.000"', html)
@@ -541,6 +561,17 @@ class CustomerOrderFormWithoutAQuoteTests(TestCase):
     def test_the_code_is_matched_from_the_grade_typed(self):
         self.client.post(self.url, {'quantity': '250', 'grade': 'en8d', 'width': '50', 'thickness': '6'})
         self.assertEqual(Order.objects.get(customer=self.customer).product_type, self.code)
+
+    def test_the_form_has_a_product_type_choice_that_helps_match_the_code(self):
+        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        square = ProductCategory.objects.get(name='Square Bright Bar')
+        flat_code = ProductType.objects.create(item_code='FBB-X', category=flat, grade='SS304')
+        ProductType.objects.create(item_code='SQB-X', category=square, grade='SS304')   # same grade, other type
+        html = self.client.get(self.url).content.decode()
+        self.assertIn('name="product_category"', html)
+        self.assertIn('Flat Bright Bar', html)
+        self.client.post(self.url, {'quantity': '10', 'grade': 'ss304', 'product_category': str(flat.pk)})
+        self.assertEqual(Order.objects.get(customer=self.customer).product_type, flat_code)
 
     def test_no_match_leaves_the_code_to_be_assigned_at_confirmation(self):
         self.client.post(self.url, {'quantity': '250', 'grade': 'EN9', 'width': '30', 'thickness': '3'})

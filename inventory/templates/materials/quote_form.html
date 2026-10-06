@@ -97,8 +97,8 @@
         <div class="item-head">
           <div class="item-title">Item {{ forloop.counter }}{% if item.description %} — {{ item.description }}{% endif %}</div>
           <div class="item-spec">
-            <span><b>Product type</b> {% if item.category %}{{ item.category.name }}{% elif item.product_type.category %}{{ item.product_type.category.name }}{% else %}—{% endif %}</span>
-            <span><b>Product code</b> {% if item.product_type %}{{ item.product_type.item_code }}{% else %}To be assigned{% endif %}</span>
+            <span><b>Product type</b> {{ item.shown_type.name|default:"—" }}</span>
+            <span><b>Product code</b> {% if item.shown_code %}{{ item.shown_code.item_code }}{% else %}To be assigned{% endif %}</span>
             <span><b>Grade</b> {{ item.grade|default:"—" }}</span>
             <span><b>Width</b> {% if item.width %}{{ item.width }} mm{% else %}—{% endif %}</span>
             <span><b>Thickness</b> {% if item.thickness %}{{ item.thickness }} mm{% else %}—{% endif %}</span>
@@ -106,7 +106,7 @@
         </div>
         {{ item_form.line_item }}
         <div class="form-row cols-3">
-          <div class="form-group"><label>Required Quantity (kg) *</label>{{ item_form.quantity }}</div>
+          <div class="form-group"><label>Required Quantity (kgs only) *</label>{{ item_form.quantity }}</div>
           <div class="form-group"><label>Delivery Form</label>{{ item_form.delivery_form }}</div>
           <div class="form-group"><label>Frequency</label>{{ item_form.frequency }}</div>
         </div>
@@ -131,6 +131,17 @@
       {% endfor %}
       {% else %}
       <div class="section-label">Material Requirements</div>
+      <div class="form-row cols-2">
+        <div class="form-group">
+          <label>Product Type</label>
+          <select name="product_category">
+            <option value="">— select —</option>
+            {% for category in categories %}
+            <option value="{{ category.pk }}" {% if post.product_category|stringformat:"s" == category.pk|stringformat:"s" %}selected{% endif %}>{{ category.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
       <div class="form-row cols-3">
         <div class="form-group">
           <label>Grade of Material</label>
@@ -185,7 +196,7 @@
       <div class="section-label">Quotation Details</div>
       <div class="form-row cols-3">
         <div class="form-group">
-          <label>Required Quantity (kg) *</label>
+          <label>Required Quantity (kgs only) *</label>
           <input type="number" name="quantity" step="0.001" min="0" placeholder="0.000"
                  value="{{ post.quantity|default:'' }}">
         </div>
