@@ -20,7 +20,7 @@ from .quotations import _public_quote_base_url
 def order_dashboard(request):
 
     orders = (Order.objects
-              .select_related('customer', 'product_type')
+              .select_related('customer', 'product_type__category')
               .annotate(weight_cut=Sum('coil_picks__weight_allocated'))
               .order_by('-created_at'))
     customers = Customer.objects.order_by('name')
@@ -162,7 +162,7 @@ def quote_form(request, token):
     # The query (if any) that led to this quote being sent.
     query = Query.objects.filter(customer=customer, status='quote_sent').order_by('-created_at').first()
     quotation = customer.quotations.filter(status='sent').order_by('-quotation_no').first()
-    items = list(quotation.line_items.select_related('product_type', 'category').order_by('order')) if quotation else []
+    items = list(quotation.line_items.select_related('product_type__category', 'category').order_by('order')) if quotation else []
     error = None
 
     def _finish(created_orders_query):

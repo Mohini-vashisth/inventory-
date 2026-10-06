@@ -97,7 +97,7 @@
         <div class="item-head">
           <div class="item-title">Item {{ forloop.counter }}{% if item.description %} — {{ item.description }}{% endif %}</div>
           <div class="item-spec">
-            <span><b>Product type</b> {{ item.category.name|default:"—" }}</span>
+            <span><b>Product type</b> {% if item.category %}{{ item.category.name }}{% elif item.product_type.category %}{{ item.product_type.category.name }}{% else %}—{% endif %}</span>
             <span><b>Product code</b> {% if item.product_type %}{{ item.product_type.item_code }}{% else %}To be assigned{% endif %}</span>
             <span><b>Grade</b> {{ item.grade|default:"—" }}</span>
             <span><b>Width</b> {% if item.width %}{{ item.width }} mm{% else %}—{% endif %}</span>

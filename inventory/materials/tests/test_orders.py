@@ -391,6 +391,17 @@ class CustomerOrderFormTests(TestCase):
                 self.assertNotIn(f'name="{name}"', html)
                 self.assertNotIn(f'-{name}"', html)  # no item-N-product_type / -grade / -width / -thickness inputs either
 
+    def test_each_item_shows_its_product_type(self):
+        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        square = ProductCategory.objects.get(name='Square Bright Bar')
+        self.item_a.category = flat
+        self.item_a.save()
+        self.code_b.category = square   # item B has no type of its own: it is shown from its product code
+        self.code_b.save()
+        html = self.client.get(self.url).content.decode()
+        self.assertIn('<b>Product type</b> Flat Bright Bar', html)
+        self.assertIn('<b>Product type</b> Square Bright Bar', html)
+
     def test_quantity_is_prefilled_from_the_quote(self):
         html = self.client.get(self.url).content.decode()
         self.assertIn('value="500.000"', html)
@@ -663,3 +674,15 @@ class OrderReceivedPageTests(TestCase):
         self.assertIn('Place Order →', html)
         self.assertNotIn('Quotation Request', html)
         self.assertNotIn('Submit Request', html)
+
+
+class OrderDashboardShowsProductTypeTests(TestCase):
+    def test_the_order_row_shows_the_product_type_under_the_code(self):
+        staff = User.objects.create_user('dash_type_staff', password='pw', is_staff=True)
+        self.client.force_login(staff)
+        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        code = ProductType.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        Order.objects.create(customer=Customer.objects.create(name='Row Co'), product_type=code, quantity=10)
+        html = self.client.get(reverse('order_dashboard')).content.decode()
+        self.assertIn('FBB009', html)
+        self.assertIn('Flat Bright Bar', html)
