@@ -532,15 +532,15 @@ class ProductCodeMatchingTests(TestCase):
 
     def test_grade_width_thickness_and_quantity_the_bot_collected_are_in_the_quote_form(self):
         query = Query.objects.create(source='whatsapp', contact_phone='9123456780', company_name='Bot Co',
-                                     product_category=self.hex_bar, grade='EN-8D', width='50.000', thickness='6.000', quantity='8000')
+                                     product_category=self.hex_bar, grade='EN8D', width='50.000', thickness='6.000', quantity='8000')
         response = self.client.get(f"{reverse('quotation_form')}?query={query.pk}")
         initial = response.context['formset'].forms[0].initial
-        self.assertEqual(initial['grade'], 'EN-8D')
+        self.assertEqual(initial['grade'], 'EN8D')
         self.assertEqual(initial['width'], Decimal('50.000'))
         self.assertEqual(initial['thickness'], Decimal('6.000'))
         self.assertEqual(initial['quantity'], Decimal('8000'))
         html = response.content.decode()
-        self.assertIn('value="EN-8D"', html)
+        self.assertIn('value="EN8D"', html)
         self.assertIn('value="50.000"', html)
         self.assertIn('value="6.000"', html)
         self.assertIn('value="8000.000"', html)

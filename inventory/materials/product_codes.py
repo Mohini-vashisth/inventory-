@@ -15,7 +15,7 @@ import re
 
 from django.db.models import Max
 
-from .models import GradeOption, ProductType
+from .models import GradeOption, ProductType, normalize_grade
 
 MAX_GRADE_NUMBER = 999
 
@@ -43,12 +43,9 @@ def find_product_code(category, grade, exclude_pk=None):
 
 
 def canonical_grade(grade):
-    """The grade as it's spelled in the grade list when it is a spelling of a listed
-    one ("en8d" or "EN8D" -> "EN-8D"), otherwise the text as typed (trimmed). Keeps
-    one grade from being written several ways, without ever refusing a new one."""
-    text = (grade or '').strip()
-    option = find_grade_option(text)
-    return option.name if option else text
+    """The grade as it is stored everywhere: capital letters and digits only
+    ("en-8d" -> "EN8D"; see models.normalize_grade). Never refuses a new grade."""
+    return normalize_grade(grade or '')
 
 
 def _next_grade_number():

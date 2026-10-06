@@ -1,3 +1,4 @@
+import re
 import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -8,6 +9,33 @@ from django.db.models.functions import Coalesce
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.utils import timezone
+
+
+def normalize_grade(value):
+    """The one spelling of a grade: capital letters and digits only — no hyphens, spaces
+    or other punctuation ("EN-8D", "en 8d" and "EN8D" are all "EN8D"; "EN-8D CR" is
+    "EN8DCR"). Decided 2026-10-06; every grade in the app is stored this way."""
+    return re.sub(r'[^A-Za-z0-9]', '', value).upper()
+
+
+class GradeField(models.CharField):
+    """A CharField that always holds the normalized grade (see normalize_grade): it is
+    applied when a form or model is cleaned and again whenever the row is saved, so a
+    grade can't be stored with a hyphen, space or lower-case letter whichever way it
+    arrives (admin, quote form, WhatsApp bot, spreadsheet import, shell)."""
+
+    def to_python(self, value):
+        value = super().to_python(value)
+        return normalize_grade(value) if isinstance(value, str) else value
+
+    def pre_save(self, model_instance, add):
+        value = super().pre_save(model_instance, add)
+        if isinstance(value, str):
+            normalized = normalize_grade(value)
+            if normalized != value:
+                setattr(model_instance, self.attname, normalized)
+            return normalized
+        return value
 
 
 class GateEntry(models.Model):
@@ -62,7 +90,7 @@ class GateEntryLot(models.Model):
     a single delivery can carry more than one brand."""
     gate_entry = models.ForeignKey(GateEntry, on_delete=models.CASCADE, related_name='lots')
     company = models.CharField(max_length=100, null=True, blank=True)
-    grade = models.CharField(max_length=10, null=True, blank=True)
+    grade = GradeField(max_length=10, null=True, blank=True)
     size = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     no_of_coils = models.PositiveIntegerField()
 
@@ -95,7 +123,7 @@ class Material(models.Model):
                   "is computed from.",
     )
     date = models.DateField("receipt date", null=True, blank=True)
-    grade = models.CharField(max_length=10, null=True, blank=True)
+    grade = GradeField(max_length=10, null=True, blank=True)
     size = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     company = models.CharField(max_length=100, null=True, blank=True)
     vendor = models.CharField(max_length=50, null=True, blank=True)
@@ -148,7 +176,7 @@ class Material(models.Model):
 
 
 class GradeOption(models.Model):
-    name = models.CharField(max_length=20, unique=True)
+    name = GradeField(max_length=20, unique=True)
     # The grade's number inside product codes (EN8D = 001 -> FBB001...). Handed out
     # automatically the first time a grade is used in a code and then kept, so a code
     # already printed on a document never changes meaning; editable in the admin.
@@ -211,7 +239,7 @@ class ProductType(models.Model):
         verbose_name="Product Type",
     )
     item_code   = models.CharField(max_length=100, verbose_name="Item Code")
-    grade       = models.CharField(max_length=20, blank=True, verbose_name="Grade")
+    grade       = GradeField(max_length=20, blank=True, verbose_name="Grade")
     description = models.TextField(blank=True)
 
     class Meta:
@@ -235,7 +263,7 @@ class ProductType(models.Model):
 class AllowedCoilSpec(models.Model):
     """Coil grades/sizes the admin approves for a given product type."""
     product_type = models.ForeignKey(ProductType, on_delete=models.CASCADE, related_name='allowed_specs')
-    grade = models.CharField(max_length=10, blank=True, verbose_name="Grade")
+    grade = GradeField(max_length=10, blank=True, verbose_name="Grade")
     size  = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Size (mm)")
     raw_material_ratio = models.DecimalField(
         max_digits=6, decimal_places=3, default=Decimal('1.000'),
@@ -436,7 +464,7 @@ class Query(models.Model):
     # from the bot's "Your requirements" answer when it names exactly one.
     product_category = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
     product_type  = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)
-    grade         = models.CharField(max_length=100, blank=True)
+    grade         = GradeField(max_length=100, blank=True)
     width         = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
     thickness     = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Thickness (mm)")
     quantity      = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
@@ -716,7 +744,7 @@ class QuotationLineItem(models.Model):
     description  = models.CharField(max_length=255)
     category     = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
     product_type = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)
-    grade        = models.CharField(max_length=100, blank=True)
+    grade        = GradeField(max_length=100, blank=True)
     width        = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
     thickness    = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Thickness (mm)")
     quantity     = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
@@ -783,7 +811,7 @@ class Order(models.Model):
     # 1. Drawing / dimensions
     drawing_dimensions    = models.TextField(blank=True, verbose_name="Drawing / Dimensions")
     # 2. Grade, width & thickness (grade autofilled from the product code, editable)
-    grade                 = models.CharField(max_length=100, blank=True, verbose_name="Grade of Material")
+    grade                 = GradeField(max_length=100, blank=True, verbose_name="Grade of Material")
     width                 = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
     thickness             = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Thickness (mm)")
     # 3. Mill make

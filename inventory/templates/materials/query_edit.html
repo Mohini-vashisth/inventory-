@@ -210,13 +210,10 @@
     var autoFilled = false;
     // Same rule as Python's grade_key: case, spaces and punctuation don't make a different grade.
     function gradeKey(value) { return (value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
-    // "EN8D" typed where the list has "EN-8D" settles on the listed spelling.
+    // Grades are stored as capital letters and digits only (models.normalize_grade): "en-8d" -> "EN8D".
     grade.addEventListener('change', function () {
-      var typed = gradeKey(grade.value);
-      var listed = !typed ? null : Array.prototype.find.call(document.querySelectorAll('#grade-options option'), function (o) {
-        return gradeKey(o.value) === typed;
-      });
-      if (listed && listed.value !== grade.value) { grade.value = listed.value; sync(); }
+      var normalized = grade.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (normalized !== grade.value) { grade.value = normalized; sync(); }
     });
     function sync() {
       var g = gradeKey(grade.value);

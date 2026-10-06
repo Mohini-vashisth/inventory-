@@ -518,6 +518,8 @@
 
     // Same rule as Python's grade_key: case, spaces and punctuation don't make a different grade.
     function gradeKey(value) { return (value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+    // Grades are stored as capital letters and digits only (models.normalize_grade): EN-8D -> EN8D.
+    function normalizeGrade(value) { return (value || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
 
     function matchRow(row) {
       var grade = gradeKey(row.querySelector('[name$="-grade"]').value);
@@ -539,15 +541,12 @@
     container.addEventListener('input', function (event) {
       if (/-(grade|category)$/.test(event.target.name || '')) matchRow(event.target.closest('.item-row'));
     });
-    // Typing "en8d" where the list has "EN8D" settles on the listed spelling, so one grade
-    // isn't written several ways (each would get its own grade number in product codes).
+    // "en-8d" settles on "EN8D", so one grade isn't written several ways (each would get its own
+    // grade number in product codes).
     function canonicalGrade(input) {
-      var typed = gradeKey(input.value);
-      var listed = !typed ? null : Array.prototype.find.call(document.querySelectorAll('#grade-options option'), function (option) {
-        return gradeKey(option.value) === typed;
-      });
-      if (listed && listed.value !== input.value) {
-        input.value = listed.value;
+      var normalized = normalizeGrade(input.value);
+      if (normalized !== input.value) {
+        input.value = normalized;
         input.dispatchEvent(new Event('input', {bubbles: true}));
       }
     }
