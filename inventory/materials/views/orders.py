@@ -12,7 +12,7 @@ from django.db import transaction
 from django.db.models import Sum
 from django.http import JsonResponse
 
-from ..models import ProductType, Customer, Query, Order
+from ..models import ProductCategory, ProductType, Customer, Query, Order
 from ..forms import OrderForm, OrderItemFormSet
 from ..decorators import redirect_to_admin_login, staff_required
 from .common import _first_form_error, _first_formset_error, _match_product_type
@@ -215,6 +215,11 @@ def quote_form(request, token):
     query = Query.objects.filter(customer=customer, status='quote_sent').order_by('-created_at').first()
     quotation = customer.quotations.filter(status='sent').order_by('-quotation_no').first()
     items = list(quotation.line_items.select_related('product_type__category', 'category').order_by('order')) if quotation else []
+    for item in items:
+        # What the customer is shown (and what the order gets): the quoted code, else the catalogue's
+        # code for the item's type + grade; the type from the line, else from that code.
+        item.shown_code = item.product_type or _match_product_type(item.grade, item.category)
+        item.shown_type = item.category or (item.shown_code.category if item.shown_code else None)
     error = None
 
     def _finish(created_orders_query):
@@ -247,7 +252,7 @@ def quote_form(request, token):
                         order = item_form.save(commit=False)
                         order.customer = customer
                         order.source_query = query
-                        order.product_type = item.product_type or _match_product_type(item.grade, item.category)
+                        order.product_type = item.shown_code
                         order.grade = item.grade
                         order.width = item.width
                         order.thickness = item.thickness
@@ -271,7 +276,8 @@ def quote_form(request, token):
             order = form.save(commit=False)
             order.customer = customer
             order.source_query = query
-            order.product_type = _match_product_type(order.grade)
+            order.product_type = _match_product_type(
+                order.grade, ProductCategory.objects.filter(pk=request.POST.get('product_category') or 0).first())
             order.status = 'pending'
             order.save()
             return _finish(query)
@@ -280,6 +286,7 @@ def quote_form(request, token):
     if query and not error:
         initial = {
             **from_query,
+            'product_category': str(query.product_category_id or ''),
             'grade': query.grade,
             'width': str(query.width) if query.width is not None else '',
             'thickness': str(query.thickness) if query.thickness is not None else '',
@@ -289,6 +296,7 @@ def quote_form(request, token):
 
     return render(request, 'materials/quote_form.html', {
         'customer': customer,
+        'categories': ProductCategory.objects.all(),
         'error': error,
         'post': request.POST if error else initial,
     })
