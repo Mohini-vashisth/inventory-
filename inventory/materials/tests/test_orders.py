@@ -653,3 +653,11 @@ class OrderReceivedPageTests(TestCase):
         self.assertIn('Your order has been received. Production will start shortly.', html)
         self.assertIn('Rao Steel', html)
         self.assertNotIn('under review', html)
+
+    def test_the_order_form_is_called_an_order_form_with_a_place_order_button(self):
+        customer = Customer.objects.create(name='Wording Co')
+        html = self.client.get(reverse('quote_form', kwargs={'token': customer.quote_token})).content.decode()
+        self.assertIn('<h1>Order Form</h1>', html)
+        self.assertIn('Place Order →', html)
+        self.assertNotIn('Quotation Request', html)
+        self.assertNotIn('Submit Request', html)
