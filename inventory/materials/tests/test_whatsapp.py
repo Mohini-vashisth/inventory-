@@ -166,7 +166,8 @@ class WhatsAppWebhookTests(TestCase):
                 self._post_payload(self._message_payload(phone, reply))
 
                 query = Query.objects.get(contact_phone=phone)
-                self.assertEqual(getattr(query, _answered_field(field)), reply)
+                expected_saved = ''.join(ch for ch in reply if ch.isalnum()).upper() if field == 'grade' else reply
+                self.assertEqual(getattr(query, _answered_field(field)), expected_saved)
                 following = fields[index + 1] if index + 1 < len(fields) else None
                 if following in WHATSAPP_QUERY_CHOICES:
                     mock_buttons.assert_called_once_with(

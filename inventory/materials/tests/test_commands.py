@@ -41,7 +41,7 @@ class ImportExcelTests(TestCase):
 
         self.assertEqual(Material.objects.count(), 2)
         first = Material.objects.order_by('coil_no').first()
-        self.assertEqual(first.grade, 'SAE 1008')
+        self.assertEqual(first.grade, 'SAE1008')   # stored without spaces or hyphens
         self.assertEqual(first.quantity, 1250)
 
         second = Material.objects.order_by('coil_no').last()
@@ -304,27 +304,29 @@ class BackupMediaMirrorTests(SimpleTestCase):
 class MergeGradesCommandTests(TestCase):
     def setUp(self):
         GradeOption.objects.all().delete()
-        self.keep = GradeOption.objects.create(name='EN-9', number=11)
-        GradeOption.objects.create(name='EN9', number=12)
-        Material.objects.create(grade='EN9', size='6.500', quantity=500)
-        Material.objects.create(grade='en9', size='6.500', quantity=500)
-        Material.objects.create(grade='EN-9', size='6.500', quantity=500)
+        # Spelling differences of punctuation and case are normalized on save, so what is left to
+        # merge is a genuinely different string for the same steel: 8620 and SAE8620.
+        self.keep = GradeOption.objects.create(name='SAE8620', number=18)
+        GradeOption.objects.create(name='8620', number=4)
+        Material.objects.create(grade='8620', size='6.500', quantity=500)
+        Material.objects.create(grade='8620', size='6.500', quantity=500)
+        Material.objects.create(grade='SAE 8620', size='6.500', quantity=500)
 
     def test_dry_run_changes_nothing(self):
-        call_command('merge_grades', 'EN9=EN-9', stdout=StringIO())
-        self.assertEqual(Material.objects.filter(grade='EN9').count(), 1)
-        self.assertTrue(GradeOption.objects.filter(name='EN9').exists())
+        call_command('merge_grades', '8620=SAE8620', stdout=StringIO())
+        self.assertEqual(Material.objects.filter(grade='8620').count(), 2)
+        self.assertTrue(GradeOption.objects.filter(name='8620').exists())
 
     def test_apply_rewrites_every_record_and_drops_the_variant_option(self):
-        call_command('merge_grades', 'EN9=EN-9', '--apply', stdout=StringIO())
-        self.assertEqual(Material.objects.filter(grade='EN-9').count(), 3)
-        self.assertEqual(list(GradeOption.objects.values_list('name', 'number')), [('EN-9', 11)])
+        call_command('merge_grades', '8620=SAE8620', '--apply', stdout=StringIO())
+        self.assertEqual(Material.objects.filter(grade='SAE8620').count(), 3)
+        self.assertEqual(list(GradeOption.objects.values_list('name', 'number')), [('SAE8620', 18)])
 
     def test_the_kept_option_is_created_if_missing(self):
-        call_command('merge_grades', 'EN9=EN 9', '--apply', stdout=StringIO())
-        self.assertTrue(GradeOption.objects.filter(name='EN 9').exists())
-        self.assertEqual(Material.objects.filter(grade='EN 9').count(), 2)
+        call_command('merge_grades', '8620=SAE-8620-B', '--apply', stdout=StringIO())
+        self.assertTrue(GradeOption.objects.filter(name='SAE8620B').exists())   # created, in the one spelling
+        self.assertEqual(Material.objects.filter(grade='SAE8620B').count(), 2)
 
     def test_a_malformed_pair_is_rejected(self):
         with self.assertRaises(CommandError):
-            call_command('merge_grades', 'EN9', stdout=StringIO())
+            call_command('merge_grades', '8620', stdout=StringIO())

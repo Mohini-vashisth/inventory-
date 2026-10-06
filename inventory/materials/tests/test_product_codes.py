@@ -82,10 +82,10 @@ class ItemCodeForTests(TestCase):
         self.assertTrue(all(c and len(c) == 3 and c.isalpha() and c.isupper() for c in codes))
         self.assertEqual(ProductCategory.objects.get(name='Flat Bright Bar').code, 'FBB')
 
-    def test_canonical_grade_uses_the_listed_spelling_but_never_refuses_a_new_one(self):
-        GradeOption.objects.create(name='EN8D')
+    def test_canonical_grade_is_capitals_and_digits_only_and_never_refuses_a_new_grade(self):
         self.assertEqual(canonical_grade(' en8d '), 'EN8D')
-        self.assertEqual(canonical_grade('Brand-New 7'), 'Brand-New 7')
+        self.assertEqual(canonical_grade('en-8d cr'), 'EN8DCR')
+        self.assertEqual(canonical_grade('Brand-New 7'), 'BRANDNEW7')
         self.assertEqual(canonical_grade(None), '')
 
 
@@ -191,11 +191,11 @@ class AdminGeneratesTheCodeTests(TestCase):
         self._add(grade='SS304')
         self.assertEqual(ProductType.objects.get(grade='SS304').item_code, 'FBB002')
 
-    def test_the_grade_is_tidied_to_the_listed_spelling(self):
-        GradeOption.objects.create(name='EN-8D', number=9)
-        self._add(grade='en8d')
+    def test_the_grade_is_saved_as_capitals_and_digits_only(self):
+        GradeOption.objects.create(name='EN-8D', number=9)   # listed in the one spelling, EN8D
+        self._add(grade='en-8d')
         code = ProductType.objects.get()
-        self.assertEqual((code.grade, code.item_code), ('EN-8D', 'FBB009'))
+        self.assertEqual((code.grade, code.item_code), ('EN8D', 'FBB009'))
         self.assertEqual(GradeOption.objects.count(), 1)
 
     def test_a_code_typed_by_hand_is_kept_and_takes_no_grade_number(self):
@@ -377,10 +377,18 @@ class GradeSpellingTests(TestCase):
         self.assertNotEqual(grade_key('EN-8D CR'), grade_key('EN8D'))
         self.assertEqual(grade_key(None), '')
 
-    def test_a_typed_spelling_settles_on_the_listed_one(self):
-        self.assertEqual(canonical_grade('EN8D'), 'EN-8D')
-        self.assertEqual(canonical_grade('en 8d cr'), 'EN-8D CR')
-        self.assertEqual(canonical_grade('NEW-1'), 'NEW-1')
+    def test_a_typed_spelling_is_stored_as_capitals_and_digits(self):
+        self.assertEqual(canonical_grade('EN-8D'), 'EN8D')
+        self.assertEqual(canonical_grade('en 8d cr'), 'EN8DCR')
+        self.assertEqual(canonical_grade('NEW-1'), 'NEW1')
+
+    def test_every_grade_field_normalizes_on_save(self):
+        from ..models import Material, Query, normalize_grade
+        self.assertEqual(normalize_grade('SAE 1008'), 'SAE1008')
+        self.assertEqual(Material.objects.create(grade='en-1a (pb)', quantity=1).grade, 'EN1APB')
+        self.assertEqual(Query.objects.create(source='call', grade='sae 6165').grade, 'SAE6165')
+        self.assertIsNone(Material.objects.create(grade=None, quantity=1).grade)
+        self.assertEqual(GradeOption.objects.create(name='hc-1').name, 'HC1')
 
     def test_the_code_is_found_whichever_way_the_grade_is_spelled(self):
         from ..views.common import _match_product_type
