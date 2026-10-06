@@ -11,7 +11,7 @@ def quotation_item_post_data(**overrides):
     data = {
         'item-TOTAL_FORMS': '1', 'item-INITIAL_FORMS': '0',
         'item-MIN_NUM_FORMS': '0', 'item-MAX_NUM_FORMS': '1000',
-        'item-0-description': 'Steel Bar', 'item-0-quantity': '10',
+        'item-0-description': 'Steel Bar', 'item-0-width': '50', 'item-0-thickness': '6', 'item-0-quantity': '10',
         'item-0-rate_per_kg': '85.50', 'item-0-unit': 'KGS',
     }
     data.update(overrides)

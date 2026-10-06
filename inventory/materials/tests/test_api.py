@@ -13,7 +13,7 @@ class OrderApiTests(TestCase):
         self.client = APIClient()
         self.staff = User.objects.create_user('api_staff', password='pw', is_staff=True)
         self.customer = Customer.objects.create(name='Acme Corp')
-        self.product_type = ProductType.objects.create(item_code='Bar', grade='EN8D', size='1.200')
+        self.product_type = ProductType.objects.create(item_code='Bar', grade='EN8D')
         self.order = Order.objects.create(
             customer=self.customer, product_type=self.product_type,
             quantity=250, status='in_production',
@@ -52,7 +52,7 @@ class OrderApiTests(TestCase):
         """weight_cut used to run a fresh aggregate per order (N+1) — the
         viewset now annotates it on the queryset instead. Query count for the
         list endpoint should stay flat as the number of orders grows."""
-        job_product_type = ProductType.objects.create(item_code='Jobbed', grade='EN8D', size='2.5')
+        job_product_type = ProductType.objects.create(item_code='Jobbed', grade='JOB-GRADE')
         for i in range(5):
             order = Order.objects.create(customer=self.customer, quantity=10, status='pending')
             coil = Material.objects.create(quantity=50)
@@ -109,7 +109,7 @@ class ProductTypeAndJobApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.staff = User.objects.create_user('api_staff3', password='pw', is_staff=True)
-        self.product_type = ProductType.objects.create(item_code='API Bar', grade='EN8D', size='1.200')
+        self.product_type = ProductType.objects.create(item_code='API Bar', grade='EN8D')
         ProcessStep.objects.create(product_type=self.product_type, name='Cutting', order=1)
         coil = Material.objects.create(quantity=500)
         self.order = Order.objects.create(

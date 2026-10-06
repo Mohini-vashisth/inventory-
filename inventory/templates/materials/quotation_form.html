@@ -42,6 +42,7 @@
     
     .cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
     .cols-5 { grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr; }
+    .cols-6 { grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr 1fr; }
 
     .form-group { display: flex; flex-direction: column; }
     .form-group.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; margin-top: 1.2rem; }
@@ -103,7 +104,7 @@
     }
 
     @media (max-width: 720px) {
-      .cols-2, .cols-3, .cols-4, .cols-5 { grid-template-columns: 1fr; }
+      .cols-2, .cols-3, .cols-4, .cols-5, .cols-6 { grid-template-columns: 1fr; }
       .content { padding: 0 0.85rem 3rem; margin: 1rem auto; }
       .card-body { padding: 1.1rem; }
     }
@@ -195,7 +196,7 @@
 
     <!-- ── Line items ───────────────────────────────────────── -->
     <div class="card">
-      <div class="card-header">Items<span>Product/grade/size, quantity and rate — add as many as this quote covers</span></div>
+      <div class="card-header">Items<span>Product type, grade, width, thickness, quantity and rate — add as many as this quote covers</span></div>
       <div class="card-body">
         <div id="items-container">
           {% for item_form in formset %}
@@ -228,14 +229,18 @@
                 </select>
               </div>
             </div>
-            <div class="form-row cols-5">
+            <div class="form-row cols-6">
               <div class="form-group">
                 <label>Grade</label>
                 <input type="text" name="item-{{ forloop.counter0 }}-grade" value="{{ item_form.grade.value|default:'' }}" placeholder="Start typing…" list="grade-options" autocomplete="off">
               </div>
               <div class="form-group">
-                <label>Size (mm)</label>
-                <input type="number" step="0.001" name="item-{{ forloop.counter0 }}-size" value="{{ item_form.size.value|default:'' }}">
+                <label>Width (mm) *</label>
+                <input type="number" step="0.001" min="0.001" name="item-{{ forloop.counter0 }}-width" value="{{ item_form.width.value|default:'' }}">
+              </div>
+              <div class="form-group">
+                <label>Thickness (mm) *</label>
+                <input type="number" step="0.001" min="0.001" name="item-{{ forloop.counter0 }}-thickness" value="{{ item_form.thickness.value|default:'' }}">
               </div>
               <div class="form-group">
                 <label>Quantity *</label>
@@ -439,9 +444,10 @@
         '<div class="form-group"><label>Product Code</label>' +
           '<select name="item-' + index + '-product_type">' + document.querySelector('[name="item-0-product_type"]').innerHTML + '</select></div>' +
       '</div>' +
-      '<div class="form-row cols-5">' +
+      '<div class="form-row cols-6">' +
         '<div class="form-group"><label>Grade</label><input type="text" name="item-' + index + '-grade" placeholder="Start typing…" list="grade-options" autocomplete="off"></div>' +
-        '<div class="form-group"><label>Size (mm)</label><input type="number" step="0.001" name="item-' + index + '-size"></div>' +
+        '<div class="form-group"><label>Width (mm) *</label><input type="number" step="0.001" min="0.001" name="item-' + index + '-width"></div>' +
+        '<div class="form-group"><label>Thickness (mm) *</label><input type="number" step="0.001" min="0.001" name="item-' + index + '-thickness"></div>' +
         '<div class="form-group"><label>Quantity *</label><input type="number" step="0.001" min="0.001" name="item-' + index + '-quantity"></div>' +
         '<div class="form-group"><label>Unit</label><input type="text" name="item-' + index + '-unit" value="KGS"></div>' +
         '<div class="form-group"><label>Rate/kg *</label><input type="number" step="0.01" min="0.01" name="item-' + index + '-rate_per_kg"></div>' +
@@ -467,23 +473,18 @@
 
 {{ product_code_map|json_script:"product-code-map" }}
 <script>
-  // A product code depends on its product type, grade and size, so once those are
-  // filled in the code is matched for the owner. With no type chosen, grade + size
-  // only match when exactly one code has them. A code picked by hand is never overridden.
+  // A product code depends on its product type and grade (not size), so once those are
+  // filled in the code is matched for the owner. With no type chosen, the grade
+  // only matches when exactly one code has it. A code picked by hand is never overridden.
   (function () {
     var codes = JSON.parse(document.getElementById('product-code-map').textContent);
     var container = document.getElementById('items-container');
-
-    function normSize(value) {
-      var n = parseFloat(value);
-      return isNaN(n) ? '' : n.toFixed(3);
-    }
 
     var lookupUrl = "{% url 'product_code_lookup' %}";
     var timers = new WeakMap();
 
     // No existing code fits: show the one sending the quote will create (or why none can be).
-    function previewNewCode(row, select, category, grade, size) {
+    function previewNewCode(row, select, category, grade) {
       var hint = row.querySelector('.code-hint');
       if (!hint) {
         hint = document.createElement('div');
@@ -491,14 +492,14 @@
         select.closest('.form-group').appendChild(hint);
       }
       clearTimeout(timers.get(row));
-      if (select.value || !category || !grade || !size) { hint.textContent = ''; return; }
+      if (select.value || !category || !grade) { hint.textContent = ''; return; }
       timers.set(row, setTimeout(function () {
-        var query = '?category=' + encodeURIComponent(category) + '&grade=' + encodeURIComponent(grade) + '&size=' + encodeURIComponent(size);
+        var query = '?category=' + encodeURIComponent(category) + '&grade=' + encodeURIComponent(grade);
         fetch(lookupUrl + query, {credentials: 'same-origin'})
           .then(function (response) { return response.json(); })
           .then(function (data) {
             if (select.value) { hint.textContent = ''; return; }
-            // No code exists for this type + grade + size. Quotes don't create them: the admin
+            // No code exists for this type + grade. Quotes don't create them: the admin
             // adds it first (the link opens the admin form with these values filled in).
             hint.className = 'code-hint code-hint-warn';
             hint.textContent = (data.reason || 'No product code for this yet.') + ' ';
@@ -520,24 +521,23 @@
 
     function matchRow(row) {
       var grade = gradeKey(row.querySelector('[name$="-grade"]').value);
-      var size = normSize(row.querySelector('[name$="-size"]').value);
       var category = row.querySelector('select[name$="-category"]').value;
       var select = row.querySelector('select[name$="-product_type"]');
       if (select.value && select.dataset.auto !== '1') return;
       var found = null;
-      if (grade && size) {
+      if (grade) {
         var matches = codes.filter(function (c) {
-          return c.grade === grade && c.size === size && (!category || String(c.category) === category);
+          return c.grade === grade && (!category || String(c.category) === category);
         });
         if (matches.length === 1) found = matches[0];
       }
       select.value = found ? String(found.pk) : '';
       select.dataset.auto = found ? '1' : '';
-      previewNewCode(row, select, category, row.querySelector('[name$="-grade"]').value.trim(), row.querySelector('[name$="-size"]').value);
+      previewNewCode(row, select, category, row.querySelector('[name$="-grade"]').value.trim());
     }
 
     container.addEventListener('input', function (event) {
-      if (/-(grade|size)$/.test(event.target.name || '')) matchRow(event.target.closest('.item-row'));
+      if (/-(grade|category)$/.test(event.target.name || '')) matchRow(event.target.closest('.item-row'));
     });
     // Typing "en8d" where the list has "EN8D" settles on the listed spelling, so one grade
     // isn't written several ways (each would get its own grade number in product codes).

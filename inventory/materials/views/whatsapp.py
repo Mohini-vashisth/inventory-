@@ -48,8 +48,8 @@ WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE = "en"
 # gst_number (see _parse_whatsapp_gst_details) and so is skipped; it only
 # gets its own question when the customer sent the number without an address.
 WHATSAPP_QUERY_FIELDS = [
-    'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_description',
-    'drawing', 'grade', 'size', 'technical_requirements', 'end_use', 'delivery_form', 'quantity_text',
+    'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_category', 'product_description',
+    'drawing', 'grade', 'width', 'thickness', 'technical_requirements', 'end_use', 'delivery_form', 'quantity_text',
 ]
 
 
@@ -57,10 +57,12 @@ WHATSAPP_QUERY_QUESTIONS = {
     'contact_email': "Thanks! What's the best email address to send your quote to?",
     'gst_number': "Please share your GST details: your GST number (GSTIN) and the address registered under it.",
     'gst_address': "Thanks! And the address registered under your GST?",
+    'product_category': "Which product type do you need? Tap the button below and choose one.",
     'product_description': "Your requirements, please.",
     'drawing': "Please attach a drawing with detailed dimensions, or a photo of a sample. You can send an image or PDF here, or reply 'no' if you don't have one.",
     'grade': "Which grade of material do you require?",
-    'size': "What size do you need, in mm? Please reply with the number, for example 12 or 1.2.",
+    'width': "What width do you need, in mm? Please reply with the number, for example 50 or 12.5.",
+    'thickness': "And the thickness, in mm? Please reply with the number, for example 6 or 1.2.",
     'technical_requirements': "Any particular make, mechanical properties or processes to be carried out? Reply 'no' if none.",
     'end_use': "What is the end use of the material?",
     'delivery_form': "In what form do you need the material delivered?",
@@ -78,9 +80,11 @@ WHATSAPP_QUERY_CHOICES = {
 }
 
 
-WHATSAPP_SIZE_INVALID_MESSAGE = (
-    "I couldn't read a size in that. Please reply with the size in mm as a number, for example 12 or 1.2."
-)
+# Width and thickness are both asked, one per message, and both must be a number of mm.
+WHATSAPP_DIMENSION_INVALID_MESSAGES = {
+    'width': "I couldn't read a width in that. Please reply with the width in mm as a number, for example 50 or 12.5.",
+    'thickness': "I couldn't read a thickness in that. Please reply with the thickness in mm as a number, for example 6 or 1.2.",
+}
 
 WHATSAPP_GST_INVALID_MESSAGE = (
     "I couldn't find a valid 15-character GST number in that (for example 22AAAAA0000A1Z5). "
@@ -167,6 +171,46 @@ def _send_whatsapp_buttons_message(phone, text, choices):
     })
 
 
+# Meta allows at most 10 rows in a list message, a row title up to 24 characters
+# and the opening button up to 20.
+WHATSAPP_LIST_MAX_ROWS = 10
+WHATSAPP_LIST_TITLE_MAX = 24
+WHATSAPP_CATEGORY_ROW_PREFIX = 'category:'
+
+
+def _send_whatsapp_list_message(phone, text, button_label, rows):
+    """A question with a tappable list (for more answers than the 3 reply buttons
+    allow). `rows` is [(id, title, description), ...]. Like free-form text, only
+    usable inside the 24-hour window the customer's own reply opened. A tap comes
+    back as an interactive list_reply carrying the row's id and title."""
+    _whatsapp_graph_request({
+        "messaging_product": "whatsapp", "to": phone, "type": "interactive",
+        "interactive": {
+            "type": "list",
+            "body": {"text": text},
+            "action": {"button": button_label, "sections": [{
+                "title": "Product types",
+                "rows": [{"id": row_id, "title": title, "description": description} for row_id, title, description in rows],
+            }]},
+        },
+    })
+
+
+def _product_category_rows():
+    """The product types as list rows — the title is cut to fit Meta's limit, the
+    description carries the full name. None when there are too many for one list
+    (the customer is then asked to type the name instead)."""
+    categories = list(ProductCategory.objects.all())
+    if not categories or len(categories) > WHATSAPP_LIST_MAX_ROWS:
+        return None
+    return [
+        (f"{WHATSAPP_CATEGORY_ROW_PREFIX}{c.pk}",
+         c.name if len(c.name) <= WHATSAPP_LIST_TITLE_MAX else c.name[:WHATSAPP_LIST_TITLE_MAX - 1] + '…',
+         c.name)
+        for c in categories
+    ]
+
+
 def _send_whatsapp_text_message_background(phone, text):
     """Fire-and-forget a follow-up question from inside the webhook. Meta
     expects a fast ack on every delivery — waiting on the Graph API's own
@@ -198,10 +242,27 @@ def _send_whatsapp_buttons_message_background(phone, text, choices):
     return thread
 
 
+def _send_whatsapp_list_message_background(phone, text, button_label, rows):
+    """Same fire-and-forget contract as _send_whatsapp_text_message_background."""
+    def _send():
+        try:
+            _send_whatsapp_list_message(phone, text, button_label, rows)
+        except WhatsAppSendError as e:
+            logger.warning("WhatsApp follow-up send to %s failed: %s", phone, e)
+    thread = threading.Thread(target=_send, daemon=True)
+    thread.start()
+    return thread
+
+
 def _send_whatsapp_question(phone, field):
-    """Send `field`'s question — as buttons if it has a fixed set of answers,
-    as plain text otherwise."""
+    """Send `field`'s question — as a tappable list for the product type, as
+    buttons if it has a few fixed answers, as plain text otherwise."""
     text = WHATSAPP_QUERY_QUESTIONS[field]
+    if field == 'product_category':
+        rows = _product_category_rows()
+        if rows:
+            return _send_whatsapp_list_message_background(phone, text, "Choose type", rows)
+        return _send_whatsapp_text_message_background(phone, "Which product type do you need? Please type its name.")
     choices = WHATSAPP_QUERY_CHOICES.get(field)
     if choices:
         return _send_whatsapp_buttons_message_background(phone, text, choices)
@@ -257,13 +318,19 @@ def _parse_whatsapp_gst_details(text):
 
 
 def _detect_product_category(text):
-    """The product type (Round Bright Bar, Flat Wire, ...) a customer's answer
-    names, or None. A type counts when its full name appears in the text; a
-    shorter name inside a longer match is dropped ("Half Round Bright Bar"
-    contains "Round Bright Bar"), and if what's left is more than one type the
-    answer is ambiguous and matches nothing — staff pick it instead."""
+    """The product type (Flat Bright Bar, Cold Rolled Strip, ...) a customer's answer
+    names, or None. A type counts when its full name appears in the text (a name
+    written "Profile/Shaped Bright Bar" is also matched as "profile bright bar" or
+    "shaped bright bar"); a shorter name inside a longer match is dropped, and if
+    what's left is more than one type the answer is ambiguous and matches nothing —
+    staff pick it instead."""
     lowered = re.sub(r'\s+', ' ', (text or '').lower())
-    found = [c for c in ProductCategory.objects.all() if c.name.lower() in lowered]
+
+    def phrases(name):
+        name = name.lower()
+        return {name, re.sub(r'(\w+)/(\w+)', r'\1', name), re.sub(r'(\w+)/(\w+)', r'\2', name)}
+
+    found = [c for c in ProductCategory.objects.all() if any(p in lowered for p in phrases(c.name))]
     names = [c.name.lower() for c in found]
     kept = [c for c in found if not any(c.name.lower() != other and c.name.lower() in other for other in names)]
     return kept[0] if len(kept) == 1 else None
@@ -281,14 +348,14 @@ def _parse_whatsapp_delivery_form(text):
     return 'Coil' if has_coil else 'Bar'
 
 
-_SIZE_NUMBER = re.compile(r'\d+(?:[.,]\d+)?')
+_DIMENSION_NUMBER = re.compile(r'\d+(?:[.,]\d+)?')
 
 
-def _parse_whatsapp_size(text):
-    """The size in mm from a reply like "12", "1.2 mm" or "12,5 mm round" (the first
+def _parse_whatsapp_dimension(text):
+    """A width or thickness in mm from a reply like "12", "1.2 mm" or "12,5 mm round" (the first
     number; a comma is read as a decimal point), or None if there isn't a usable one:
-    it must be above 0, have at most 3 decimals, and fit the Query.size field."""
-    match = _SIZE_NUMBER.search(text or '')
+    it must be above 0, have at most 3 decimals, and fit the Query width/thickness fields."""
+    match = _DIMENSION_NUMBER.search(text or '')
     if not match:
         return None
     try:
@@ -439,6 +506,11 @@ def _process_whatsapp_change(value):
             interactive = msg.get("interactive") or {}
             reply = interactive.get("button_reply") or interactive.get("list_reply") or {}
             title = (reply.get("title") or "").strip()
+            reply_id = reply.get("id") or ""
+            if reply_id.startswith(WHATSAPP_CATEGORY_ROW_PREFIX):   # a product type row: its title may be cut short
+                category = ProductCategory.objects.filter(pk=reply_id[len(WHATSAPP_CATEGORY_ROW_PREFIX):] or 0).first() \
+                    if reply_id[len(WHATSAPP_CATEGORY_ROW_PREFIX):].isdigit() else None
+                title = category.name if category else title
             if title:
                 _route_whatsapp_message(phone, title, profile_name)
         elif msg_type in ("image", "document"):
@@ -611,17 +683,24 @@ def _process_whatsapp_answer(query_pk, text):
                 return
             query.delivery_form = parsed
             changed = ['delivery_form']
-        elif field == 'size':
-            parsed = _parse_whatsapp_size(text)
+        elif field in WHATSAPP_DIMENSION_INVALID_MESSAGES:   # width, thickness
+            parsed = _parse_whatsapp_dimension(text)
             if parsed is None:
-                _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_SIZE_INVALID_MESSAGE)
+                _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_DIMENSION_INVALID_MESSAGES[field])
                 return
-            query.size = parsed
-            changed = ['size']
-            if len(_SIZE_NUMBER.findall(text)) > 1:   # e.g. "10 and 12 mm": keep the first, show staff the rest
+            setattr(query, field, parsed)
+            changed = [field]
+            if len(_DIMENSION_NUMBER.findall(text)) > 1:   # e.g. "10 and 12 mm": keep the first, show staff the rest
                 stamp = timezone.now().strftime('%d %b %H:%M')
-                query.notes = f"{query.notes}\n[{stamp}] Size reply: {text.strip()}".strip()
+                query.notes = f"{query.notes}\n[{stamp}] {field.capitalize()} reply: {text.strip()}".strip()
                 changed.append('notes')
+        elif field == 'product_category':
+            detected = _detect_product_category(text)
+            if detected is None:
+                _send_whatsapp_question(query.contact_phone, 'product_category')
+                return
+            query.product_category = detected
+            changed = ['product_category']
         elif field == 'contact_email':
             candidate = text.strip()
             if not _is_valid_whatsapp_email(candidate):
@@ -644,12 +723,6 @@ def _process_whatsapp_answer(query_pk, text):
                 if kg is not None:
                     query.quantity = kg
                     changed.append('quantity')
-            if field == 'product_description' and not query.product_category_id:
-                # "Your requirements" is where they name the product type.
-                detected = _detect_product_category(text)
-                if detected:
-                    query.product_category = detected
-                    changed.append('product_category')
         query.save(update_fields=changed)
 
         _advance_whatsapp_query(query)

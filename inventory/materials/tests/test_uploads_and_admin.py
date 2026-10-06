@@ -101,7 +101,7 @@ class AdminSmokeTests(TestCase):
         cls.addClassCleanup(cls._media.cleanup)
         with override_settings(MEDIA_ROOT=Path(cls._media.name)):
             customer = Customer.objects.create(name='Admin Smoke Co', email='a@example.com')
-            product = ProductType.objects.create(item_code='Smoke Bar', grade='EN8D', size='1.200')
+            product = ProductType.objects.create(item_code='Smoke Bar', grade='EN8D')
             ProcessStep.objects.create(product_type=product, name='Cutting', order=1)
             AllowedCoilSpec.objects.create(product_type=product, grade='EN8D', size='1.200')
             GradeOption.objects.create(name='EN8D')

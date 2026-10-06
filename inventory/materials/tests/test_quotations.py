@@ -44,13 +44,25 @@ class QuotationFormDispatchTests(TestCase):
         data = self._item_data()
         data.update({
             'item-TOTAL_FORMS': '2',
-            'item-1-description': 'Steel Chamfer', 'item-1-quantity': '500',
+            'item-1-description': 'Steel Chamfer', 'item-1-width': '10', 'item-1-thickness': '14', 'item-1-quantity': '500',
             'item-1-rate_per_kg': '140.00', 'item-1-unit': 'KGS',
         })
         self.client.post(f"{reverse('quotation_form')}?customer={self.customer.pk}", data)
         quotation = Quotation.objects.get(customer=self.customer)
         self.assertEqual(quotation.line_items.count(), 2)
         self.assertEqual(quotation.subtotal(), Decimal('10') * Decimal('85.50') + Decimal('500') * Decimal('140.00'))
+
+    def test_width_and_thickness_are_required_to_send_and_are_saved(self):
+        self.client.force_login(self.staff)
+        for field in ('width', 'thickness'):
+            with self.subTest(field=field):
+                response = self.client.post(
+                    f"{reverse('quotation_form')}?customer={self.customer.pk}", self._item_data(**{f'item-0-{field}': ''}))
+                self.assertEqual(response.status_code, 200)   # form redisplayed, not sent
+                self.assertFalse(Quotation.objects.exists())
+        self.client.post(f"{reverse('quotation_form')}?customer={self.customer.pk}", self._item_data())
+        item = QuotationLineItem.objects.get()
+        self.assertEqual((item.width, item.thickness), (Decimal('50'), Decimal('6')))
 
     def test_new_customer_form_prefilled_from_get_params(self):
         """'Send Form to Them' on the Orders dashboard carries the already-
@@ -388,17 +400,17 @@ class QuotationDraftTests(TestCase):
 
 
 class QuotationPdfTests(TestCase):
-    def _make_quotation(self, customer, rate_per_kg, grade='', size=None):
+    def _make_quotation(self, customer, rate_per_kg, grade='', width=None, thickness=None):
         quotation = Quotation.objects.create(customer=customer)
         QuotationLineItem.objects.create(
             quotation=quotation, order=1, description=grade or 'Item',
-            grade=grade, size=size, quantity=Decimal('1'), unit='KGS', rate_per_kg=rate_per_kg,
+            grade=grade, width=width, thickness=thickness, quantity=Decimal('1'), unit='KGS', rate_per_kg=rate_per_kg,
         )
         return quotation
 
     def test_generate_quotation_pdf_returns_a_real_pdf(self):
         customer = Customer.objects.create(name='PDF Test Co', email='pdf@example.com')
-        quotation = self._make_quotation(customer, Decimal('99.99'), grade='EN8D', size=Decimal('1.200'))
+        quotation = self._make_quotation(customer, Decimal('99.99'), grade='EN8D', width=Decimal('50'), thickness=Decimal('6'))
         pdf_bytes = generate_quotation_pdf(quotation)
         self.assertTrue(pdf_bytes.startswith(b'%PDF'))
         self.assertGreater(len(pdf_bytes), 0)
@@ -466,19 +478,19 @@ class QuotationPdfSignatureTests(TestCase):
 
 
 class ProductCodeMatchingTests(TestCase):
-    """A product code depends on product type + grade + size, and the quote
+    """A product code depends on product type + grade (size plays no part), and the quote
     maker matches it — the owner doesn't choose a code."""
 
     def setUp(self):
         self.staff = User.objects.create_user('match_staff', password='pw', is_staff=True)
         self.client.force_login(self.staff)
         self.customer = Customer.objects.create(name='Match Co', email='match@example.com')
-        self.round_bar = ProductCategory.objects.get(name='Round Bright Bar')
-        self.hex_bar = ProductCategory.objects.get(name='Hexagonal Bright Bar')
-        self.flat_wire = ProductCategory.objects.get(name='Flat Wire')
-        self.round_code = ProductType.objects.create(item_code='RB-EN8D-12', category=self.round_bar, grade='EN8D', size='12.000')
-        self.hex_code = ProductType.objects.create(item_code='HB-EN8D-12', category=self.hex_bar, grade='EN8D', size='12.000')
-        self.wire_code = ProductType.objects.create(item_code='FW-SS304-2', category=self.flat_wire, grade='SS304', size='2.000')
+        self.round_bar = ProductCategory.objects.get(name='Square Bright Bar')
+        self.hex_bar = ProductCategory.objects.get(name='Triangle Bright Bar')
+        self.flat_wire = ProductCategory.objects.get(name='Cold Rolled Strip')
+        self.round_code = ProductType.objects.create(item_code='RB-EN8D-12', category=self.round_bar, grade='EN8D')
+        self.hex_code = ProductType.objects.create(item_code='HB-EN8D-12', category=self.hex_bar, grade='EN8D')
+        self.wire_code = ProductType.objects.create(item_code='FW-SS304-2', category=self.flat_wire, grade='SS304')
 
     def _send(self, action='send', **item):
         data = quotation_item_post_data(**{f'item-0-{k}': v for k, v in item.items()}, **{'action': action})
@@ -486,28 +498,28 @@ class ProductCodeMatchingTests(TestCase):
             self.client.post(f"{reverse('quotation_form')}?customer={self.customer.pk}", data)
         return QuotationLineItem.objects.order_by('-pk').first()
 
-    def test_the_code_is_matched_from_type_grade_and_size(self):
-        self.assertEqual(self._send(category=str(self.round_bar.pk), grade='EN8D', size='12').product_type, self.round_code)
+    def test_the_code_is_matched_from_type_and_grade(self):
+        self.assertEqual(self._send(category=str(self.round_bar.pk), grade='EN8D').product_type, self.round_code)
 
-    def test_the_same_grade_and_size_gives_a_different_code_for_a_different_type(self):
-        line = self._send(category=str(self.hex_bar.pk), grade='EN8D', size='12')
+    def test_the_same_grade_gives_a_different_code_for_a_different_type(self):
+        line = self._send(category=str(self.hex_bar.pk), grade='EN8D')
         self.assertEqual(line.product_type, self.hex_code)
         self.assertEqual(line.category, self.hex_bar)
 
-    def test_without_a_type_an_ambiguous_grade_and_size_matches_nothing(self):
-        self.assertIsNone(self._send(grade='EN8D', size='12').product_type)
+    def test_without_a_type_an_ambiguous_grade_matches_nothing(self):
+        self.assertIsNone(self._send(grade='EN8D').product_type)
 
-    def test_without_a_type_a_grade_and_size_only_one_code_has_still_matches(self):
-        self.assertEqual(self._send(grade='ss304', size='2').product_type, self.wire_code)
+    def test_without_a_type_a_grade_only_one_code_has_still_matches(self):
+        self.assertEqual(self._send(grade='ss304').product_type, self.wire_code)
 
-    def test_sending_for_a_type_grade_and_size_with_no_code_is_refused_not_created(self):
+    def test_sending_for_a_type_and_grade_with_no_code_is_refused_not_created(self):
         before = ProductType.objects.count()
-        self._send(category=str(self.flat_wire.pk), grade='EN8D', size='12')
+        self._send(category=str(self.flat_wire.pk), grade='EN8D')
         self.assertEqual(ProductType.objects.count(), before)   # quotes never create codes
         self.assertFalse(QuotationLineItem.objects.exists())   # and the send was refused
 
     def test_saving_a_draft_for_such_a_combination_leaves_the_code_unassigned(self):
-        line = self._send(action='save_draft', category=str(self.flat_wire.pk), grade='EN8D', size='12')
+        line = self._send(action='save_draft', category=str(self.flat_wire.pk), grade='EN8D')
         self.assertIsNone(line.product_type)
 
     def test_a_code_picked_by_hand_is_never_overridden(self):
@@ -515,37 +527,40 @@ class ProductCodeMatchingTests(TestCase):
         self.assertEqual(line.product_type, self.wire_code)
 
     def test_save_draft_matches_the_code_too(self):
-        line = self._send(action='save_draft', category=str(self.hex_bar.pk), grade='EN8D', size='12')
+        line = self._send(action='save_draft', category=str(self.hex_bar.pk), grade='EN8D')
         self.assertEqual(line.product_type, self.hex_code)
 
-    def test_grade_size_and_quantity_the_bot_collected_are_in_the_quote_form(self):
+    def test_grade_width_thickness_and_quantity_the_bot_collected_are_in_the_quote_form(self):
         query = Query.objects.create(source='whatsapp', contact_phone='9123456780', company_name='Bot Co',
-                                     product_category=self.hex_bar, grade='EN-8D', size='12.000', quantity='8000')
+                                     product_category=self.hex_bar, grade='EN-8D', width='50.000', thickness='6.000', quantity='8000')
         response = self.client.get(f"{reverse('quotation_form')}?query={query.pk}")
         initial = response.context['formset'].forms[0].initial
         self.assertEqual(initial['grade'], 'EN-8D')
-        self.assertEqual(initial['size'], Decimal('12.000'))
+        self.assertEqual(initial['width'], Decimal('50.000'))
+        self.assertEqual(initial['thickness'], Decimal('6.000'))
         self.assertEqual(initial['quantity'], Decimal('8000'))
         html = response.content.decode()
         self.assertIn('value="EN-8D"', html)
-        self.assertIn('value="12.000"', html)
+        self.assertIn('value="50.000"', html)
+        self.assertIn('value="6.000"', html)
         self.assertIn('value="8000.000"', html)
         detail = self.client.get(reverse('query_detail', kwargs={'pk': query.pk})).content.decode()
-        self.assertIn('12.000 mm', detail)
+        self.assertIn('50.000 mm', detail)
+        self.assertIn('6.000 mm', detail)
         self.assertIn('8000', detail)
 
-    def test_the_form_prefills_the_product_type_from_the_query_and_the_owner_fills_the_size(self):
+    def test_the_form_prefills_the_product_type_from_the_query(self):
         query = Query.objects.create(source='indiamart', contact_phone='9123456780', company_name='Match Co',
                                      product_category=self.hex_bar, grade='EN8D')
         response = self.client.get(f"{reverse('quotation_form')}?query={query.pk}")
         self.assertEqual(response.context['formset'].forms[0].initial['category'], self.hex_bar.pk)
         html = response.content.decode()
-        self.assertRegex(html, rf'<option value="{self.hex_bar.pk}"\s+selected>Hexagonal Bright Bar</option>')
+        self.assertRegex(html, rf'<option value="{self.hex_bar.pk}"\s+selected>Triangle Bright Bar</option>')
 
-    def test_the_form_embeds_the_type_grade_size_map_for_live_matching(self):
+    def test_the_form_embeds_the_type_and_grade_map_for_live_matching(self):
         response = self.client.get(reverse('quotation_form'))
         by_pk = {entry['pk']: entry for entry in response.context['product_code_map']}
-        self.assertEqual(by_pk[self.hex_code.pk], {'pk': self.hex_code.pk, 'category': self.hex_bar.pk, 'grade': 'en8d', 'size': '12.000'})
+        self.assertEqual(by_pk[self.hex_code.pk], {'pk': self.hex_code.pk, 'category': self.hex_bar.pk, 'grade': 'en8d'})
 
     def test_the_form_labels_say_product_type_and_product_code(self):
         html = self.client.get(reverse('quotation_form')).content.decode()

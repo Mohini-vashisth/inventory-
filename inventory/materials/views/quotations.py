@@ -53,21 +53,17 @@ def _resolve_quotation_customer(customer_name, query, existing_customer, email, 
 
 @staff_required(on_denied=lambda request: JsonResponse({'error': 'forbidden'}, status=403))
 def product_code_lookup(request):
-    """For the quote form's live preview: given a product type, grade and size, the
-    existing product code, or the one sending the quote would create, or why none
-    can be (see product_codes.describe_product_code). Read-only."""
+    """For the quote form's live preview: given a product type and grade, the existing
+    product code, or the one the admin would create, or why none can be (see
+    product_codes.describe_product_code). Read-only."""
     try:
         category = ProductCategory.objects.filter(pk=int(request.GET.get('category', ''))).first()
     except ValueError:
         category = None
-    try:
-        size = Decimal(request.GET.get('size', ''))
-    except InvalidOperation:
-        size = None
     grade = request.GET.get('grade', '').strip()
-    result = describe_product_code(category, grade, size)
-    if category and grade and size is not None and not result['exists']:
-        result['add_url'] = _admin_add_code_url(category, grade, size)   # for "add it in the admin"
+    result = describe_product_code(category, grade)
+    if category and grade and not result['exists']:
+        result['add_url'] = _admin_add_code_url(category, grade)   # for "add it in the admin"
     return JsonResponse(result)
 
 
@@ -85,35 +81,35 @@ def _saved_values(form, is_draft):
 
 def _autofill_product_codes(item_dicts):
     """Give each item its product code without the owner choosing one: a code is its
-    product type + grade + size, so once those are filled in the catalogue's code is
+    product type + grade, so once those are filled in the catalogue's code is
     matched. A code picked by hand is never overridden. Quotes never create codes —
     a missing one is added by the admin first (see _items_missing_a_code)."""
     for item in item_dicts:
         if not item.get('product_type'):
-            item['product_type'] = _match_product_type(item.get('grade'), item.get('size'), item.get('category'))
+            item['product_type'] = _match_product_type(item.get('grade'), item.get('category'))
 
 
-def _admin_add_code_url(category, grade, size):
-    """The admin's Add product code page with this type, grade and size already filled in
+def _admin_add_code_url(category, grade):
+    """The admin's Add product code page with this type and grade already filled in
     (the page then generates the item code itself)."""
     return reverse('admin:materials_producttype_add') + '?' + urlencode(
-        {'category': category.pk, 'grade': grade, 'size': size})
+        {'category': category.pk, 'grade': grade})
 
 
 def _items_missing_a_code(item_dicts):
-    """What stops a quote being sent: items where the owner picked a product type, grade
-    and size but the catalogue has no code for that combination yet.
+    """What stops a quote being sent: items where the owner picked a product type and
+    grade but the catalogue has no code for that combination yet.
     [{'label', 'url'}] with `url` the admin's prefilled Add product code page. An item
     with no (or only part of a) spec isn't blocked — it simply has no code, which is
     assigned when its order is confirmed."""
     missing = []
     for item in item_dicts:
-        category, grade, size = item.get('category'), (item.get('grade') or '').strip(), item.get('size')
-        if item.get('product_type') or not (category and grade and size is not None):
+        category, grade = item.get('category'), (item.get('grade') or '').strip()
+        if item.get('product_type') or not (category and grade):
             continue
         missing.append({
-            'label': f"{category.name} · {grade} · {size:g} mm",
-            'url': _admin_add_code_url(category, grade, size),
+            'label': f"{category.name} · {grade}",
+            'url': _admin_add_code_url(category, grade),
         })
     return missing
 
@@ -150,7 +146,8 @@ def _parse_draft_line_items(post_data):
             'category': category,
             'product_type': product_type,
             'grade': canonical_grade(post_data.get(prefix + 'grade', '')),
-            'size': _dec(post_data.get(prefix + 'size')),
+            'width': _dec(post_data.get(prefix + 'width')),
+            'thickness': _dec(post_data.get(prefix + 'thickness')),
             'quantity': _dec(post_data.get(prefix + 'quantity')),
             'unit': post_data.get(prefix + 'unit', '').strip() or 'KGS',
             'rate_per_kg': _dec(post_data.get(prefix + 'rate_per_kg')),
@@ -283,7 +280,7 @@ def quotation_form(request, pk=None):
             item_initial = [
                 {
                     'description': item.description, 'category': item.category_id, 'product_type': item.product_type_id,
-                    'grade': item.grade, 'size': item.size, 'quantity': item.quantity,
+                    'grade': item.grade, 'width': item.width, 'thickness': item.thickness, 'quantity': item.quantity,
                     'unit': item.unit, 'rate_per_kg': item.rate_per_kg, 'discount_pct': item.discount_pct,
                     'hsn_sac': item.hsn_sac, 'gst_pct': item.gst_pct, 'tool_cost': item.tool_cost, 'moq': item.moq,
                 }
@@ -300,7 +297,8 @@ def quotation_form(request, pk=None):
                     'category': query.product_category_id,
                     'product_type': query.product_type_id,
                     'grade': query.grade,
-                    'size': query.size,
+                    'width': query.width,
+                    'thickness': query.thickness,
                     'quantity': query.quantity or Decimal('1'),
                 }]
             elif not existing_customer:
@@ -329,10 +327,10 @@ def quotation_form(request, pk=None):
         formset = QuotationLineItemFormSet(initial=item_initial, prefix='item')
 
     return render(request, 'materials/quotation_form.html', {
-        # product type + grade + size -> product code, for the form's live auto-match (see _autofill_product_codes)
+        # product type + grade -> product code, for the form's live auto-match (see _autofill_product_codes)
         'product_code_map': [
-            {'pk': pt.pk, 'category': pt.category_id, 'grade': grade_key(pt.grade), 'size': f"{pt.size:.3f}"}
-            for pt in ProductType.objects.exclude(size=None)
+            {'pk': pt.pk, 'category': pt.category_id, 'grade': grade_key(pt.grade)}
+            for pt in ProductType.objects.all()
         ],
         'grade_options': list(GradeOption.objects.values_list('name', flat=True)),
         'form': form,

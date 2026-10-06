@@ -100,7 +100,8 @@
             <span><b>Product type</b> {{ item.category.name|default:"—" }}</span>
             <span><b>Product code</b> {% if item.product_type %}{{ item.product_type.item_code }}{% else %}To be assigned{% endif %}</span>
             <span><b>Grade</b> {{ item.grade|default:"—" }}</span>
-            <span><b>Size</b> {% if item.size %}{{ item.size }} mm{% else %}—{% endif %}</span>
+            <span><b>Width</b> {% if item.width %}{{ item.width }} mm{% else %}—{% endif %}</span>
+            <span><b>Thickness</b> {% if item.thickness %}{{ item.thickness }} mm{% else %}—{% endif %}</span>
           </div>
         </div>
         {{ item_form.line_item }}
@@ -137,9 +138,14 @@
                  value="{{ post.grade|default:'' }}">
         </div>
         <div class="form-group">
-          <label>Size (mm)</label>
-          <input type="number" name="size" id="q-size" step="0.001" min="0" placeholder="e.g. 2.500"
-                 value="{{ post.size|default:'' }}">
+          <label>Width (mm)</label>
+          <input type="number" name="width" id="q-width" step="0.001" min="0" placeholder="e.g. 50"
+                 value="{{ post.width|default:'' }}">
+        </div>
+        <div class="form-group">
+          <label>Thickness (mm)</label>
+          <input type="number" name="thickness" id="q-thickness" step="0.001" min="0" placeholder="e.g. 6"
+                 value="{{ post.thickness|default:'' }}">
         </div>
         <div class="form-group">
           <label>Specific Mill Make</label>

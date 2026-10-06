@@ -26,7 +26,7 @@ def order_dashboard(request):
     customers = Customer.objects.order_by('name')
     product_types = ProductType.objects.order_by('item_code')
     product_type_data = {
-        str(pt.pk): {'grade': pt.grade, 'size': str(pt.size) if pt.size else ''}
+        str(pt.pk): {'grade': pt.grade}
         for pt in product_types
     }
     error = None
@@ -153,11 +153,11 @@ def quote_form(request, token):
 
     The customer never chooses a product code. When a quotation has been sent
     to them, each quoted item gets its own block with its product code, grade
-    and size shown but locked — the server reads those from the quotation line
+    and width and thickness shown but locked — the server reads those from the quotation line
     item, never from the posted data — and submitting creates one order per
     quoted item. With no quotation to read from (an old link sent before
     quotes existed), the form falls back to a single free-form order, and the
-    product code is matched from the grade and size they type."""
+    product code is matched from the grade they type."""
     customer = get_object_or_404(Customer, quote_token=token)
     # The query (if any) that led to this quote being sent.
     query = Query.objects.filter(customer=customer, status='quote_sent').order_by('-created_at').first()
@@ -195,9 +195,10 @@ def quote_form(request, token):
                         order = item_form.save(commit=False)
                         order.customer = customer
                         order.source_query = query
-                        order.product_type = item.product_type or _match_product_type(item.grade, item.size, item.category)
+                        order.product_type = item.product_type or _match_product_type(item.grade, item.category)
                         order.grade = item.grade
-                        order.size = item.size
+                        order.width = item.width
+                        order.thickness = item.thickness
                         order.status = 'pending'
                         order.save()
                         if po_bytes is not None:
@@ -218,7 +219,7 @@ def quote_form(request, token):
             order = form.save(commit=False)
             order.customer = customer
             order.source_query = query
-            order.product_type = _match_product_type(order.grade, order.size)
+            order.product_type = _match_product_type(order.grade)
             order.status = 'pending'
             order.save()
             return _finish(query)
@@ -228,7 +229,8 @@ def quote_form(request, token):
         initial = {
             **from_query,
             'grade': query.grade,
-            'size': str(query.size) if query.size is not None else '',
+            'width': str(query.width) if query.width is not None else '',
+            'thickness': str(query.thickness) if query.thickness is not None else '',
             'quantity': str(query.quantity) if query.quantity is not None else '',
             'notes': query.notes,
         }

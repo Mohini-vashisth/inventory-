@@ -147,7 +147,7 @@ class EmployeePortalPageTests(TestCase):
 
     def test_production_board_shows_only_in_production_orders(self):
         customer = Customer.objects.create(name='Board Co')
-        product_type = ProductType.objects.create(item_code='Bar', grade='EN8D', size='1.200')
+        product_type = ProductType.objects.create(item_code='Bar', grade='EN8D')
         ProcessStep.objects.create(product_type=product_type, name='Cutting', order=1)
 
         in_prod_order = Order.objects.create(customer=customer, quantity=10, status='in_production')

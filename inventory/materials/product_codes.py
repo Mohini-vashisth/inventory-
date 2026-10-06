@@ -1,38 +1,23 @@
-"""Product codes: product type + grade + size, written as e.g. FBB00100120.
+"""Product codes: product type + grade, written as e.g. FBB009.
 
     FBB      the product type's 3 letters (Flat Bright Bar)
-    001      the grade's number (EN8D)
-    00120    the size in hundredths of a mm (1.2 mm)
+    009      the grade's number (EN-8D)
+
+Size is not part of a code: width and thickness vary per order, so they are
+recorded on the query, quote line and order instead.
 
 This is the only place that knows the format. Codes are created by the admin in
-the Django admin (the Add product code form fills Item Code from these three
-and a script keeps it live); quotes only ever *look codes up* and refuse to be
-sent until the code for each item exists.
+the Django admin (the Add product code form fills Item Code from these two and a
+script keeps it live); quotes only ever *look codes up* and refuse to be sent
+until the code for each item exists.
 """
 import re
-from decimal import Decimal, InvalidOperation
 
 from django.db.models import Max
 
 from .models import GradeOption, ProductType
 
 MAX_GRADE_NUMBER = 999
-MAX_SIZE_HUNDREDTHS = 99999   # 999.99 mm
-
-
-def size_digits(size):
-    """The 5-digit size part (1.2 mm -> '00120'), or None when the size can't be
-    written exactly: not positive, over 999.99 mm, or finer than 0.01 mm (two
-    different sizes would otherwise share a code)."""
-    if size is None:
-        return None
-    try:
-        hundredths = Decimal(size) * 100
-    except (InvalidOperation, TypeError, ValueError):
-        return None
-    if hundredths != hundredths.to_integral_value() or not (0 < hundredths <= MAX_SIZE_HUNDREDTHS):
-        return None
-    return f"{int(hundredths):05d}"
 
 
 def grade_key(grade):
@@ -50,10 +35,10 @@ def find_grade_option(grade):
     return next((o for o in GradeOption.objects.order_by('pk') if grade_key(o.name) == key), None)
 
 
-def find_product_code(category, grade, size, exclude_pk=None):
-    """The existing code for this type + grade + size, whichever way the grade is spelled."""
+def find_product_code(category, grade, exclude_pk=None):
+    """The existing code for this type + grade, whichever way the grade is spelled."""
     key = grade_key(grade)
-    candidates = ProductType.objects.exclude(pk=exclude_pk).filter(category=category, size=size)
+    candidates = ProductType.objects.exclude(pk=exclude_pk).filter(category=category)
     return next((c for c in candidates if grade_key(c.grade) == key), None)
 
 
@@ -70,43 +55,37 @@ def _next_grade_number():
     return (GradeOption.objects.aggregate(Max('number'))['number__max'] or 0) + 1
 
 
-def _find_code(category, grade, size):
-    return find_product_code(category, grade, size)
-
-
-def _why_not(category, grade, size):
+def _why_not(category, grade):
     """Why a code can't be generated for this combination, or '' if it can."""
     if not category.code:
         return f"The product type {category.name} has no 3-letter code yet - set it in the admin."
     if len(grade.strip()) > 20:
         return "The grade is longer than 20 characters."
-    if size_digits(size) is None:
-        return "An automatic code needs a size above 0 up to 999.99 mm, with at most 2 decimals."
     existing = find_grade_option(grade)
     if (existing is None or existing.number is None) and _next_grade_number() > MAX_GRADE_NUMBER:
         return "All 999 grade numbers are in use."
     return ""
 
 
-def _build(category, grade_number, size):
-    return f"{category.code}{grade_number:03d}{size_digits(size)}"
+def _build(category, grade_number):
+    return f"{category.code}{grade_number:03d}"
 
 
-def describe_product_code(category, grade, size):
-    """What the quote form shows once type, grade and size are filled in:
+def describe_product_code(category, grade):
+    """What the quote form shows once type and grade are filled in:
     {'exists', 'item_code', 'reason'} - the existing code, or the code that
     sending the quote would create, or why none can be."""
-    if not (category and grade and grade.strip() and size is not None):
+    if not (category and grade and grade.strip()):
         return {'exists': False, 'item_code': None, 'reason': ''}
-    existing = _find_code(category, grade, size)
+    existing = find_product_code(category, grade)
     if existing:
         return {'exists': True, 'item_code': existing.item_code, 'reason': ''}
-    reason = _why_not(category, grade, size)
+    reason = _why_not(category, grade)
     if reason:
         return {'exists': False, 'item_code': None, 'reason': reason}
     option = find_grade_option(grade)
     number = option.number if option and option.number is not None else _next_grade_number()
-    return {'exists': False, 'item_code': _build(category, number, size), 'reason': ''}
+    return {'exists': False, 'item_code': _build(category, number), 'reason': ''}
 
 
 def _grade_number(grade):
@@ -129,22 +108,22 @@ def _unique_item_code(base, exclude_pk=None):
     return item_code
 
 
-def item_code_for(category, grade, size, exclude_pk=None):
+def item_code_for(category, grade, exclude_pk=None):
     """For the admin's Add/Change product code form when Item Code is left blank:
     (item_code, '') for the code to use, or (None, reason). A combination that
     already has a code is refused rather than duplicated (`exclude_pk` is the code
     being edited, which doesn't count as a duplicate of itself)."""
-    if not (category and grade and grade.strip() and size is not None):
-        return None, "Pick a product type and fill in grade and size, or type an item code yourself."
-    existing = find_product_code(category, grade, size, exclude_pk)
+    if not (category and grade and grade.strip()):
+        return None, "Pick a product type and fill in the grade, or type an item code yourself."
+    existing = find_product_code(category, grade, exclude_pk)
     if existing:
-        return None, f"A product code for this type, grade and size already exists: {existing.item_code}."
-    reason = _why_not(category, grade, size)
+        return None, f"A product code for this type and grade already exists: {existing.item_code}."
+    reason = _why_not(category, grade)
     if reason:
         return None, reason
     option = find_grade_option(grade)
     number = option.number if option and option.number is not None else _next_grade_number()
-    return _unique_item_code(_build(category, number, size), exclude_pk), ""
+    return _unique_item_code(_build(category, number), exclude_pk), ""
 
 
 def reserve_grade_number(grade):

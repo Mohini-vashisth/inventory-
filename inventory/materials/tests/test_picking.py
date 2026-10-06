@@ -28,7 +28,7 @@ class OrderCoilPickCreationTests(TestCase):
             date='2026-07-01', grade='EN8D', size='1.2',
             company='Tata Steel', vendor='ABC Traders', quantity=500, heat_no='H001',
         )
-        self.product_type = ProductType.objects.create(item_code='Bar 1.2mm', grade='EN8D', size='1.2')
+        self.product_type = ProductType.objects.create(item_code='Bar 1.2mm', grade='EN8D')
         ProcessStep.objects.create(product_type=self.product_type, name='Cutting', order=1)
         ProcessStep.objects.create(product_type=self.product_type, name='Heat treat', order=2)
         self.customer = Customer.objects.create(name='Pick Test Co')
@@ -102,7 +102,7 @@ class SelectCoilForOrderSpecFilterTests(TestCase):
     def setUp(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         self.customer = Customer.objects.create(name='Spec Test Co')
-        self.product_type = ProductType.objects.create(item_code='Spec Bar', grade='X', size='9.999')
+        self.product_type = ProductType.objects.create(item_code='Spec Bar', grade='X')
         AllowedCoilSpec.objects.create(product_type=self.product_type, grade='EN8D', size='1.200')
         self.order = Order.objects.create(
             customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed',
@@ -132,7 +132,7 @@ class SelectCoilForOrderBestFitSortTests(TestCase):
     def setUp(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         self.customer = Customer.objects.create(name='Best Fit Co')
-        self.product_type = ProductType.objects.create(item_code='Fit Bar', grade='X', size='9.999')
+        self.product_type = ProductType.objects.create(item_code='Fit Bar', grade='X')
         AllowedCoilSpec.objects.create(
             product_type=self.product_type, grade='EN8D', size='1.200',
             raw_material_ratio=Decimal('1.000'),
@@ -182,7 +182,7 @@ class OrderCoilPickRatioTests(TestCase):
 
     def setUp(self):
         self.customer = Customer.objects.create(name='Ratio Test Co')
-        self.product_type = ProductType.objects.create(item_code='Ratio Bar', grade='X', size='9.999')
+        self.product_type = ProductType.objects.create(item_code='Ratio Bar', grade='X')
 
     def _coil(self, **kwargs):
         """Freshly re-fetched so DecimalField values (size) come back as
@@ -244,7 +244,7 @@ class ScanCoilForOrderTests(TestCase):
     def setUp(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         self.customer = Customer.objects.create(name='Scan Test Co')
-        self.product_type = ProductType.objects.create(item_code='Scan Bar', grade='X', size='9.999')
+        self.product_type = ProductType.objects.create(item_code='Scan Bar', grade='X')
         AllowedCoilSpec.objects.create(product_type=self.product_type, grade='EN8D', size='1.200')
         self.order = Order.objects.create(
             customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed',
