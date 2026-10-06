@@ -643,3 +643,13 @@ class PublicQuoteFormCsrfTests(TestCase):
     @override_settings(ALLOWED_HOSTS=['mdw.tail2734e7.ts.net'], CSRF_TRUSTED_ORIGINS=[PUBLIC])
     def test_with_the_trusted_origin_the_submit_gets_past_csrf(self):
         self.assertNotEqual(self._post_like_funnel().status_code, 403)
+
+
+class OrderReceivedPageTests(TestCase):
+    def test_the_confirmation_says_the_order_was_received_and_production_will_start(self):
+        from django.template.loader import render_to_string
+        html = render_to_string('materials/quote_submitted.html', {'customer': Customer(name='Rao Steel')})
+        self.assertIn('Order Received!', html)
+        self.assertIn('Your order has been received. Production will start shortly.', html)
+        self.assertIn('Rao Steel', html)
+        self.assertNotIn('under review', html)
