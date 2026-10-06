@@ -169,7 +169,7 @@ def _query_item_description(query):
     legacy = (query.product_description.splitlines() or [''])[0][:255]
     if legacy:
         return legacy
-    dims = ' x '.join(f"{value:g}" for value in (query.width, query.thickness) if value is not None)
+    dims = ' x '.join(format(value.normalize(), 'f') for value in (query.width, query.thickness) if value is not None)
     parts = [query.product_category.name if query.product_category else '', query.grade, f"{dims} mm" if dims else '']
     return ' '.join(part for part in parts if part) or 'Item'
 
