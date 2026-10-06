@@ -401,6 +401,7 @@
           <td>
             {% if order.product_type %}
               <span style="font-size:0.82rem; font-weight:600; color:#4e73df;">{{ order.product_type.item_code }}</span>
+              {% if order.product_type.category %}<div class="muted" style="font-size:0.75rem;">{{ order.product_type.category.name }}</div>{% endif %}
             {% else %}
               <span style="color:#f59e0b; font-size:0.78rem;">⚠ Not set</span>
             {% endif %}
