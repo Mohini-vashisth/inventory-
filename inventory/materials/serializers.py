@@ -16,7 +16,7 @@ class ProductTypeSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ProductType
-        fields = ['id', 'item_code', 'category', 'grade', 'size', 'description', 'steps']
+        fields = ['id', 'item_code', 'category', 'grade', 'description', 'steps']
 
 
 class MaterialSerializer(serializers.ModelSerializer):
@@ -94,7 +94,7 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = [
             'id', 'order_no', 'customer', 'customer_name', 'product_type', 'product_type_item_code',
-            'grade', 'size', 'quantity', 'delivery_form', 'frequency', 'delivery_date',
+            'grade', 'width', 'thickness', 'quantity', 'delivery_form', 'frequency', 'delivery_date',
             'status', 'created_at', 'weight_cut',
         ]
 

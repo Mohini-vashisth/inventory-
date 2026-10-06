@@ -140,15 +140,19 @@
           </div>
         </div>
 
-        <div class="form-row cols-2">
+        <div class="form-row cols-3">
           <div class="form-group">
             <label>Grade</label>
             <input type="text" name="grade" value="{{ query.grade }}" list="grade-options" autocomplete="off">
             <datalist id="grade-options">{% for g in grade_options %}<option value="{{ g }}">{% endfor %}</datalist>
           </div>
           <div class="form-group">
-            <label>Size (mm)</label>
-            <input type="number" name="size" step="0.001" min="0" value="{{ query.size|default:'' }}">
+            <label>Width (mm)</label>
+            <input type="number" name="width" step="0.001" min="0" value="{{ query.width|default:'' }}">
+          </div>
+          <div class="form-group">
+            <label>Thickness (mm)</label>
+            <input type="number" name="thickness" step="0.001" min="0" value="{{ query.thickness|default:'' }}">
           </div>
         </div>
 
@@ -196,13 +200,12 @@
 </div>
 {{ product_code_map|json_script:"product-code-map" }}
 <script>
-  // Fills Product Code from product type + grade + size as they're entered. A code picked by hand is
+  // Fills Product Code from product type + grade as they're entered. A code picked by hand is
   // never replaced; one filled in here is cleared again if the combination stops matching.
   (function () {
     var codes = JSON.parse(document.getElementById('product-code-map').textContent);
     var category = document.querySelector('[name=product_category]');
     var grade = document.querySelector('[name=grade]');
-    var size = document.querySelector('[name=size]');
     var code = document.querySelector('[name=product_type]');
     var autoFilled = false;
     // Same rule as Python's grade_key: case, spaces and punctuation don't make a different grade.
@@ -217,11 +220,10 @@
     });
     function sync() {
       var g = gradeKey(grade.value);
-      var s = size.value === '' ? null : Number(size.value).toFixed(3);
       var found = null;
-      if (g && s !== null && category.value) {
+      if (g && category.value) {
         codes.forEach(function (c) {
-          if (String(c.category) === category.value && c.grade === g && c.size === s) { found = c; }
+          if (String(c.category) === category.value && c.grade === g) { found = c; }
         });
       }
       if (found) {
@@ -231,7 +233,7 @@
       }
     }
     code.addEventListener('change', function () { autoFilled = false; });
-    [category, grade, size].forEach(function (el) {
+    [category, grade].forEach(function (el) {
       el.addEventListener('input', sync);
       el.addEventListener('change', sync);
     });

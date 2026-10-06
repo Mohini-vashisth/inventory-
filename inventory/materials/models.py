@@ -197,13 +197,14 @@ class ProductCategory(models.Model):
 
 
 class ProductType(models.Model):
-    """A **product code** (that's what the screens call it): e.g. 'EN8D Bar 2.5mm' —
-    defines the final product, its preset grade/size, and which steps apply.
+    """A **product code** (that's what the screens call it): e.g. FBB009 — Flat Bright
+    Bar in EN-8D — defines the product, its grade, and which steps apply.
 
-    A product code depends on three things: its product type (`category`: Round
-    Bright Bar, Key Steel, ...), grade and size. Those three identify exactly
-    one code — a round and a hexagonal bar in the same grade and size are
-    different codes.
+    A product code depends on two things: its product type (`category`: Round
+    Bright Bar, Key Steel, ...) and grade. Those two identify exactly one code — a
+    round and a hexagonal bar in the same grade are different codes. **Size is not
+    part of it:** width and thickness vary per order, so they live on the query,
+    quote line and order, not here.
     """
     category    = models.ForeignKey(
         ProductCategory, on_delete=models.PROTECT, null=True, related_name='product_codes',
@@ -211,18 +212,17 @@ class ProductType(models.Model):
     )
     item_code   = models.CharField(max_length=100, verbose_name="Item Code")
     grade       = models.CharField(max_length=20, blank=True, verbose_name="Grade")
-    size        = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Size (mm)")
     description = models.TextField(blank=True)
 
     class Meta:
         constraints = [
-            # type + grade + size identify one code ...
-            models.UniqueConstraint(fields=['category', 'grade', 'size'], name='unique_code_per_type_grade_size'),
+            # type + grade identify one code ...
+            models.UniqueConstraint(fields=['category', 'grade'], name='unique_code_per_type_grade'),
             # ... and a database treats NULLs as distinct, so codes that don't have a type yet
-            # (older rows) still can't repeat a grade + size.
+            # (older rows) still can't repeat a grade.
             models.UniqueConstraint(
-                fields=['grade', 'size'], condition=models.Q(category__isnull=True),
-                name='unique_untyped_code_per_grade_size',
+                fields=['grade'], condition=models.Q(category__isnull=True),
+                name='unique_untyped_code_per_grade',
             ),
         ]
         verbose_name = 'product code'
@@ -437,7 +437,8 @@ class Query(models.Model):
     product_category = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
     product_type  = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)
     grade         = models.CharField(max_length=100, blank=True)
-    size          = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    width         = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
+    thickness     = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Thickness (mm)")
     quantity      = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     # Collected by the WhatsApp intake bot after email. One WhatsApp message
     # maps to one field: GST number + address arrive together and are split
@@ -716,7 +717,8 @@ class QuotationLineItem(models.Model):
     category     = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
     product_type = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)
     grade        = models.CharField(max_length=100, blank=True)
-    size         = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    width        = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
+    thickness    = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Thickness (mm)")
     quantity     = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     unit         = models.CharField(max_length=20, default='KGS')
     rate_per_kg  = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -780,9 +782,10 @@ class Order(models.Model):
     product_type          = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Code")
     # 1. Drawing / dimensions
     drawing_dimensions    = models.TextField(blank=True, verbose_name="Drawing / Dimensions")
-    # 2. Grade & size (autofilled from product type, editable)
+    # 2. Grade, width & thickness (grade autofilled from the product code, editable)
     grade                 = models.CharField(max_length=100, blank=True, verbose_name="Grade of Material")
-    size                  = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Size (mm)")
+    width                 = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
+    thickness             = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Thickness (mm)")
     # 3. Mill make
     mill_make             = models.CharField(max_length=100, blank=True, verbose_name="Specific Mill Make")
     # 4. Mechanical properties

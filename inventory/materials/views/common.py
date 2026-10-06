@@ -6,17 +6,16 @@ from ..models import ProductType
 from ..product_codes import grade_key
 
 
-def _match_product_type(grade, size, category=None):
-    """The catalogue product code (ProductType) for this product type + grade +
-    size, or None. A code depends on all three: with a `category` (product type)
-    given it must match that too; without one, grade + size alone only count
-    when exactly one code has them — two codes sharing a grade and size across
-    different product types is ambiguous, so it matches nothing rather than
-    guessing. Grade ignores case, spaces and punctuation (a typed "EN8D" is "EN-8D"),
-    size exactly."""
-    if not grade or size is None:
+def _match_product_type(grade, category=None):
+    """The catalogue product code (ProductType) for this product type + grade, or
+    None. A code depends on both: with a `category` (product type) given it must
+    match that too; without one, the grade alone only counts when exactly one code
+    has it — the same grade under two product types is ambiguous, so it matches
+    nothing rather than guessing. Grade ignores case, spaces and punctuation (a
+    typed "EN8D" is "EN-8D"). Size plays no part: width and thickness vary per order."""
+    if not grade or not grade.strip():
         return None
-    candidates = ProductType.objects.filter(size=size)
+    candidates = ProductType.objects.all()
     if category is not None:
         candidates = candidates.filter(category=category)
     key = grade_key(grade)

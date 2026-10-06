@@ -83,15 +83,15 @@ class OrderForm(forms.ModelForm):
     class Meta:
         model = Order
         fields = [
-            'drawing_dimensions', 'grade', 'size', 'mill_make',
+            'drawing_dimensions', 'grade', 'width', 'thickness', 'mill_make',
             'mechanical_properties', 'processes', 'end_usage', 'delivery_form',
             'quantity', 'frequency', 'delivery_date', 'notes', 'purchase_order',
         ]
 
 
 class OrderItemForm(forms.ModelForm):
-    """One quoted item on the customer's order form. Product code, grade and
-    size are deliberately NOT fields here — the view takes them from the
+    """One quoted item on the customer's order form. Product code, grade,
+    width and thickness are deliberately NOT fields here — the view takes them from the
     quotation line item (the one `line_item` points at), so the customer can
     neither pick a code nor change the spec the quote was priced for."""
     line_item = forms.IntegerField(widget=forms.HiddenInput)
@@ -122,7 +122,7 @@ OrderItemFormSet = formset_factory(OrderItemForm, extra=0)
 
 
 class QuotationLineItemForm(forms.Form):
-    """One priced item within a quotation — company/grade/size, qty, rate,
+    """One priced item within a quotation — product type/grade/width/thickness, qty, rate,
     and the GST/discount/HSN details a real quotation needs. Used as a
     repeatable row via QuotationLineItemFormSet, the same "collapsible
     repeatable row" pattern GateEntryLotFormSet already established for a
@@ -131,7 +131,8 @@ class QuotationLineItemForm(forms.Form):
     category     = forms.ModelChoiceField(queryset=None, required=False)   # product type
     product_type = forms.ModelChoiceField(queryset=None, required=False)   # product code
     grade        = forms.CharField(max_length=100, required=False)
-    size         = forms.DecimalField(max_digits=10, decimal_places=3, required=False)
+    width        = forms.DecimalField(max_digits=10, decimal_places=3, min_value=0.001)
+    thickness    = forms.DecimalField(max_digits=10, decimal_places=3, min_value=0.001)
     quantity     = forms.DecimalField(max_digits=10, decimal_places=3, min_value=0.001)
     unit         = forms.CharField(max_length=20, required=False, initial='KGS')
     rate_per_kg  = forms.DecimalField(max_digits=10, decimal_places=2, min_value=0.01)

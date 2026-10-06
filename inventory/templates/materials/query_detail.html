@@ -122,7 +122,8 @@
         <dt>Product type</dt><dd>{% if query.product_category %}{{ query.product_category.name }}{% else %}<span class="blank">—</span>{% endif %}</dd>
         <dt>Product code</dt><dd>{% if query.product_type %}{{ query.product_type.item_code }}{% else %}<span class="blank">—</span>{% endif %}</dd>
         <dt>Grade</dt><dd>{{ query.grade|default:"—" }}</dd>
-        <dt>Size</dt><dd>{% if query.size %}{{ query.size }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Width</dt><dd>{% if query.width %}{{ query.width }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Thickness</dt><dd>{% if query.thickness %}{{ query.thickness }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>
         <dt>Quantity (kg)</dt><dd>{{ query.quantity|default:"—" }}</dd>
         {% for label, value in query.requirement_rows %}
         <dt>{{ label }}</dt><dd>{% if value %}<span class="pre">{{ value }}</span>{% else %}<span class="blank">—</span>{% endif %}</dd>

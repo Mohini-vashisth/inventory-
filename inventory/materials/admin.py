@@ -117,23 +117,23 @@ class GradeInput(forms.TextInput):
 
 
 class ProductTypeAdminForm(forms.ModelForm):
-    """Leave Item Code blank and it's generated from the product type, grade and size
+    """Leave Item Code blank and it's generated from the product type and grade
     in the agreed format (see product_codes.py); type one yourself to override it."""
 
     class Meta:
         model = ProductType
-        fields = ['item_code', 'category', 'grade', 'size', 'description']
+        fields = ['item_code', 'category', 'grade', 'description']
         widgets = {'grade': GradeInput}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.generated_code = False
-        for name in ('category', 'grade', 'size'):   # optional on the model only for older codes
+        for name in ('category', 'grade'):   # optional on the model only for older codes
             self.fields[name].required = True
         item_code = self.fields['item_code']
         item_code.required = False
-        item_code.help_text = ("Leave blank: it is generated from the product type, grade and size "
-                               "(e.g. FBB00100120). It fills in as you pick them.")
+        item_code.help_text = ("Leave blank: it is generated from the product type and grade "
+                               "(e.g. FBB009). It fills in as you pick them.")
         item_code.widget.attrs['data-lookup-url'] = reverse('product_code_lookup')
 
     def clean_grade(self):
@@ -143,7 +143,7 @@ class ProductTypeAdminForm(forms.ModelForm):
         cleaned = super().clean()
         if not cleaned.get('item_code'):
             code, reason = item_code_for(
-                cleaned.get('category'), cleaned.get('grade') or '', cleaned.get('size'), self.instance.pk)
+                cleaned.get('category'), cleaned.get('grade') or '', self.instance.pk)
             if reason:
                 raise forms.ValidationError(reason)
             cleaned['item_code'] = code
@@ -155,9 +155,9 @@ class ProductTypeAdminForm(forms.ModelForm):
 class ProductTypeAdmin(admin.ModelAdmin):
     form = ProductTypeAdminForm
     inlines = [ProcessStepInline, AllowedCoilSpecInline]
-    list_display = ['item_code', 'category', 'grade', 'size', 'step_count', 'allowed_spec_summary']
+    list_display = ['item_code', 'category', 'grade', 'step_count', 'allowed_spec_summary']
     list_filter = ['category']
-    fields = ['item_code', 'category', 'grade', 'size', 'description']
+    fields = ['item_code', 'category', 'grade', 'description']
 
     class Media:
         js = ('materials/admin_product_code.js',)
@@ -561,7 +561,7 @@ class OrderAdmin(admin.ModelAdmin):
             'fields': ('customer', 'product_type', 'status', 'delivery_date', 'frequency', 'notes')
         }),
         ('Material Requirements', {
-            'fields': ('grade', 'size', 'mill_make', 'drawing_dimensions', 'mechanical_properties', 'processes', 'end_usage')
+            'fields': ('grade', 'width', 'thickness', 'mill_make', 'drawing_dimensions', 'mechanical_properties', 'processes', 'end_usage')
         }),
         ('Quantity & Delivery', {
             'fields': ('quantity', 'delivery_form')
@@ -603,7 +603,7 @@ class QuotationLineItemInline(admin.TabularInline):
     extra = 0
     can_delete = False
     readonly_fields = [
-        'order', 'description', 'product_type', 'grade', 'size', 'quantity', 'unit',
+        'order', 'description', 'product_type', 'grade', 'width', 'thickness', 'quantity', 'unit',
         'rate_per_kg', 'discount_pct', 'hsn_sac', 'gst_pct', 'tool_cost', 'moq',
     ]
 

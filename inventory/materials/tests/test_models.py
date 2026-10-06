@@ -166,7 +166,7 @@ class MaterialArchivingTests(TestCase):
     def test_cannot_pick_an_archived_coil(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         coil = Material.objects.create(quantity=500, archived_at=timezone.now())
-        product_type = ProductType.objects.create(item_code='Bar', grade='EN8D', size='1.200')
+        product_type = ProductType.objects.create(item_code='Bar', grade='EN8D')
         customer = Customer.objects.create(name='Archive Pick Co')
         order = Order.objects.create(
             customer=customer, product_type=product_type, quantity=100, status='confirmed',
@@ -201,36 +201,40 @@ class ProductTypeUniquenessTests(TestCase):
     """A grade/size combination identifies exactly one product type."""
 
     def test_duplicate_grade_and_size_rejected(self):
-        ProductType.objects.create(item_code='Bar A', grade='EN8D', size='1.200')
+        ProductType.objects.create(item_code='Bar A', grade='EN8D')
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
-                ProductType.objects.create(item_code='Bar B', grade='EN8D', size='1.200')
+                ProductType.objects.create(item_code='Bar B', grade='EN8D')
 
     def test_the_same_grade_and_size_is_allowed_in_different_product_types(self):
-        round_bar = ProductCategory.objects.get(name='Round Bright Bar')
-        hex_bar = ProductCategory.objects.get(name='Hexagonal Bright Bar')
-        ProductType.objects.create(item_code='RB-EN8D-12', category=round_bar, grade='EN8D', size='12.000')
-        ProductType.objects.create(item_code='HB-EN8D-12', category=hex_bar, grade='EN8D', size='12.000')
-        self.assertEqual(ProductType.objects.filter(grade='EN8D', size='12.000').count(), 2)
+        round_bar = ProductCategory.objects.get(name='Square Bright Bar')
+        hex_bar = ProductCategory.objects.get(name='Triangle Bright Bar')
+        ProductType.objects.create(item_code='RB-EN8D-12', category=round_bar, grade='EN8D')
+        ProductType.objects.create(item_code='HB-EN8D-12', category=hex_bar, grade='EN8D')
+        self.assertEqual(ProductType.objects.filter(grade='EN8D').count(), 2)
 
-    def test_the_same_type_grade_and_size_is_rejected(self):
-        round_bar = ProductCategory.objects.get(name='Round Bright Bar')
-        ProductType.objects.create(item_code='RB-1', category=round_bar, grade='EN8D', size='12.000')
+    def test_the_same_type_and_grade_is_rejected(self):
+        round_bar = ProductCategory.objects.get(name='Square Bright Bar')
+        ProductType.objects.create(item_code='RB-1', category=round_bar, grade='EN8D')
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
-                ProductType.objects.create(item_code='RB-2', category=round_bar, grade='EN8D', size='12.000')
+                ProductType.objects.create(item_code='RB-2', category=round_bar, grade='EN8D')
 
-    def test_the_fourteen_website_product_types_are_seeded_in_menu_order(self):
-        names = list(ProductCategory.objects.values_list('name', flat=True))
-        self.assertEqual(len(names), 14)
-        self.assertEqual(names[0], 'Key Steel')
-        self.assertEqual(names[-1], 'Cold Rolled Strip')
-        self.assertIn('Triangle Bright Bar', names)
+    def test_the_seven_product_types_are_in_place_with_their_codes_in_order(self):
+        self.assertEqual(
+            list(ProductCategory.objects.values_list('name', 'code')),
+            [('Flat Bright Bar', 'FBB'), ('Square Bright Bar', 'SQB'), ('Profile/Shaped Bright Bar', 'PSB'),
+             ('Cold Rolled Strip', 'CRS'), ('Cold Rolled Profile', 'CRP'), ('Chamfer Steel', 'CHS'),
+             ('Triangle Bright Bar', 'TBB')])
 
-    def test_same_grade_different_size_allowed(self):
-        ProductType.objects.create(item_code='Bar A', grade='EN8D', size='1.200')
-        ProductType.objects.create(item_code='Bar B', grade='EN8D', size='1.500')
-        self.assertEqual(ProductType.objects.filter(grade='EN8D').count(), 2)
+    def test_codes_without_a_type_cannot_repeat_a_grade(self):
+        ProductType.objects.create(item_code='Bar A', grade='EN8D')
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                ProductType.objects.create(item_code='Bar B', grade='EN8D')
+
+    def test_size_is_not_part_of_a_product_code(self):
+        self.assertNotIn('size', [f.name for f in ProductType._meta.get_fields()])
 
 
 class GateEntryModelTests(TestCase):

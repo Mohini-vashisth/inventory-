@@ -121,7 +121,8 @@ def query_edit(request, pk):
     error = None
 
     if request.method == 'POST':
-        raw_size = request.POST.get('size') or None
+        raw_width = request.POST.get('width') or None
+        raw_thickness = request.POST.get('thickness') or None
         raw_quantity = request.POST.get('quantity') or None
         try:
             query.company_name = request.POST.get('company_name', '').strip()
@@ -130,7 +131,8 @@ def query_edit(request, pk):
             query.product_type_id = request.POST.get('product_type') or None
             query.product_category_id = request.POST.get('product_category') or None
             query.grade = canonical_grade(request.POST.get('grade'))
-            query.size = raw_size
+            query.width = raw_width
+            query.thickness = raw_thickness
             query.quantity = raw_quantity
             query.notes = request.POST.get('notes', '').strip()
             if query.source == 'referral':
@@ -145,13 +147,13 @@ def query_edit(request, pk):
         except ValidationError as e:
             error = e.messages[0] if e.messages else "Check the values entered."
         except (InvalidOperation, ValueError):
-            error = "Check that size and quantity are valid numbers."
+            error = "Check that width, thickness and quantity are valid numbers."
         else:
             if not query.product_type_id:   # no code picked by hand: look it up from type + grade + size
-                query.product_type = _match_product_type(query.grade, query.size, query.product_category)
+                query.product_type = _match_product_type(query.grade, query.product_category)
             query.save(update_fields=[
                 'company_name', 'contact_phone', 'contact_email',
-                'product_type', 'product_category', 'grade', 'size', 'quantity', 'notes',
+                'product_type', 'product_category', 'grade', 'width', 'thickness', 'quantity', 'notes',
                 'referrer_name', 'referrer_phone', 'source_detail',
                 *[field for field, _label in Query.INTAKE_TEXT_FIELDS],
             ])
@@ -163,10 +165,10 @@ def query_edit(request, pk):
         'intake_fields': [(f, label, getattr(query, f)) for f, label in Query.INTAKE_TEXT_FIELDS],
         'delivery_choices': Query.DELIVERY_FORM_CHOICES,
         'categories': ProductCategory.objects.all(),
-        # type + grade + size -> product code, for the form's live auto-match (same as the quote form)
+        # type + grade -> product code, for the form's live auto-match (same as the quote form)
         'product_code_map': [
-            {'pk': pt.pk, 'category': pt.category_id, 'grade': grade_key(pt.grade), 'size': f"{pt.size:.3f}"}
-            for pt in ProductType.objects.exclude(size=None)
+            {'pk': pt.pk, 'category': pt.category_id, 'grade': grade_key(pt.grade)}
+            for pt in ProductType.objects.all()
         ],
         'grade_options': list(GradeOption.objects.values_list('name', flat=True)),
         'error': error,
