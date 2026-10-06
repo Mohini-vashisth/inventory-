@@ -497,7 +497,7 @@ class QueryIntakeDetailsTests(TestCase):
         # Blank just means "not collected yet" (e.g. a phone-call lead); it can't be NA.
         self.assertRedirects(self._edit(gst_number=''), reverse('query_dashboard'))
 
-    def test_quote_form_prefills_address_gstin_and_product_description(self):
+    def test_quote_form_prefills_address_and_gstin_but_never_the_old_requirements_text(self):
         response = self.client.get(f"{reverse('quotation_form')}?query={self.query.pk}")
         initial = response.context['form'].initial
         self.assertEqual(initial['customer_address'], '12 Industrial Area, Faridabad')
@@ -505,7 +505,8 @@ class QueryIntakeDetailsTests(TestCase):
         html = response.content.decode()
         self.assertIn('12 Industrial Area, Faridabad</textarea>', html)    # and actually on the page
         self.assertIn('name="customer_gstin" maxlength="20" value="22AAAAA0000A1Z5"', html)
-        self.assertContains(response, 'value="Round bar, 12 mm"')  # first line only, in the item description
+        self.assertNotContains(response, 'Round bar, 12 mm')   # an old free-text requirements answer is not shown
+        self.assertEqual(response.context['formset'].forms[0].initial['description'], 'EN8D')   # type/grade/size instead
 
     def test_quote_form_has_no_address_prefill_without_gst_details(self):
         bare = Query.objects.create(source='call', contact_phone='9000000001', company_name='Bare Co')

@@ -162,13 +162,10 @@ def _parse_draft_line_items(post_data):
 
 def _query_item_description(query):
     """The first quote line's description when it starts from a query: the product code if
-    one is matched, else what the query knows — "Flat Bright Bar EN8D 50 x 6 mm" (the bot no
-    longer asks a free-text requirements question; an old one is still used if present)."""
+    one is matched, else what the query knows — "Flat Bright Bar EN8D 50 x 6 mm". Never the old
+    free-text "requirements" answer (the bot no longer asks it)."""
     if query.product_type:
         return query.product_type.item_code
-    legacy = (query.product_description.splitlines() or [''])[0][:255]
-    if legacy:
-        return legacy
     dims = ' x '.join(format(value.normalize(), 'f') for value in (query.width, query.thickness) if value is not None)
     parts = [query.product_category.name if query.product_category else '', query.grade, f"{dims} mm" if dims else '']
     return ' '.join(part for part in parts if part) or 'Item'
