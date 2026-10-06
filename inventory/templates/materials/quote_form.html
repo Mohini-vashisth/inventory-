@@ -1,6 +1,6 @@
 {% extends "materials/base.html" %}
 
-{% block title %}Quote Request — {{ customer.name }}{% endblock %}
+{% block title %}Order Form — {{ customer.name }}{% endblock %}
 
 {% block css %}
     
@@ -82,7 +82,7 @@
 {% block content %}
 <div class="card">
   <div class="card-head">
-    <h1>Quotation Request</h1>
+    <h1>Order Form</h1>
     <p>{{ customer.name }} — please fill in your requirements below</p>
   </div>
   <div class="card-body">
@@ -223,7 +223,7 @@
       </div>
 
       <div class="submit-row">
-        <button type="submit" class="btn-primary">Submit Request →</button>
+        <button type="submit" class="btn-primary">Place Order →</button>
       </div>
     </form>
   </div>
