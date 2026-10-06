@@ -722,6 +722,11 @@ def _process_whatsapp_answer(query_pk, text):
                 if kg is not None:
                     query.quantity = kg
                     changed.append('quantity')
+        if field in ('product_category', 'grade') and not query.product_type_id:
+            code = query.matching_product_code()   # link the catalogue code as soon as type + grade are known
+            if code:
+                query.product_type = code
+                changed.append('product_type')
         query.save(update_fields=changed)
 
         _advance_whatsapp_query(query)

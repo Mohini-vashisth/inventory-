@@ -1,7 +1,10 @@
 """Orders: the staff dashboard and actions, plus the customer-facing quote form."""
 
+import logging
 import uuid
 
+from django.conf import settings
+from django.core.mail import EmailMessage
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.core.files.base import ContentFile
@@ -14,6 +17,48 @@ from ..forms import OrderForm, OrderItemFormSet
 from ..decorators import redirect_to_admin_login, staff_required
 from .common import _first_form_error, _first_formset_error, _match_product_type
 from .quotations import _public_quote_base_url
+
+logger = logging.getLogger(__name__)
+
+
+def _send_order_confirmation_email(order):
+    """Emails the customer that staff have confirmed their order, with what was ordered:
+    product type, grade, width x thickness, quantity, product code and delivery details.
+    Returns 'sent', 'no_email' (nothing on file for the customer), 'not_configured' (no
+    mail settings) or 'failed' — never raises, so confirming an order can't be blocked by
+    mail trouble (a failure is logged)."""
+    customer = order.customer
+    if not customer.email:
+        return 'no_email'
+    if not settings.EMAIL_HOST_USER:
+        return 'not_configured'
+    lines = [f"  {order.spec_text() or 'Item'}" + (f" — {order.quantity:.0f} kg" if order.quantity is not None else '')]
+    details = []
+    if order.product_type_id:
+        details.append(f"Product code: {order.product_type.item_code}")
+    if order.delivery_form:
+        details.append(f"Delivery form: {order.get_delivery_form_display()}")
+    if order.delivery_date:
+        details.append(f"Expected delivery: {order.delivery_date:%d %b %Y}")
+    lines += [f"  {detail}" for detail in details]
+    contact = ' or '.join(part for part in (settings.COMPANY_PHONE, settings.COMPANY_EMAIL) if part)
+    try:
+        EmailMessage(
+            subject=f"Order confirmed — {settings.COMPANY_NAME}",
+            body=(
+                f"Dear {customer.name},\n\n"
+                f"Your order has been confirmed. Production will start shortly.\n\n"
+                f"Order details:\n" + '\n'.join(lines) + "\n\n"
+                + (f"If anything needs correcting, please contact us at {contact}.\n\n" if contact else '')
+                + f"Regards,\n{settings.COMPANY_NAME}"
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[customer.email],
+        ).send()
+        return 'sent'
+    except Exception:
+        logger.warning("Order confirmation email to %s failed", customer.email, exc_info=True)
+        return 'failed'
 
 
 @staff_required(on_denied=redirect_to_admin_login)
@@ -113,6 +158,13 @@ def order_confirm(request, pk):
     order.status = 'confirmed'
     order.save(update_fields=['status'])
     messages.success(request, f"ORD-{order.order_no:04d} confirmed.")
+    emailed = _send_order_confirmation_email(order)
+    if emailed == 'sent':
+        messages.success(request, f"Confirmation email sent to {order.customer.email}.")
+    elif emailed == 'no_email':
+        messages.warning(request, f"No email on file for {order.customer.name}, so no confirmation email was sent.")
+    else:
+        messages.warning(request, "The confirmation email could not be sent" + (" (email is not configured)." if emailed == 'not_configured' else " — check the mail settings."))
     if order.has_sufficient_raw_material() is False:
         available = order.available_raw_material_output()
         messages.warning(

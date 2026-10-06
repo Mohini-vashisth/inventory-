@@ -1,8 +1,10 @@
 """Orders: numbering, stock check, workflow, dashboard, autocomplete."""
 
+import datetime
 import tempfile
 
 from decimal import Decimal
+from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -686,3 +688,75 @@ class OrderDashboardShowsProductTypeTests(TestCase):
         html = self.client.get(reverse('order_dashboard')).content.decode()
         self.assertIn('FBB009', html)
         self.assertIn('Flat Bright Bar', html)
+
+
+@override_settings(EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com',
+                   COMPANY_NAME='Matta Drawing Works', COMPANY_PHONE='111-222', COMPANY_EMAIL='co@example.com')
+class OrderConfirmationEmailTests(TestCase):
+    """Staff confirming an order emails the customer what was ordered."""
+
+    def setUp(self):
+        from django.core import mail
+        self.mail = mail
+        self.staff = User.objects.create_user('confirm_staff', password='pw', is_staff=True)
+        self.client.force_login(self.staff)
+        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        self.code = ProductType.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        self.customer = Customer.objects.create(name='Confirm Co', email='buyer@example.com')
+
+    def _order(self, **fields):
+        defaults = dict(customer=self.customer, product_type=self.code, grade='EN8D', width=Decimal('50'),
+                        thickness=Decimal('6.5'), quantity=Decimal('500'), status='pending')
+        defaults.update(fields)
+        return Order.objects.create(**defaults)
+
+    def test_confirming_emails_the_customer_with_the_product_type_and_details(self):
+        order = self._order(delivery_form='coil', delivery_date=datetime.date(2026, 11, 20))
+        self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}))
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'confirmed')
+        self.assertEqual(len(self.mail.outbox), 1)
+        message = self.mail.outbox[0]
+        self.assertEqual(message.to, ['buyer@example.com'])
+        self.assertEqual(message.subject, 'Order confirmed — Matta Drawing Works')
+        for text in ('Dear Confirm Co', 'Production will start shortly', 'Flat Bright Bar / EN8D / 50 x 6.5 mm — 500 kg',
+                     'Product code: FBB009', 'Delivery form: Coil', 'Expected delivery: 20 Nov 2026', '111-222 or co@example.com'):
+            with self.subTest(text=text):
+                self.assertIn(text, message.body)
+
+    def test_the_staff_see_that_it_was_sent(self):
+        order = self._order()
+        response = self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}), follow=True)
+        self.assertContains(response, 'Confirmation email sent to buyer@example.com')
+
+    def test_no_email_on_file_still_confirms_and_tells_staff(self):
+        self.customer.email = ''
+        self.customer.save()
+        order = self._order()
+        response = self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}), follow=True)
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'confirmed')
+        self.assertEqual(len(self.mail.outbox), 0)
+        self.assertContains(response, 'no confirmation email was sent')
+
+    @patch('django.core.mail.EmailMessage.send', side_effect=OSError('smtp down'))
+    def test_a_mail_failure_never_blocks_the_confirmation(self, _send):
+        order = self._order()
+        response = self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}), follow=True)
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'confirmed')
+        self.assertContains(response, 'could not be sent')
+
+    def test_an_order_that_cannot_be_confirmed_sends_nothing(self):
+        order = self._order(product_type=None)
+        self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}))
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'pending')
+        self.assertEqual(len(self.mail.outbox), 0)
+
+    def test_placing_an_order_on_the_quote_form_sends_no_email(self):
+        customer = Customer.objects.create(name='Place Co', email='place@example.com')
+        self.client.logout()
+        self.client.post(reverse('quote_form', kwargs={'token': customer.quote_token}), {'quantity': '250', 'grade': 'EN8D'})
+        self.assertEqual(Order.objects.filter(customer=customer).count(), 1)
+        self.assertEqual(len(self.mail.outbox), 0)   # the email goes out when staff confirm
