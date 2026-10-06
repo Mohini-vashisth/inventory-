@@ -120,7 +120,7 @@
     <div class="card-body">
       <dl class="rows">
         <dt>Product type</dt><dd>{% if query.product_category %}{{ query.product_category.name }}{% else %}<span class="blank">—</span>{% endif %}</dd>
-        <dt>Product code</dt><dd>{% if query.product_type %}{{ query.product_type.item_code }}{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Product code</dt><dd>{% with code=query.effective_product_code %}{% if code %}{{ code.item_code }}{% else %}<span class="blank">—</span>{% endif %}{% endwith %}</dd>
         <dt>Grade</dt><dd>{{ query.grade|default:"—" }}</dd>
         <dt>Width</dt><dd>{% if query.width %}{{ query.width }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>
         <dt>Thickness</dt><dd>{% if query.thickness %}{{ query.thickness }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>

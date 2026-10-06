@@ -733,3 +733,32 @@ class QueryProductTypeTests(TestCase):
         html = self.client.get(reverse('query_detail', kwargs={'pk': self.query.pk})).content.decode()
         self.assertIn('Product type', html)
         self.assertIn('Square Bright Bar', html)
+
+
+class QueryProductCodeLinkTests(TestCase):
+    """The query shows (and the bot links) the code its product type + grade point to."""
+
+    def setUp(self):
+        self.staff = User.objects.create_user('code_link_staff', password='pw', is_staff=True)
+        self.client.force_login(self.staff)
+        from ..models import ProductCategory
+        self.flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        self.code = ProductType.objects.create(item_code='FBB009', category=self.flat, grade='EN8D')
+
+    def test_the_detail_page_shows_the_code_for_the_type_and_grade_even_if_not_linked(self):
+        query = Query.objects.create(source='call', contact_phone='9123456780', product_category=self.flat, grade='en-8d')
+        self.assertIsNone(query.product_type)
+        html = self.client.get(reverse('query_detail', kwargs={'pk': query.pk})).content.decode()
+        self.assertIn('FBB009', html)
+
+    def test_no_code_is_shown_when_none_matches(self):
+        query = Query.objects.create(source='call', contact_phone='9123456781', product_category=self.flat, grade='SS304')
+        self.assertIsNone(query.effective_product_code())
+        html = self.client.get(reverse('query_detail', kwargs={'pk': query.pk})).content.decode()
+        self.assertNotIn('FBB009', html)
+
+    def test_a_linked_code_wins_over_the_match(self):
+        other = ProductType.objects.create(item_code='HAND', grade='SS304')
+        query = Query.objects.create(source='call', contact_phone='9123456782', product_category=self.flat,
+                                     grade='EN8D', product_type=other)
+        self.assertEqual(query.effective_product_code(), other)

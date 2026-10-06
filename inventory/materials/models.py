@@ -547,6 +547,18 @@ class Query(models.Model):
 
     GST_FIELDS = ('gst_number', 'gst_address')
 
+    def matching_product_code(self):
+        """The catalogue product code for this query's product type + grade, or None
+        (size plays no part in a code)."""
+        if not (self.product_category_id and self.grade):
+            return None
+        from .product_codes import find_product_code
+        return find_product_code(self.product_category, self.grade)
+
+    def effective_product_code(self):
+        """The code linked to the query, else the one its type + grade point to."""
+        return self.product_type or self.matching_product_code()
+
     def gst_rows(self):
         """[(label, value)] for the GST answers, blank ones included (the detail page shows a dash)."""
         return [(label, getattr(self, f)) for f, label in self.INTAKE_TEXT_FIELDS if f in self.GST_FIELDS]
@@ -896,6 +908,17 @@ class Order(models.Model):
             remaining = max(agg['total_remaining'] or Decimal('0'), Decimal('0'))
             total += remaining / ratio
         return total
+
+    def product_type_name(self):
+        """The product type (e.g. Flat Bright Bar), taken from the order's product code."""
+        category = self.product_type.category if self.product_type_id else None
+        return category.name if category else ''
+
+    def spec_text(self):
+        """"Flat Bright Bar / EN8D / 50 x 6.5 mm": product type, grade and width x thickness,
+        whichever are known (the same line the quote PDF prints for the item)."""
+        dims = ' x '.join(format(value.normalize(), 'f') for value in (self.width, self.thickness) if value is not None)
+        return ' / '.join(part for part in (self.product_type_name(), self.grade, f"{dims} mm" if dims else '') if part)
 
     def has_sufficient_raw_material(self):
         """None if there's no product type set yet to check stock against."""

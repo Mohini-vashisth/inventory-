@@ -203,6 +203,22 @@ class WhatsAppWebhookTests(TestCase):
         self.assertNotIn('product_description', [f for f, _ in Query.INTAKE_TEXT_FIELDS])
         self.assertEqual(WHATSAPP_QUERY_FIELDS[WHATSAPP_QUERY_FIELDS.index('product_category') + 1], 'drawing')
 
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_the_catalogue_code_is_linked_once_type_and_grade_are_known(self, mock_send):
+        ProductType.objects.create(item_code='FBB009', category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='EN8D')
+        query = _query_awaiting('grade')   # type (Flat Bright Bar) already chosen
+        self._post_payload(self._message_payload('919876543210', 'en-8d'))
+        query.refresh_from_db()
+        self.assertEqual(query.grade, 'EN8D')
+        self.assertEqual(query.product_type.item_code, 'FBB009')
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_no_code_is_linked_when_the_catalogue_has_none(self, mock_send):
+        query = _query_awaiting('grade')
+        self._post_payload(self._message_payload('919876543210', 'SS304'))
+        query.refresh_from_db()
+        self.assertIsNone(query.product_type)
+
     def test_a_product_type_staff_already_set_skips_the_question(self):
         query = Query.objects.create(source='call', contact_phone='919876543299',
                                      product_category=ProductCategory.objects.get(name='Chamfer Steel'),
