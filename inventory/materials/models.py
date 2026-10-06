@@ -547,6 +547,11 @@ class Query(models.Model):
 
     GST_FIELDS = ('gst_number', 'gst_address')
 
+    def dimensions_text(self, separator=' x '):
+        """"50 x 6.5 mm" — width and thickness without trailing zeros, '' if neither is known."""
+        parts = [format(value.normalize(), 'f') for value in (self.width, self.thickness) if value is not None]
+        return f"{separator.join(parts)} mm" if parts else ''
+
     def matching_product_code(self):
         """The catalogue product code for this query's product type + grade, or None
         (size plays no part in a code)."""

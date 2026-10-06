@@ -543,6 +543,27 @@ class ProductCodeMatchingTests(TestCase):
         line = self._send(action='save_draft', category=str(self.hex_bar.pk), grade='EN8D')
         self.assertEqual(line.product_type, self.hex_code)
 
+    def test_the_form_shows_the_queries_product_type_and_code_and_preselects_the_code(self):
+        from ..models import ProductCategory
+        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        code = ProductType.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        query = Query.objects.create(source='whatsapp', contact_phone='9123456783', company_name='Show Co',
+                                     product_category=flat, grade='EN8D', width='50', thickness='6.5')
+        response = self.client.get(f"{reverse('quotation_form')}?query={query.pk}")
+        html = response.content.decode()
+        self.assertIn('Product Type (from the query)', html)
+        self.assertRegex(html, r'readonly-value">Flat Bright Bar</div>')
+        self.assertRegex(html, r'readonly-value">FBB009</div>')
+        self.assertIn('EN8D · 50 x 6.5 mm', html)
+        self.assertEqual(response.context['formset'].forms[0].initial['product_type'], code.pk)   # not left to JavaScript
+        self.assertRegex(html, rf'<option value="{code.pk}"\s+selected>FBB009</option>')
+
+    def test_the_form_says_when_the_catalogue_has_no_code_yet(self):
+        from ..models import ProductCategory
+        query = Query.objects.create(source='whatsapp', contact_phone='9123456784', company_name='NoCode Co',
+                                     product_category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='SS304')
+        self.assertContains(self.client.get(f"{reverse('quotation_form')}?query={query.pk}"), 'none in the catalogue yet')
+
     def test_the_first_quote_line_is_described_from_what_the_query_knows(self):
         query = Query.objects.create(source='whatsapp', contact_phone='9123456781', company_name='Desc Co',
                                      product_category=self.hex_bar, grade='EN8D', width='50', thickness='6.5')

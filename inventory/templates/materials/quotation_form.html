@@ -155,6 +155,20 @@
             <div class="readonly-value">{{ query.company_name|default:query.contact_phone }}</div>
             <p class="muted">From the logged query — company name is fixed here, edit it on the Query dashboard if it's wrong.</p>
           </div>
+          <div class="form-row cols-3">
+            <div class="form-group">
+              <label>Product Type (from the query)</label>
+              <div class="readonly-value">{{ query.product_category.name|default:"—" }}</div>
+            </div>
+            <div class="form-group">
+              <label>Product Code</label>
+              <div class="readonly-value">{% with code=query.effective_product_code %}{% if code %}{{ code.item_code }}{% else %}<span class="muted">{% if query.product_category and query.grade %}none in the catalogue yet{% else %}—{% endif %}</span>{% endif %}{% endwith %}</div>
+            </div>
+            <div class="form-group">
+              <label>Grade · Width × Thickness</label>
+              <div class="readonly-value">{{ query.grade|default:"—" }}{% with dims=query.dimensions_text %}{% if dims %} · {{ dims }}{% endif %}{% endwith %}</div>
+            </div>
+          </div>
         {% elif existing_customer %}
           <div class="form-row cols-3">
             <div class="form-group">

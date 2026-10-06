@@ -166,8 +166,7 @@ def _query_item_description(query):
     free-text "requirements" answer (the bot no longer asks it)."""
     if query.product_type:
         return query.product_type.item_code
-    dims = ' x '.join(format(value.normalize(), 'f') for value in (query.width, query.thickness) if value is not None)
-    parts = [query.product_category.name if query.product_category else '', query.grade, f"{dims} mm" if dims else '']
+    parts = [query.product_category.name if query.product_category else '', query.grade, query.dimensions_text()]
     return ' '.join(part for part in parts if part) or 'Item'
 
 
@@ -303,7 +302,7 @@ def quotation_form(request, pk=None):
                 item_initial = [{
                     'description': _query_item_description(query),
                     'category': query.product_category_id,
-                    'product_type': query.product_type_id,
+                    'product_type': getattr(query.effective_product_code(), 'pk', None),   # also pre-selected without JavaScript
                     'grade': query.grade,
                     'width': query.width,
                     'thickness': query.thickness,
