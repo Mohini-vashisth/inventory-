@@ -679,6 +679,24 @@ class QuotationPdfCustomerDetailsTests(TestCase):
         self.assertLess(ours.index('111-OURS'), ours.index('ours.example'))
         self.assertLess(theirs.index('2 Their Road'), theirs.index('22AAAAA0000A1Z5'))
 
+    def test_the_item_description_shows_product_type_grade_and_dimensions(self):
+        import re
+        from ..models import ProductCategory
+        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        square = ProductCategory.objects.get(name='Square Bright Bar')
+        code = ProductType.objects.create(item_code='SQB001', category=square, grade='EN8D')
+        customer = Customer.objects.create(name='Type Print Co')
+        quotation = Quotation.objects.create(customer=customer, status='sent')
+        QuotationLineItem.objects.create(quotation=quotation, order=1, description='Bar A', category=flat, grade='EN8D',
+                                         width=Decimal('50'), thickness=Decimal('6.5'), quantity=1, rate_per_kg=10)
+        QuotationLineItem.objects.create(quotation=quotation, order=2, description='Bar B', product_type=code, grade='EN8D',
+                                         width=Decimal('20'), thickness=Decimal('20'), quantity=1, rate_per_kg=10)   # type via its code
+        with patch('reportlab.rl_config.pageCompression', 0):
+            data = generate_quotation_pdf(quotation)
+        text = b' '.join(re.findall(rb'\((.*?)\)\s*Tj', data)).decode('latin-1')
+        self.assertIn('Flat Bright Bar / EN8D / 50 x 6.5 mm', text)
+        self.assertIn('Square Bright Bar / EN8D / 20 x 20 mm', text)
+
     def test_the_customer_name_prints_without_an_ms_prefix(self):
         text = self._text(customer_address='12 Industrial Area')
         self.assertNotIn('M/s', text)
