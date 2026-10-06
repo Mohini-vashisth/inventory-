@@ -398,12 +398,17 @@ def _dispatch_quote_email(request, customer, quotation):
     quote_url = f"{_public_quote_base_url(request)}{quote_path}"
     try:
         pdf_bytes = generate_quotation_pdf(quotation)
+        items = list(quotation.line_items.select_related('category', 'product_type__category').order_by('order'))
+        item_lines = ''.join(
+            f"  {number}. {item.description}" + (f" — {item.spec_text()}" if item.spec_text() else '') + "\n"
+            for number, item in enumerate(items, start=1))
         email = EmailMessage(
             subject=f"Quotation {quotation.formatted_no()} — {settings.COMPANY_NAME}",
             body=(
                 f"Dear {customer.name},\n\n"
                 f"Please find attached our official quotation {quotation.formatted_no()} "
-                f"for your requirement.\n\n"
+                f"for your requirement:\n\n"
+                f"{item_lines}\n"
                 f"If you wish to proceed, please log your order using the link below — "
                 f"you're welcome to attach your own Purchase Order there too, if you have one:\n\n"
                 f"{quote_url}\n\n"

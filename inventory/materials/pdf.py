@@ -191,10 +191,7 @@ def generate_quotation_pdf(quotation):
     header_row = ["Sr.", "Description", "HSN/SAC", "Qty", "Unit", "Rate", "Disc %", "GST %", "Tool Cost", "MOQ", "Amount"]
     table_data = [[Paragraph(h, styles['th']) for h in header_row]]
     for item in quotation.line_items.all():
-        dims = " x ".join(format(value.normalize(), 'f') for value in (item.width, item.thickness) if value is not None)
-        category = item.category or (item.product_type.category if item.product_type else None)
-        desc_bits = " / ".join(filter(None, [
-            _esc(category.name) if category else None, _esc(item.grade), f"{dims} mm" if dims else None]))
+        desc_bits = _esc(item.spec_text())
         description = Paragraph(
             f"{_esc(item.description)}" + (f"<br/><font color='#6b7280'>{desc_bits}</font>" if desc_bits else ''),
             styles['td'],
