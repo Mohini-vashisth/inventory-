@@ -618,14 +618,7 @@
     document.getElementById('detail-' + pk).classList.toggle('open');
   }
 
-  function copyLink(url, btn) {
-    navigator.clipboard.writeText(url).then(function() {
-      const orig = btn.textContent;
-      btn.textContent = '✓ Copied!';
-      setTimeout(function() { btn.textContent = orig; }, 1500);
-    });
-  }
-
   function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 </script>
+{% include "materials/_copy_link_script.html" %}
 {% endblock %}

@@ -70,3 +70,82 @@ class InlineScriptSyntaxTests(TestCase):
                     self.assertEqual(result.returncode, 0, result.stderr)
                     checked += 1
         self.assertGreater(checked, 3)   # the scan itself must not silently find nothing
+
+
+class CopyLinkScriptTests(TestCase):
+    """The Copy Link button must work on a plain-http page, where navigator.clipboard doesn't exist."""
+
+    def _run(self, harness):
+        import json
+        import re
+        import shutil
+        import subprocess
+        import tempfile
+        from django.template.loader import render_to_string
+        if not shutil.which('node'):
+            self.skipTest('node is not installed')
+        script = re.search(r'<script>(.*?)</script>', render_to_string('materials/_copy_link_script.html'), re.S).group(1)
+        with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False) as handle:
+            handle.write(script + harness)
+        try:
+            result = subprocess.run(['node', handle.name], capture_output=True, text=True, timeout=20)
+        finally:
+            os.unlink(handle.name)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    HARNESS_HEAD = """
+      const out = {};
+      const button = {textContent: 'Copy'};
+      global.document = {
+        createElement: () => ({style: {}, setAttribute() {}, select() {}}),
+        body: {appendChild() {}, removeChild() {}},
+        execCommand: (command) => { out.command = command; return COPY_WORKS; },
+      };
+      global.setTimeout = (fn) => fn();
+    """
+
+    def test_on_a_plain_http_page_it_copies_through_a_hidden_box(self):
+        harness = self.HARNESS_HEAD.replace('COPY_WORKS', 'true') + """
+        Object.defineProperty(globalThis, 'navigator', {value: {}, configurable: true});   // no clipboard on http
+        global.window = {isSecureContext: false, prompt: () => { out.prompted = true; }};
+        copyLink('https://x.example/quote/abc/', button);
+        console.log(JSON.stringify({command: out.command, prompted: !!out.prompted, label: button.textContent}));
+        """
+        result = self._run(harness)
+        self.assertEqual(result['command'], 'copy')
+        self.assertFalse(result['prompted'])
+        self.assertEqual(result['label'], 'Copy')   # restored after the "✓ Copied!" flash (timers run at once here)
+
+    def test_if_copying_is_refused_the_link_is_shown_to_copy_by_hand(self):
+        harness = self.HARNESS_HEAD.replace('COPY_WORKS', 'false') + """
+        Object.defineProperty(globalThis, 'navigator', {value: {}, configurable: true});
+        global.window = {isSecureContext: false, prompt: (message, url) => { out.url = url; }};
+        copyLink('https://x.example/quote/abc/', button);
+        console.log(JSON.stringify({url: out.url}));
+        """
+        self.assertEqual(self._run(harness)['url'], 'https://x.example/quote/abc/')
+
+    def test_on_a_secure_page_it_uses_the_clipboard_api(self):
+        harness = self.HARNESS_HEAD.replace('COPY_WORKS', 'false') + """
+        Object.defineProperty(globalThis, 'navigator', {value: {clipboard: {writeText: (url) => { out.url = url; return Promise.resolve(); }}}, configurable: true});   // navigator is read-only in newer Node
+        global.window = {isSecureContext: true, prompt: () => { out.prompted = true; }};
+        copyLink('https://x.example/quote/abc/', button);
+        setImmediate(() => console.log(JSON.stringify({url: out.url, prompted: !!out.prompted, command: out.command || null})));
+        """
+        result = self._run(harness)
+        self.assertEqual(result, {'url': 'https://x.example/quote/abc/', 'prompted': False, 'command': None})
+
+    def test_every_page_with_a_copy_link_button_includes_the_one_shared_script(self):
+        templates = Path(__file__).resolve().parents[2] / 'templates' / 'materials'
+        checked = 0
+        for page in sorted(templates.glob('*.html')):
+            if page.name.startswith('_'):
+                continue
+            html = page.read_text()
+            if 'copyLink(' in html or '_query_actions.html' in html:
+                checked += 1
+                with self.subTest(page=page.name):
+                    self.assertIn('_copy_link_script.html', html)
+                    self.assertNotIn('function copyLink', html)   # no private copy that can drift
+        self.assertGreaterEqual(checked, 3)   # query dashboard, query detail, order dashboard
