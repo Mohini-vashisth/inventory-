@@ -1,6 +1,8 @@
 """Orders: numbering, stock check, workflow, dashboard, autocomplete."""
 
 import datetime
+import os
+import re
 import tempfile
 
 from decimal import Decimal
@@ -452,7 +454,7 @@ class CustomerOrderFormTests(TestCase):
 
     def test_customer_can_change_quantity_and_add_details_per_item(self):
         data = self._post_data(**{'item-0-quantity': '650', 'item-0-end_usage': 'shafts',
-                                  'item-1-frequency': 'monthly', 'item-1-delivery_form': 'coil'})
+                                  'item-1-frequency': 'monthly', 'item-1-delivery_form': 'coil', 'item-1-coil_weight': '1500'})
         self.client.post(self.url, data)
         first, second = Order.objects.filter(customer=self.customer).order_by('pk')
         self.assertEqual((first.quantity, first.end_usage), (Decimal('650'), 'shafts'))
@@ -602,7 +604,7 @@ class OrderFormPrefillFromQueryTests(TestCase):
     def _post(self, **overrides):
         data = {'item-TOTAL_FORMS': '1', 'item-INITIAL_FORMS': '1', 'item-MIN_NUM_FORMS': '0',
                 'item-MAX_NUM_FORMS': '1000', 'item-0-line_item': str(self.item.pk), 'item-0-quantity': '500',
-                'item-0-end_usage': 'automotive shafts', 'item-0-delivery_form': 'coil'}
+                'item-0-end_usage': 'automotive shafts', 'item-0-delivery_form': 'coil', 'item-0-coil_weight': '2000'}
         data.update(overrides)
         return self.client.post(self.url, data)
 
@@ -623,7 +625,7 @@ class OrderFormPrefillFromQueryTests(TestCase):
         self.assertEqual((order.end_usage, order.delivery_form), ('automotive shafts', 'coil'))
 
     def test_the_customer_can_still_change_them(self):
-        self._post(**{'item-0-end_usage': 'gear shafts', 'item-0-delivery_form': 'bar'})
+        self._post(**{'item-0-end_usage': 'gear shafts', 'item-0-delivery_form': 'bar', 'item-0-bar_length': '3000'})
         order = Order.objects.get(customer=self.customer)
         self.assertEqual((order.end_usage, order.delivery_form), ('gear shafts', 'bar'))
 
@@ -919,3 +921,139 @@ class OrderDrawingAndToleranceTests(TestCase):
         body = mail.outbox[0].body
         self.assertIn('Tolerance: Width 49.9 to 50.1 mm', body)
         self.assertIn('Drawing: received', body)
+
+
+class BarLengthAndCoilWeightTests(TestCase):
+    """Bar delivery asks for the length (with a tolerance); coil delivery asks for an approximate weight."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(name='Delivery Co', email='d@example.com')
+        self.code = ProductType.objects.create(item_code='FBB009', category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='EN8D')
+        quotation = Quotation.objects.create(customer=self.customer, status='sent')
+        self.items = [QuotationLineItem.objects.create(
+            quotation=quotation, order=n, description=f'Bar {n}', product_type=self.code, grade='EN8D',
+            width=Decimal('50'), thickness=Decimal('6'), quantity=Decimal('500'), rate_per_kg=90) for n in (1, 2)]
+        self.url = reverse('quote_form', kwargs={'token': self.customer.quote_token})
+
+    def _data(self, **extra):
+        data = {'item-TOTAL_FORMS': '2', 'item-INITIAL_FORMS': '2', 'item-MIN_NUM_FORMS': '0', 'item-MAX_NUM_FORMS': '1000'}
+        for n, item in enumerate(self.items):
+            data[f'item-{n}-line_item'] = str(item.pk)
+            data[f'item-{n}-quantity'] = '500'
+        data.update(extra)
+        return data
+
+    def _orders(self):
+        return list(Order.objects.filter(customer=self.customer).order_by('pk'))
+
+    def test_the_form_has_both_blocks_per_item_and_shows_the_one_for_the_chosen_form(self):
+        html = self.client.get(self.url).content.decode()
+        for n in (0, 1):
+            for name in ('bar_length', 'length_tol_from', 'length_tol_to', 'coil_weight'):
+                self.assertIn(f'name="item-{n}-{name}"', html)
+        self.assertIn('Length (mm) *', html)
+        self.assertIn('Approx. Coil Weight (kg) *', html)
+        self.assertIn('data-for="bar" hidden', html)    # nothing chosen yet: both hidden until a choice
+        self.assertIn('data-for="coil" hidden', html)
+        self.assertIn('<noscript>', html)               # and visible if the browser has no JavaScript
+
+    def test_a_form_opened_with_bar_chosen_shows_the_length_block(self):
+        Query.objects.create(source='whatsapp', contact_phone='919876500050', customer=self.customer, status='quote_sent', delivery_form='Bar')
+        html = self.client.get(self.url).content.decode()
+        self.assertNotIn('data-for="bar" hidden', html)
+        self.assertIn('data-for="coil" hidden', html)
+
+    def test_a_bar_needs_its_length_and_keeps_the_length_tolerance(self):
+        self.client.post(self.url, self._data(**{'item-0-delivery_form': 'bar', 'item-0-bar_length': '3000',
+                                                  'item-0-length_tol_from': '-0', 'item-0-length_tol_to': '25'}))
+        first = self._orders()[0]
+        self.assertEqual((first.delivery_form, first.bar_length, first.length_tol_to), ('bar', Decimal('3000'), Decimal('25')))
+        self.assertIsNone(first.coil_weight)
+        self.assertEqual(first.delivery_detail_text(), 'Bar, 3000 mm long')
+        self.assertIn('Length 0 to 25 mm', first.tolerance_lines())
+
+    def test_a_coil_needs_its_approximate_weight(self):
+        self.client.post(self.url, self._data(**{'item-1-delivery_form': 'coil', 'item-1-coil_weight': '1800.5'}))
+        second = self._orders()[1]
+        self.assertEqual((second.delivery_form, second.coil_weight), ('coil', Decimal('1800.5')))
+        self.assertIsNone(second.bar_length)
+        self.assertEqual(second.delivery_detail_text(), 'Coil, approx. 1800.5 kg')
+
+    def test_choosing_a_form_without_what_goes_with_it_is_refused_and_says_which_item(self):
+        token = self.customer.quote_token
+        response = self.client.post(self.url, self._data(**{'item-1-delivery_form': 'bar'}))
+        self.assertContains(response, 'Item 2: Please enter the bar length in mm.')
+        response = self.client.post(self.url, self._data(**{'item-0-delivery_form': 'coil'}))
+        self.assertContains(response, 'Item 1: Please enter the approximate coil weight in kg.')
+        self.assertEqual(Order.objects.count(), 0)
+        self.customer.refresh_from_db()
+        self.assertEqual(self.customer.quote_token, token)   # the link is not used up
+
+    def test_zero_is_refused(self):
+        response = self.client.post(self.url, self._data(**{'item-0-delivery_form': 'bar', 'item-0-bar_length': '0'}))
+        self.assertContains(response, 'must be more than zero')
+
+    def test_no_delivery_form_asks_for_nothing_and_stray_values_are_dropped(self):
+        self.client.post(self.url, self._data(**{'item-0-bar_length': '3000', 'item-0-coil_weight': '900'}))
+        first = self._orders()[0]
+        self.assertEqual((first.delivery_form, first.bar_length, first.coil_weight), ('', None, None))
+
+    def test_switching_the_choice_drops_the_other_values(self):
+        self.client.post(self.url, self._data(**{'item-0-delivery_form': 'coil', 'item-0-coil_weight': '900',
+                                                  'item-0-bar_length': '3000', 'item-0-length_tol_to': '10'}))
+        first = self._orders()[0]
+        self.assertEqual((first.coil_weight, first.bar_length, first.length_tol_to), (Decimal('900'), None, None))
+
+    def test_the_form_without_a_quote_asks_the_same_things(self):
+        plain = Customer.objects.create(name='Plain Delivery Co')
+        url = reverse('quote_form', kwargs={'token': plain.quote_token})
+        html = self.client.get(url).content.decode()
+        for name in ('bar_length', 'length_tol_from', 'length_tol_to', 'coil_weight'):
+            self.assertIn(f'name="{name}"', html)
+        response = self.client.post(url, {'quantity': '10', 'grade': 'EN8D', 'delivery_form': 'bar'})
+        self.assertContains(response, 'Please enter the bar length in mm.')
+        self.client.post(url, {'quantity': '10', 'grade': 'EN8D', 'delivery_form': 'coil', 'coil_weight': '700'})
+        self.assertEqual(Order.objects.get(customer=plain).coil_weight, Decimal('700'))
+
+    def test_staff_see_it_in_the_order_details_and_the_confirmation_email(self):
+        from django.core import mail
+        staff = User.objects.create_user('delivery_staff', password='pw', is_staff=True)
+        self.client.post(self.url, self._data(**{'item-0-delivery_form': 'bar', 'item-0-bar_length': '3000', 'item-0-length_tol_from': '-5', 'item-0-length_tol_to': '5',
+                                                  'item-1-delivery_form': 'coil', 'item-1-coil_weight': '1200'}))
+        self.client.force_login(staff)
+        html = self.client.get(reverse('order_dashboard')).content.decode()
+        self.assertIn('Bar, 3000 mm long', html)
+        self.assertIn('Coil, approx. 1200 kg', html)
+        with override_settings(EMAIL_HOST_USER='s@example.com', DEFAULT_FROM_EMAIL='s@example.com'):
+            self.client.post(reverse('order_confirm', kwargs={'pk': self._orders()[0].pk}))
+        body = mail.outbox[0].body
+        self.assertIn('Delivery form: Bar, 3000 mm long', body)
+        self.assertIn('Length -5 to 5 mm', body)
+
+    def test_a_script_shows_and_hides_the_blocks(self):
+        import shutil
+        import subprocess
+        import tempfile
+        if not shutil.which('node'):
+            self.skipTest('node is not installed')
+        html = self.client.get(self.url).content.decode()
+        script = re.findall(r'<script>(.*?)</script>', html, re.S)[-1]
+        harness = """
+          const blocks = ['bar', 'coil'].map(f => ({dataset: {for: f}, hidden: true,
+            querySelectorAll: () => [{disabled: false}], querySelector: () => ({required: false})}));
+          const select = {value: 'bar', closest: () => ({querySelectorAll: () => blocks}), addEventListener: (e, fn) => { select.onchange = fn; }};
+          global.document = {querySelectorAll: (q) => q.startsWith('select') ? [select] : []};
+          %s
+          const out = [blocks.map(b => b.hidden)];
+          select.value = 'coil'; select.onchange();
+          out.push(blocks.map(b => b.hidden));
+          select.value = ''; select.onchange();
+          out.push(blocks.map(b => b.hidden));
+          console.log(JSON.stringify(out));
+        """ % script
+        with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False) as handle:
+            handle.write(harness)
+        result = subprocess.run(['node', handle.name], capture_output=True, text=True, timeout=20)
+        os.unlink(handle.name)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), '[[false,true],[true,false],[true,true]]')   # bar, coil, nothing

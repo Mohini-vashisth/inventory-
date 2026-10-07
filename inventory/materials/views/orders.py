@@ -38,7 +38,7 @@ def _send_order_confirmation_email(order):
     if order.product_type_id:
         details.append(f"Product code: {order.product_type.item_code}")
     if order.delivery_form:
-        details.append(f"Delivery form: {order.get_delivery_form_display()}")
+        details.append(f"Delivery form: {order.delivery_detail_text()}")
     if order.delivery_date:
         details.append(f"Expected delivery: {order.delivery_date:%d %b %Y}")
     lines += [f"  {detail}" for detail in details]
@@ -246,7 +246,7 @@ def quote_form(request, token):
                    else OrderItemFormSet(initial=initial, prefix='item'))
         if request.method == 'POST':
             if not formset.is_valid():
-                error = _first_formset_error(formset)
+                error = _first_formset_error(formset, 'Item')
             elif [f.cleaned_data.get('line_item') for f in formset.forms] != [item.pk for item in items]:
                 error = "This order form is out of date — please reload the page and try again."
             else:

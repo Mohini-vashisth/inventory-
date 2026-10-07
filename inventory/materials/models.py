@@ -900,6 +900,12 @@ class Order(models.Model):
     thickness_tol_from    = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True, verbose_name="Thickness tolerance from")
     thickness_tol_to      = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True, verbose_name="Thickness tolerance to")
     other_tolerances      = models.TextField(blank=True, verbose_name="Other tolerances")
+    # Asked once the customer picks a delivery form: a bar needs its length (mm) with a tolerance From / To,
+    # a coil needs an approximate weight (kg). Only the one for the chosen form is kept.
+    bar_length            = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Bar length (mm)")
+    length_tol_from       = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True, verbose_name="Length tolerance from")
+    length_tol_to         = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True, verbose_name="Length tolerance to")
+    coil_weight           = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Approx. coil weight (kg)")
     # 2. Grade, width & thickness (grade autofilled from the product code, editable)
     grade                 = GradeField(max_length=100, blank=True, verbose_name="Grade of Material")
     width                 = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
@@ -983,10 +989,21 @@ class Order(models.Model):
             if low is None and high is None:
                 return ''
             return f"{label} {format(low.normalize(), 'f') if low is not None else '…'} to {format(high.normalize(), 'f') if high is not None else '…'} mm"
-        lines = [span('Width', self.width_tol_from, self.width_tol_to), span('Thickness', self.thickness_tol_from, self.thickness_tol_to)]
+        lines = [span('Width', self.width_tol_from, self.width_tol_to), span('Thickness', self.thickness_tol_from, self.thickness_tol_to),
+                 span('Length', self.length_tol_from, self.length_tol_to)]
         if self.other_tolerances.strip():
             lines.append(f"Other: {self.other_tolerances.strip()}")
         return [line for line in lines if line]
+
+    def delivery_detail_text(self):
+        """"Bar, 3000 mm long" / "Coil, approx. 2000 kg" — the delivery form with what was asked for it."""
+        def number(value):
+            return format(value.normalize(), 'f')
+        if self.delivery_form == 'bar':
+            return f"Bar, {number(self.bar_length)} mm long" if self.bar_length is not None else "Bar"
+        if self.delivery_form == 'coil':
+            return f"Coil, approx. {number(self.coil_weight)} kg" if self.coil_weight is not None else "Coil"
+        return ''
 
     def product_type_name(self):
         """The product type (e.g. Flat Bright Bar), taken from the order's product code."""

@@ -125,6 +125,25 @@
           <div class="form-group"><label>Specific Mill Make</label>{{ item_form.mill_make }}</div>
           <div class="form-group"><label>Expected Delivery Date</label>{{ item_form.delivery_date }}</div>
         </div>
+        <div class="delivery-extra" data-for="bar" {% if item_form.delivery_form.value != 'bar' %}hidden{% endif %}>
+          <div class="tolerance">
+            <div class="tolerance-title">Bar length</div>
+            <div class="tolerance-row">
+              <span class="tolerance-name">Length (mm) *</span>
+              {{ item_form.bar_length }}
+            </div>
+            <div class="tolerance-row">
+              <span class="tolerance-name">Length tolerance</span>
+              <label>From {{ item_form.length_tol_from }}</label>
+              <label>To {{ item_form.length_tol_to }}</label>
+            </div>
+          </div>
+        </div>
+        <div class="delivery-extra" data-for="coil" {% if item_form.delivery_form.value != 'coil' %}hidden{% endif %}>
+          <div class="form-row">
+            <div class="form-group"><label>Approx. Coil Weight (kg) *</label>{{ item_form.coil_weight }}</div>
+          </div>
+        </div>
         <div class="form-row cols-2">
           <div class="form-group">
             <label>Attach Drawing</label>
@@ -269,6 +288,28 @@
           </select>
         </div>
       </div>
+      <div class="delivery-extra" data-for="bar" {% if post.delivery_form != 'bar' %}hidden{% endif %}>
+        <div class="tolerance">
+          <div class="tolerance-title">Bar length</div>
+          <div class="tolerance-row">
+            <span class="tolerance-name">Length (mm) *</span>
+            <input type="number" step="any" min="0" name="bar_length" placeholder="e.g. 3000" value="{{ post.bar_length|default:'' }}">
+          </div>
+          <div class="tolerance-row">
+            <span class="tolerance-name">Length tolerance</span>
+            <label>From <input type="number" step="any" name="length_tol_from" placeholder="from" value="{{ post.length_tol_from|default:'' }}"></label>
+            <label>To <input type="number" step="any" name="length_tol_to" placeholder="to" value="{{ post.length_tol_to|default:'' }}"></label>
+          </div>
+        </div>
+      </div>
+      <div class="delivery-extra" data-for="coil" {% if post.delivery_form != 'coil' %}hidden{% endif %}>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Approx. Coil Weight (kg) *</label>
+            <input type="number" step="any" min="0" name="coil_weight" placeholder="e.g. 2000" value="{{ post.coil_weight|default:'' }}">
+          </div>
+        </div>
+      </div>
       <div class="form-row cols-2">
         <div class="form-group">
           <label>Expected Delivery Date</label>
@@ -296,4 +337,25 @@
   </div>
 </div>
 
+<noscript><style>.delivery-extra[hidden] { display: block; }</style></noscript>
+<script>
+  // Choosing Bar asks for its length (and a tolerance); choosing Coil asks for an approximate weight.
+  // The other block is hidden and disabled, so what isn't asked isn't sent (the server drops it too).
+  (function () {
+    function show(scope, value) {
+      scope.querySelectorAll('.delivery-extra').forEach(function (block) {
+        var on = block.dataset.for === value;
+        block.hidden = !on;
+        block.querySelectorAll('input').forEach(function (input) { input.disabled = !on; });
+        var main = block.querySelector('input[name$="bar_length"], input[name$="coil_weight"]');
+        if (main) main.required = on;
+      });
+    }
+    document.querySelectorAll('select[name$="delivery_form"]').forEach(function (select) {
+      var scope = select.closest('.item-card') || document;
+      select.addEventListener('change', function () { show(scope, select.value); });
+      show(scope, select.value);
+    });
+  })();
+</script>
 {% endblock %}

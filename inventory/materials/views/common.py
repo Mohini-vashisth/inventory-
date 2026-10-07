@@ -63,12 +63,13 @@ def _safe_get(queryset, pk):
         return None
 
 
-def _first_formset_error(formset):
+def _first_formset_error(formset, label=None):
+    """The first error to show. With `label` ("Item") and more than one form, says which one: "Item 2: ..."."""
     if formset.non_form_errors():
         return formset.non_form_errors()[0]
-    for form in formset:
+    for number, form in enumerate(formset, start=1):
         for errors in form.errors.values():
-            return errors[0]
+            return f"{label} {number}: {errors[0]}" if label and len(formset.forms) > 1 else errors[0]
     return "Check the lot details below."
 
 
