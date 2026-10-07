@@ -873,7 +873,9 @@ class OrderDrawingAndToleranceTests(TestCase):
         from django.core.files.base import ContentFile
         query = Query.objects.create(source='whatsapp', contact_phone='919876500020', customer=self.customer, status='quote_sent')
         query.drawing.save('wa.pdf', ContentFile(b'%PDF whatsapp drawing'), save=True)
-        self.assertIn('We already have the drawing you sent on WhatsApp', self.client.get(self.url).content.decode())
+        html = self.client.get(self.url).content.decode()
+        self.assertIn('Please attach the final dimension drawing.', html)
+        self.assertNotIn('WhatsApp', html)   # the customer is just asked for the final drawing
         self.client.post(self.url, self._data())
         self.assertEqual(Order.objects.get(customer=self.customer).drawing_file.read(), b'%PDF whatsapp drawing')
 
