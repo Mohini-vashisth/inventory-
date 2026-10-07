@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import re
 import threading
 import urllib.error
@@ -66,7 +67,7 @@ WHATSAPP_QUERY_QUESTIONS = {
     'technical_requirements': "Any particular make, mechanical properties or processes to be carried out? Reply 'no' if none.",
     'end_use': "What is the end use of the material?",
     'delivery_form': "In what form do you need the material delivered?",
-    'quantity_text': "Required quantity in kgs only (for example 8000 kgs, not 8 tons), and the frequency (one time or monthly)?",
+    'quantity_text': "Please enter the quantity in kgs.",
 }
 
 
@@ -79,6 +80,8 @@ WHATSAPP_QUERY_CHOICES = {
     'delivery_form': Query.DELIVERY_FORM_CHOICES,
 }
 
+
+WHATSAPP_QUANTITY_INVALID_MESSAGE = "Please enter the quantity as a number in kgs, for example 8000."
 
 # Width and thickness are both asked, one per message, and both must be a number of mm.
 WHATSAPP_DIMENSION_INVALID_MESSAGES = {
@@ -237,6 +240,27 @@ def _send_whatsapp_buttons_message_background(phone, text, choices):
             _send_whatsapp_buttons_message(phone, text, choices)
         except WhatsAppSendError as e:
             logger.warning("WhatsApp follow-up send to %s failed: %s", phone, e)
+    thread = threading.Thread(target=_send, daemon=True)
+    thread.start()
+    return thread
+
+
+def _send_whatsapp_steps_background(phone, steps):
+    """Send several messages in order, from one background thread (separate threads could arrive out of
+    order). Each step is ('text', text), ('buttons', text, choices) or ('list', text, button, rows). If
+    one fails the rest are not sent — a "Confirm" button must never arrive without its summary."""
+    def _send():
+        for step in steps:
+            try:
+                if step[0] == 'text':
+                    _send_whatsapp_text_message(phone, step[1])
+                elif step[0] == 'buttons':
+                    _send_whatsapp_buttons_message(phone, step[1], step[2])
+                elif step[0] == 'list':
+                    _send_whatsapp_list_message(phone, step[1], step[2], step[3])
+            except WhatsAppSendError as e:
+                logger.warning("WhatsApp send to %s failed: %s", phone, e)
+                return
     thread = threading.Thread(target=_send, daemon=True)
     thread.start()
     return thread
@@ -557,6 +581,8 @@ def _handle_whatsapp_message(msg, phone, profile_name, sent_at, send_next):
             category = ProductCategory.objects.filter(pk=reply_id[len(WHATSAPP_CATEGORY_ROW_PREFIX):] or 0).first() \
                 if reply_id[len(WHATSAPP_CATEGORY_ROW_PREFIX):].isdigit() else None
             title = category.name if category else title
+        if reply_id.startswith(WHATSAPP_FIELD_ROW_PREFIX) or reply_id in ('more', 'back'):
+            title = f"@{reply_id}"   # a row of the "what would you like to change?" list
         if title:
             _route_whatsapp_message(phone, title, profile_name, sent_at, send_next)
     elif msg_type in ("image", "document"):
@@ -609,7 +635,8 @@ def _route_whatsapp_media(phone, media_id, mime_type, sent_at=None):
     if not query.last_inbound_at or newest > query.last_inbound_at:
         query.last_inbound_at = newest
         query.save(update_fields=['last_inbound_at'])
-    if _next_expected_query_field(query) != 'drawing':
+    editing_drawing = query.bot_stage == 'editing' and query.edit_field == 'drawing'
+    if not editing_drawing and (query.bot_stage not in ('', ) or _next_expected_query_field(query) != 'drawing'):
         return
     _process_whatsapp_drawing_media_background(query.pk, media_id, mime_type)
 
@@ -682,9 +709,18 @@ def _process_whatsapp_drawing_media_background(query_pk, media_id, mime_type):
                     query = Query.objects.select_for_update().get(pk=query_pk)
                 except Query.DoesNotExist:
                     return
-                if _next_expected_query_field(query) != 'drawing':
-                    return  # already answered some other way (e.g. a race with a text reply)
                 filename = f"drawing{_extension_for_mime_type(resolved_mime or mime_type)}"
+                if query.bot_stage == 'editing' and query.edit_field == 'drawing':
+                    # A replacement file: hold it until the customer confirms the change.
+                    query.pending_drawing.save(filename, ContentFile(content), save=False)
+                    query.pending_value = {'drawing_notes': "Drawing attached via WhatsApp", '_pending_file': True}
+                    query.bot_stage = 'confirm_change'
+                    query.save(update_fields=['pending_drawing', 'pending_value', 'bot_stage'])
+                    if _whatsapp_window_open(query):
+                        _send_whatsapp_steps_background(query.contact_phone, _confirm_change_steps(query))
+                    return
+                if query.bot_stage != '' or _next_expected_query_field(query) != 'drawing':
+                    return  # already answered some other way (e.g. a race with a text reply)
                 query.drawing.save(filename, ContentFile(content), save=False)
                 query.drawing_notes = "Drawing attached via WhatsApp"
                 query.save(update_fields=['drawing', 'drawing_notes'])
@@ -770,6 +806,10 @@ def _process_whatsapp_answer(query_pk, text, sent_at=None, send_next=True):
             if window_open:
                 _send_whatsapp_question(query.contact_phone, field_name)
 
+        if query.bot_stage in WHATSAPP_REVIEW_STAGES:
+            _review_reply(query, text, window_open)
+            return
+
         field = _next_expected_query_field(query)
         if field is None:
             stamp = timezone.now().strftime('%d %b %H:%M')
@@ -777,91 +817,354 @@ def _process_whatsapp_answer(query_pk, text, sent_at=None, send_next=True):
             query.save(update_fields=['notes'])
             return
 
-        if field == 'gst_number':
-            parsed = _parse_whatsapp_gst_details(text)
-            if parsed is None:
-                say(WHATSAPP_GST_INVALID_MESSAGE)
-                return
-            query.gst_number, address = parsed
-            changed = ['gst_number']
-            if address:
-                query.gst_address = address
-                changed.append('gst_address')
-        elif field == 'delivery_form':
-            parsed = _parse_whatsapp_delivery_form(text)
-            if parsed is None:
-                ask('delivery_form')
-                return
-            query.delivery_form = parsed
-            changed = ['delivery_form']
-        elif field in WHATSAPP_DIMENSION_INVALID_MESSAGES:   # width, thickness
-            parsed = _parse_whatsapp_dimension(text)
-            if parsed is None:
-                say(WHATSAPP_DIMENSION_INVALID_MESSAGES[field])
-                return
-            setattr(query, field, parsed)
-            changed = [field]
-            if len(_DIMENSION_NUMBER.findall(text)) > 1:   # e.g. "10 and 12 mm": keep the first, show staff the rest
-                stamp = timezone.now().strftime('%d %b %H:%M')
-                query.notes = f"{query.notes}\n[{stamp}] {field.capitalize()} reply: {text.strip()}".strip()
-                changed.append('notes')
-        elif field == 'product_category':
-            detected = _detect_product_category(text)
-            if detected is None:
-                ask('product_category')
-                return
-            query.product_category = detected
-            changed = ['product_category']
-        elif field == 'contact_email':
-            candidate = text.strip()
-            if not _is_valid_whatsapp_email(candidate):
-                say(WHATSAPP_QUERY_QUESTIONS['contact_email'])
-                return
-            query.contact_email = candidate
-            changed = ['contact_email']
-        elif field == 'drawing':
-            # A text reply here means no attachment came with it — "no",
-            # or a short description instead of a photo/PDF. An actual
-            # image/document reply is handled separately, in the
-            # background, by _process_whatsapp_drawing_media_background.
-            query.drawing_notes = text.strip()
-            changed = ['drawing_notes']
-        else:
-            setattr(query, field, text.strip())
-            changed = [field]
-            if field == 'quantity_text' and query.quantity is None:
-                kg = _parse_whatsapp_quantity_kg(text)
-                if kg is not None:
-                    query.quantity = kg
-                    changed.append('quantity')
-        if field in ('product_category', 'grade') and not query.product_type_id:
-            code = query.matching_product_code()   # link the catalogue code as soon as type + grade are known
-            if code:
-                query.product_type = code
-                changed.append('product_type')
-        query.save(update_fields=changed)
+        try:
+            updates = _parse_answer(field, text.strip())
+        except _InvalidAnswer as invalid:
+            if invalid.say:
+                say(invalid.say)
+            if invalid.ask:
+                ask(invalid.ask)
+            return
+        query.save(update_fields=_apply_updates(query, updates))
 
         if send_next:
             _advance_whatsapp_query(query)
 
 
 def _advance_whatsapp_query(query):
-    """Sends the next question in the intake sequence, or the closing message once it's
-    complete. Shared by the text-answer path above and the drawing-media path
-    (_process_whatsapp_drawing_media_background), since both need to advance the same way once
-    their field is saved. Never re-asks a question that was already sent and is still waiting for
-    its answer (so a replayed or duplicated message can't double-ask), and sends nothing once the
-    24-hour window has closed — staff are told instead."""
+    """Sends the next question in the intake sequence — or, once every question is answered, a summary
+    of the answers with Confirm / Change buttons (the review, see _review_reply). Shared by the
+    text-answer path above and the drawing-media path (_process_whatsapp_drawing_media_background),
+    since both need to advance the same way once their field is saved. Never re-asks a question that
+    was already sent and is still waiting for its answer (so a replayed or duplicated message can't
+    double-ask), and sends nothing once the 24-hour window has closed — staff are told instead."""
     if not _whatsapp_window_open(query):
         _flag_for_review(query, WHATSAPP_WINDOW_CLOSED_NOTE)
         return
     next_field = _next_expected_query_field(query)
-    marker = next_field or '_done'
-    if query.last_asked_field == marker:
+    if next_field is None:
+        if query.bot_stage == '':   # answers are complete: show them back to the customer once
+            query.bot_stage = 'summary'
+            query.save(update_fields=['bot_stage'])
+            _send_whatsapp_steps_background(query.contact_phone, _summary_steps(query))
         return
-    query.last_asked_field = marker
+    if query.last_asked_field == next_field:
+        return
+    query.last_asked_field = next_field
     query.save(update_fields=['last_asked_field'])
-    if next_field:
-        _send_whatsapp_question(query.contact_phone, next_field)
+    _send_whatsapp_question(query.contact_phone, next_field)
+
+
+# ── Answer parsing ────────────────────────────────────────────────────────────
+
+class _InvalidAnswer(Exception):
+    """A reply that can't be used as the answer: `say` is the message to send back, `ask` a
+    question to send again (buttons or a list)."""
+    def __init__(self, say=None, ask=None):
+        super().__init__(say or ask)
+        self.say, self.ask = say, ask
+
+
+def _parse_answer(field, text):
+    """The model updates a reply to `field`'s question stands for, as JSON-safe values (so a change
+    can be held as pending until the customer confirms it). Raises _InvalidAnswer for an unusable reply."""
+    if field == 'gst_number':
+        parsed = _parse_whatsapp_gst_details(text)
+        if parsed is None:
+            raise _InvalidAnswer(say=WHATSAPP_GST_INVALID_MESSAGE)
+        number, address = parsed
+        return {'gst_number': number, **({'gst_address': address} if address else {})}
+    if field == 'delivery_form':
+        parsed = _parse_whatsapp_delivery_form(text)
+        if parsed is None:
+            raise _InvalidAnswer(ask='delivery_form')
+        return {'delivery_form': parsed}
+    if field in WHATSAPP_DIMENSION_INVALID_MESSAGES:   # width, thickness
+        parsed = _parse_whatsapp_dimension(text)
+        if parsed is None:
+            raise _InvalidAnswer(say=WHATSAPP_DIMENSION_INVALID_MESSAGES[field])
+        updates = {field: str(parsed)}
+        if len(_DIMENSION_NUMBER.findall(text)) > 1:   # e.g. "10 and 12 mm": keep the first, show staff the rest
+            updates['_note'] = f"{field.capitalize()} reply: {text}"
+        return updates
+    if field == 'product_category':
+        detected = _detect_product_category(text)
+        if detected is None:
+            raise _InvalidAnswer(ask='product_category')
+        return {'product_category': detected.pk}
+    if field == 'contact_email':
+        if not _is_valid_whatsapp_email(text):
+            raise _InvalidAnswer(say=WHATSAPP_QUERY_QUESTIONS['contact_email'])
+        return {'contact_email': text}
+    if field == 'drawing':
+        # A text reply here means no attachment came with it — "no", or a short description instead of a
+        # photo/PDF. An actual image/document reply is handled separately, in the background, by
+        # _process_whatsapp_drawing_media_background.
+        return {'drawing_notes': text}
+    if field == 'quantity_text':
+        kg = _parse_whatsapp_quantity_kg(text)
+        if kg is None:
+            raise _InvalidAnswer(say=WHATSAPP_QUANTITY_INVALID_MESSAGE)
+        return {'quantity_text': text, 'quantity': str(kg)}
+    return {field: text}
+
+
+def _apply_updates(query, updates, editing=False):
+    """Set `updates` (from _parse_answer) on the query and return the field names to save. While first
+    collecting answers a quantity staff already entered is left alone; a customer's confirmed change
+    overrides, and re-links the product code to the new type + grade."""
+    changed = []
+    for key, value in updates.items():
+        if key == '_note':
+            stamp = timezone.now().strftime('%d %b %H:%M')
+            query.notes = f"{query.notes}\n[{stamp}] {value}".strip()
+            changed.append('notes')
+            continue
+        if key == '_pending_file':
+            continue
+        if key in ('width', 'thickness', 'quantity'):
+            if key == 'quantity' and not editing and query.quantity is not None:
+                continue
+            value = Decimal(value)
+        elif key == 'product_category':
+            value = ProductCategory.objects.get(pk=value)
+        setattr(query, key, value)
+        changed.append(key)
+    if updates.get('_pending_file') and query.pending_drawing:
+        content = query.pending_drawing.read()
+        query.drawing.save(os.path.basename(query.pending_drawing.name), ContentFile(content), save=False)
+        query.pending_drawing.delete(save=False)
+        query.pending_drawing = None
+        changed += ['drawing', 'pending_drawing']
+    elif editing and 'drawing_notes' in updates and query.drawing:
+        query.drawing = ''   # replaced by a text answer: the old file no longer stands
+        changed.append('drawing')
+    if 'grade' in updates or 'product_category' in updates:
+        code = query.matching_product_code()   # link the catalogue code as soon as type + grade are known
+        if editing or (code and not query.product_type_id):
+            query.product_type = code
+            changed.append('product_type')
+    return list(dict.fromkeys(changed))
+
+
+# ── The end-of-conversation review ────────────────────────────────────────────
+# Once every question is answered the bot sends a summary and asks "Is everything correct?" with
+# Confirm / Change something buttons. Change → a tappable list of what to change → the question again
+# → "Change X to Y? Save it / Keep old" → back to the summary. Nothing a customer changes is stored
+# until they confirm it. Stages live on Query.bot_stage:
+#   ''  collecting answers          'summary'  waiting for Confirm / Change
+#   'pick_field' / 'pick_more'  choosing what to change (two lists: Meta allows 10 rows per list)
+#   'editing'  waiting for the new answer      'confirm_change'  waiting for Save / Keep old
+#   'done'  confirmed
+WHATSAPP_REVIEW_STAGES = ('summary', 'pick_field', 'pick_more', 'editing', 'confirm_change')
+WHATSAPP_FIELD_ROW_PREFIX = 'field:'
+
+# (key, label) in the order shown in the summary; a key is also the name of the question it re-asks.
+WHATSAPP_REVIEW_FIELDS = [
+    ('company_name', 'Company name'), ('contact_email', 'Email'), ('gst_number', 'GST number & address'),
+    ('product_category', 'Product type'), ('grade', 'Grade'), ('width', 'Width'), ('thickness', 'Thickness'),
+    ('quantity_text', 'Quantity'), ('drawing', 'Drawing / sample'), ('technical_requirements', 'Make/properties/process'),
+    ('end_use', 'End use'), ('delivery_form', 'Delivery form'),
+]
+_REVIEW_LABELS = dict(WHATSAPP_REVIEW_FIELDS)
+_REVIEW_PAGE_ONE = [key for key, _ in WHATSAPP_REVIEW_FIELDS[:8]]
+_REVIEW_PAGE_TWO = [key for key, _ in WHATSAPP_REVIEW_FIELDS[8:]]
+_REVIEW_ALIASES = {
+    'company_name': ('company', 'name'), 'contact_email': ('email', 'mail'), 'gst_number': ('gst', 'address'),
+    'product_category': ('product', 'type'), 'quantity_text': ('quantity', 'kg'), 'drawing': ('drawing', 'sample'),
+    'technical_requirements': ('make', 'propert', 'process'), 'end_use': ('end use', 'use'),
+    'delivery_form': ('delivery', 'coil', 'bar'),
+}
+WHATSAPP_SUMMARY_INTRO = "Here is what we have noted from you:"
+WHATSAPP_SUMMARY_QUESTION = "Is everything correct?"
+WHATSAPP_SUMMARY_CHOICES = [('confirm', 'Confirm'), ('change', 'Change something')]
+WHATSAPP_CHANGE_CHOICES = [('yes', 'Yes, save it'), ('no', 'No, keep old')]
+
+
+def _trim_number(value):
+    return format(value.normalize(), 'f')
+
+
+def _review_value(query, key):
+    """What the summary shows for a field ('—' when empty)."""
+    if key == 'gst_number':
+        value = ', '.join(part for part in (query.gst_number, query.gst_address) if part)
+    elif key == 'product_category':
+        value = query.product_category.name if query.product_category_id else ''
+    elif key in ('width', 'thickness'):
+        number = getattr(query, key)
+        value = f"{_trim_number(number)} mm" if number is not None else ''
+    elif key == 'quantity_text':
+        value = f"{_trim_number(query.quantity)} kg" if query.quantity is not None else query.quantity_text
+    elif key == 'drawing':
+        value = "File attached" if query.drawing else query.drawing_notes
     else:
-        _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_CLOSING_MESSAGE)
+        value = getattr(query, key)
+    return str(value).strip() or '—'
+
+
+def _summary_text(query):
+    lines = [f"• {label}: {_review_value(query, key)}" for key, label in WHATSAPP_REVIEW_FIELDS]
+    return WHATSAPP_SUMMARY_INTRO + "\n" + "\n".join(lines)
+
+
+def _summary_steps(query, lead=''):
+    """The summary, then the Confirm / Change buttons — two messages because a buttons message is limited
+    to 1024 characters and a summary with an address and make/process text can be longer."""
+    return [('text', (lead + "\n\n" if lead else '') + _summary_text(query)),
+            ('buttons', WHATSAPP_SUMMARY_QUESTION, WHATSAPP_SUMMARY_CHOICES)]
+
+
+def _change_list_step(query, page_two=False):
+    keys = _REVIEW_PAGE_TWO if page_two else _REVIEW_PAGE_ONE
+    rows = [(f"{WHATSAPP_FIELD_ROW_PREFIX}{key}", _REVIEW_LABELS[key][:24], _review_value(query, key)[:72]) for key in keys]
+    rows.append(('back', "← Back", "The first options") if page_two else ('more', "More…", "Drawing, make/process, end use, delivery"))
+    return ('list', "What would you like to change?", "Choose", rows)
+
+
+def _pending_display(query, key, updates):
+    """How a held change reads in "Change X to …?"."""
+    if updates.get('_pending_file'):
+        return "the file you just sent"
+    if key == 'gst_number':
+        return ', '.join(part for part in (updates.get('gst_number'), updates.get('gst_address', query.gst_address)) if part)
+    if key == 'product_category':
+        return ProductCategory.objects.get(pk=updates['product_category']).name
+    if key in ('width', 'thickness'):
+        return f"{_trim_number(Decimal(updates[key]))} mm"
+    if key == 'quantity_text':
+        return f"{_trim_number(Decimal(updates['quantity']))} kg"
+    if key == 'drawing':
+        return updates.get('drawing_notes', '')
+    return str(updates.get(key, ''))
+
+
+def _confirm_change_steps(query):
+    shown = _pending_display(query, query.edit_field, query.pending_value)[:700]
+    return [('buttons', f"Change {_REVIEW_LABELS[query.edit_field].lower()} to:\n{shown}\n\nSave this change?",
+             WHATSAPP_CHANGE_CHOICES)]
+
+
+def _says_yes(text):
+    return bool(re.match(r"\s*(yes|y\b|yep|ok|okay|sure|confirm|correct|save|right|all good)", text.lower()))
+
+
+def _says_no(text):
+    return bool(re.match(r"\s*(no\b|nope|keep|cancel|don't|do not)", text.lower()))
+
+
+def _says_change(text):
+    return _says_no(text) or text.lower().strip().startswith(('change', 'edit', 'wrong', 'incorrect', 'update'))
+
+
+def _review_key_from(text):
+    """The field a customer means by a tapped row ('@field:width') or by typing ('the width')."""
+    lowered = text.lower().strip()
+    if lowered.startswith('@' + WHATSAPP_FIELD_ROW_PREFIX):
+        key = lowered[len('@' + WHATSAPP_FIELD_ROW_PREFIX):]
+        return key if key in _REVIEW_LABELS else None
+    for key, label in WHATSAPP_REVIEW_FIELDS:
+        if key.replace('_', ' ') in lowered or label.lower() in lowered:
+            return key
+    for key, aliases in _REVIEW_ALIASES.items():
+        if any(alias in lowered for alias in aliases):
+            return key
+    return None
+
+
+def _review_reply(query, text, window_open):
+    """Handle a customer's message while they are reviewing the summary. Everything sent is skipped (but
+    state still moves on) once the 24-hour window has closed — staff were already told."""
+    def send(steps):
+        if window_open:
+            _send_whatsapp_steps_background(query.contact_phone, steps)
+
+    def save(*fields):
+        query.save(update_fields=list(fields))
+
+    def back_to_summary(lead=''):
+        query.bot_stage, query.edit_field, query.pending_value = 'summary', '', {}
+        if query.pending_drawing:
+            query.pending_drawing.delete(save=False)
+            query.pending_drawing = None
+        save('bot_stage', 'edit_field', 'pending_value', 'pending_drawing')
+        send(_summary_steps(query, lead))
+
+    stage, lowered = query.bot_stage, text.lower().strip()
+
+    if stage == 'summary':
+        if _says_yes(lowered) and not lowered.startswith('change'):
+            query.bot_stage = 'done'
+            query.intake_confirmed_at = timezone.now()
+            save('bot_stage', 'intake_confirmed_at')
+            send([('text', WHATSAPP_CLOSING_MESSAGE)])
+        elif _says_change(lowered):
+            query.bot_stage = 'pick_field'
+            save('bot_stage')
+            send([_change_list_step(query)])
+        else:
+            send(_summary_steps(query)[1:])   # not understood: just the buttons again
+        return
+
+    if stage in ('pick_field', 'pick_more'):
+        if lowered == '@more':
+            query.bot_stage = 'pick_more'
+            save('bot_stage')
+            send([_change_list_step(query, page_two=True)])
+            return
+        if lowered == '@back':
+            query.bot_stage = 'pick_field'
+            save('bot_stage')
+            send([_change_list_step(query)])
+            return
+        if lowered.startswith('cancel'):
+            back_to_summary()
+            return
+        key = _review_key_from(text)
+        if key is None:
+            send([_change_list_step(query, page_two=(stage == 'pick_more'))])
+            return
+        query.bot_stage, query.edit_field = 'editing', key
+        save('bot_stage', 'edit_field')
+        send([('text', "What is your company name?")] if key == 'company_name' else [_question_step(key)])
+        return
+
+    if stage == 'editing':
+        if lowered in ('cancel', 'back'):
+            back_to_summary()
+            return
+        try:
+            updates = _parse_answer(query.edit_field, text.strip())
+        except _InvalidAnswer as invalid:
+            if invalid.say:
+                send([('text', invalid.say)])
+            if invalid.ask:
+                send([_question_step(invalid.ask)])
+            return
+        query.pending_value, query.bot_stage = updates, 'confirm_change'
+        save('pending_value', 'bot_stage')
+        send(_confirm_change_steps(query))
+        return
+
+    if stage == 'confirm_change':
+        if _says_yes(lowered):
+            changed = _apply_updates(query, query.pending_value, editing=True)
+            query.pending_value, query.bot_stage, query.edit_field = {}, 'summary', ''
+            query.save(update_fields=changed + ['pending_value', 'bot_stage', 'edit_field'])
+            send(_summary_steps(query, "Done, I've updated that."))
+        elif _says_no(lowered):
+            back_to_summary("No problem, I've kept it as it was.")
+        else:
+            send(_confirm_change_steps(query))
+
+
+def _question_step(field):
+    """The step that asks `field`'s question (a list or buttons for the tappable ones)."""
+    if field == 'product_category':
+        rows = _product_category_rows()
+        if rows:
+            return ('list', WHATSAPP_QUERY_QUESTIONS[field], "Choose type", rows)
+        return ('text', "Which product type do you need? Please type its name.")
+    if field in WHATSAPP_QUERY_CHOICES:
+        return ('buttons', WHATSAPP_QUERY_QUESTIONS[field], WHATSAPP_QUERY_CHOICES[field])
+    return ('text', WHATSAPP_QUERY_QUESTIONS[field])

@@ -113,6 +113,8 @@
         <dt>Where from</dt><dd>{{ query.source_detail|default:"—" }}</dd>
         {% endif %}
         <dt>Received</dt><dd>{{ query.created_at|date:"d M Y, H:i" }}</dd>
+        {% if query.intake_confirmed_at %}<dt>Answers confirmed</dt><dd>By the customer on WhatsApp, {{ query.intake_confirmed_at|date:"d M Y, H:i" }}</dd>
+        {% elif query.bot_stage %}<dt>WhatsApp review</dt><dd>Waiting for the customer to confirm their answers</dd>{% endif %}
       </dl>
     </div>
   </div>
