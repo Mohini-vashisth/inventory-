@@ -19,10 +19,13 @@ def _number(value):
     return format(value.normalize(), 'f') if value is not None else ''
 
 
-def order_rows(order):
-    """[(label, text)] for one order — the core rows always, the optional ones only when filled in."""
+def order_rows(order, show_order_number=True):
+    """[(label, text)] for one order: every detail the order page shows, with a dash where nothing was
+    entered, so the document is the complete record and a blank is visibly blank."""
     delivery = order.delivery_detail_text() if order.delivery_form else ''
     rows = [
+        ('Order no.', f"ORD-{order.order_no:04d}" if show_order_number and order.order_no else ''),
+        ('Status', order.get_status_display()),
         ('Product type', order.product_type_name()),
         ('Product code', order.product_type.item_code if order.product_type_id else 'To be assigned'),
         ('Grade', order.grade),
@@ -33,6 +36,7 @@ def order_rows(order):
         ('Expected delivery', f"{order.delivery_date:%d %b %Y}" if order.delivery_date else ''),
         ('Frequency', order.get_frequency_display() if order.frequency else ''),
         ('Tolerances', '\n'.join(order.tolerance_lines())),
+        ('Dimensions (typed)', order.drawing_dimensions),
         ('Mechanical properties', order.mechanical_properties),
         ('Processes', order.processes),
         ('End usage', order.end_usage),
@@ -41,14 +45,18 @@ def order_rows(order):
         ('Drawing', 'Attached' if order.drawing_file else 'Not attached'),
         ('Purchase order', 'Attached' if order.purchase_order else 'Not attached'),
     ]
-    always = {'Product type', 'Product code', 'Grade', 'Width', 'Thickness', 'Quantity', 'Drawing', 'Purchase order'}
-    return [(label, text.strip() or '—') for label, text in rows if text and str(text).strip() or label in always]
+    # Only the rows that make no sense are left out: the order number when it isn't being shown, and the
+    # typed dimensions, which only older orders and staff-entered ones have.
+    skipped = {'Dimensions (typed)'} if not order.drawing_dimensions.strip() else set()
+    if not (show_order_number and order.order_no):
+        skipped.add('Order no.')
+    return [(label, (str(text).strip() or '—')) for label, text in rows if label not in skipped]
 
 
-def generate_order_summary_pdf(orders, customer, quotation=None, placed_at=None, show_order_numbers=False):
-    """The summary as PDF bytes, for the customer: what they ordered. `orders` are the orders to list.
-    Order numbers (ORD-####) are left out unless asked for — they can change when an earlier order is
-    deleted, so they are not something to print on a document that leaves the building."""
+def generate_order_summary_pdf(orders, customer, quotation=None, placed_at=None, show_order_numbers=True, confirmed_at=None):
+    """The complete order as PDF bytes, for the customer: what they ordered and that it is confirmed.
+    `orders` are the orders to list; `confirmed_at` is stamped in the header when given. Order numbers are
+    the ones at the moment of printing (they close up if an earlier order is later deleted)."""
     placed_at = timezone.localtime(placed_at or min((o.created_at for o in orders if o.created_at), default=timezone.now()))
     base = getSampleStyleSheet()
     styles = {
@@ -68,14 +76,19 @@ def generate_order_summary_pdf(orders, customer, quotation=None, placed_at=None,
     story += [header, Spacer(1, 2 * mm)]
 
     numbers = ', '.join(f"ORD-{o.order_no:04d}" for o in orders if o.order_no) if show_order_numbers else ''
-    meta = [f"Order placed on {placed_at:%d %b %Y, %H:%M}", f"{len(orders)} item{'s' if len(orders) != 1 else ''}"]
+    meta = [f"Order placed on {placed_at:%d %b %Y, %H:%M}"]
+    if confirmed_at is not None:
+        meta.append(f"Confirmed on {timezone.localtime(confirmed_at):%d %b %Y, %H:%M}")
+    meta.append(f"{len(orders)} item{'s' if len(orders) != 1 else ''}")
     if numbers:
         meta.append(f"Order no.: {numbers}")
     if quotation is not None:
         meta.append(f"Against quotation {quotation.formatted_no()}")
     story.append(Paragraph(_esc(' · '.join(meta)), styles['meta']))
 
-    customer_rows = [('Customer', customer.name), ('Email', customer.email), ('Phone', customer.phone)]
+    source = next((o.source_query for o in orders if o.source_query_id), None)   # what they told us on WhatsApp
+    customer_rows = [('Customer', customer.name), ('Email', customer.email), ('Phone', customer.phone),
+                     ('GST number', source.gst_number if source else ''), ('GST address', source.gst_address if source else '')]
     customer_table = Table(
         [[Paragraph(label, styles['label']), Paragraph(_esc(text), styles['value'])] for label, text in customer_rows if text],
         colWidths=[28 * mm, CONTENT_WIDTH - 28 * mm])
@@ -88,7 +101,8 @@ def generate_order_summary_pdf(orders, customer, quotation=None, placed_at=None,
         spec = order.spec_text()
         title = Paragraph(f"Item {number}" + (f" — {_esc(spec)}" if spec else ''), styles['section'])
         table = Table(
-            [[Paragraph(label, styles['label']), Paragraph(_esc(text).replace('\n', '<br/>'), styles['value'])] for label, text in order_rows(order)],
+            [[Paragraph(label, styles['label']), Paragraph(_esc(text).replace('\n', '<br/>'), styles['value'])]
+             for label, text in order_rows(order, show_order_numbers)],
             colWidths=[38 * mm, CONTENT_WIDTH - 38 * mm])
         table.setStyle(TableStyle([
             ('LINEBELOW', (0, 0), (-1, -1), 0.4, BORDER), ('LEFTPADDING', (0, 0), (-1, -1), 4),
