@@ -995,6 +995,15 @@ class Order(models.Model):
             lines.append(f"Other: {self.other_tolerances.strip()}")
         return [line for line in lines if line]
 
+    def width_text(self):
+        return format(self.width.normalize(), 'f') if self.width is not None else ''
+
+    def thickness_text(self):
+        return format(self.thickness.normalize(), 'f') if self.thickness is not None else ''
+
+    def quantity_text(self):
+        return format(self.quantity.normalize(), 'f') if self.quantity is not None else ''
+
     def delivery_detail_text(self):
         """"Bar, 3000 mm long" / "Coil, approx. 2000 kg" — the delivery form with what was asked for it."""
         def number(value):

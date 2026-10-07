@@ -757,6 +757,49 @@ class OrderConfirmationEmailTests(TestCase):
             with self.subTest(text=text):
                 self.assertIn(text, message.body)
 
+    def _pdf_text(self, message):
+        attachment = message.attachments[0]
+        self.assertEqual((attachment[0], attachment[2]), ('Order summary.pdf', 'application/pdf'))
+        self.assertTrue(attachment[1].startswith(b'%PDF'))
+        return attachment[1]
+
+    def test_the_confirmation_email_carries_a_summary_pdf_of_what_was_ordered(self):
+        import re
+        from unittest.mock import patch as _patch
+        from ..order_pdf import generate_order_summary_pdf
+        order = self._order(delivery_form='bar', bar_length=Decimal('3000'), length_tol_from=Decimal('-5'), length_tol_to=Decimal('5'),
+                            width_tol_from=Decimal('49.9'), width_tol_to=Decimal('50.1'), mechanical_properties='Tensile 700 MPa',
+                            end_usage='gear shafts', delivery_date=datetime.date(2026, 11, 20))
+        self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}))
+        message = self.mail.outbox[0]
+        self.assertIn('A summary of your order is attached.', message.body)
+        self._pdf_text(message)
+        with _patch('reportlab.rl_config.pageCompression', 0):   # readable content streams
+            pdf = generate_order_summary_pdf([order], self.customer, placed_at=order.created_at)
+        text = b' '.join(re.findall(rb'\((.*?)\)\s*Tj', pdf)).decode('latin-1')
+        for expected in ('ORDER SUMMARY', 'Confirm Co', 'Flat Bright Bar', 'FBB009', 'EN8D', '50 mm', '6.5 mm', '500 kg',
+                         'Bar, 3000 mm long', '20 Nov 2026', 'Width 49.9 to 50.1 mm', 'Length -5 to 5 mm', 'Tensile 700 MPa',
+                         'gear shafts', 'Not attached'):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, text)
+
+    def test_the_summary_pdf_leaves_out_order_numbers_and_empty_optional_rows(self):
+        import re
+        from unittest.mock import patch as _patch
+        from ..order_pdf import generate_order_summary_pdf
+        order = self._order()
+        with _patch('reportlab.rl_config.pageCompression', 0):
+            text = b' '.join(re.findall(rb'\((.*?)\)\s*Tj', generate_order_summary_pdf([order], self.customer))).decode('latin-1')
+        self.assertNotIn(f'ORD-{order.order_no:04d}', text)
+        for absent in ('Mechanical properties', 'Processes', 'Mill make', 'Tolerances', 'Frequency'):
+            self.assertNotIn(absent, text)
+
+    def test_nothing_is_emailed_to_us_when_an_order_is_placed(self):
+        customer = Customer.objects.create(name='Place Mail Co', email='place@example.com')
+        self.client.logout()
+        self.client.post(reverse('quote_form', kwargs={'token': customer.quote_token}), {'quantity': '10', 'grade': 'EN8D'})
+        self.assertEqual(len(self.mail.outbox), 0)   # the summary goes out when staff confirm, to the customer
+
     def test_the_staff_see_that_it_was_sent(self):
         order = self._order()
         response = self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}), follow=True)
@@ -906,7 +949,8 @@ class OrderDrawingAndToleranceTests(TestCase):
         staff = User.objects.create_user('tol_staff', password='pw', is_staff=True)
         self.client.post(self.url, self._data(**{'item-0-drawing_file': self._pdf(), 'item-0-width_tol_from': '49.9', 'item-0-width_tol_to': '50.1'}))
         self.client.force_login(staff)
-        html = self.client.get(reverse('order_dashboard')).content.decode()
+        order = Order.objects.get(customer=self.customer)
+        html = self.client.get(reverse('order_detail', kwargs={'pk': order.pk})).content.decode()
         self.assertIn('Open the attached drawing', html)
         self.assertIn('Width 49.9 to 50.1 mm', html)
 
@@ -1021,9 +1065,10 @@ class BarLengthAndCoilWeightTests(TestCase):
         self.client.post(self.url, self._data(**{'item-0-delivery_form': 'bar', 'item-0-bar_length': '3000', 'item-0-length_tol_from': '-5', 'item-0-length_tol_to': '5',
                                                   'item-1-delivery_form': 'coil', 'item-1-coil_weight': '1200'}))
         self.client.force_login(staff)
-        html = self.client.get(reverse('order_dashboard')).content.decode()
+        orders = self._orders()
+        html = self.client.get(reverse('order_detail', kwargs={'pk': orders[0].pk})).content.decode()
         self.assertIn('Bar, 3000 mm long', html)
-        self.assertIn('Coil, approx. 1200 kg', html)
+        self.assertIn('Coil, approx. 1200 kg', self.client.get(reverse('order_detail', kwargs={'pk': orders[1].pk})).content.decode())
         with override_settings(EMAIL_HOST_USER='s@example.com', DEFAULT_FROM_EMAIL='s@example.com'):
             self.client.post(reverse('order_confirm', kwargs={'pk': self._orders()[0].pk}))
         body = mail.outbox[0].body
@@ -1057,3 +1102,82 @@ class BarLengthAndCoilWeightTests(TestCase):
         os.unlink(handle.name)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), '[[false,true],[true,false],[true,true]]')   # bar, coil, nothing
+
+
+class OrderDetailPageTests(TestCase):
+    """Clicking an order opens the whole order, like a query does."""
+
+    def setUp(self):
+        self.staff = User.objects.create_user('detail_staff', password='pw', is_staff=True)
+        self.client.force_login(self.staff)
+        self.customer = Customer.objects.create(name='Detail Co', email='detail@example.com', phone='9990001111')
+        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        self.code = ProductType.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        self.query = Query.objects.create(source='whatsapp', contact_phone='919876500060', company_name='Detail Co', customer=self.customer)
+        quotation = Quotation.objects.create(customer=self.customer, source_query=self.query, status='sent')
+        self.quotation = quotation
+        self.order = Order.objects.create(
+            customer=self.customer, source_query=self.query, product_type=self.code, grade='EN8D', width=Decimal('50'),
+            thickness=Decimal('6.5'), quantity=Decimal('500'), status='pending', delivery_form='bar', bar_length=Decimal('3000'),
+            length_tol_from=Decimal('-5'), length_tol_to=Decimal('5'), width_tol_from=Decimal('49.9'), width_tol_to=Decimal('50.1'),
+            other_tolerances='Straightness 1 mm/m', delivery_date=datetime.date(2026, 11, 20), frequency='monthly',
+            mechanical_properties='Tensile 700 MPa', processes='Drilling', end_usage='gear shafts', mill_make='Tata', notes='Call first')
+        self.url = reverse('order_detail', kwargs={'pk': self.order.pk})
+
+    def test_the_page_shows_the_whole_order(self):
+        html = self.client.get(self.url).content.decode()
+        for text in ('Detail Co', 'detail@example.com', '9990001111', f'ORD-{self.order.order_no:04d}', 'Pending', 'Flat Bright Bar', 'FBB009',
+                     'EN8D', '50 mm', '6.5 mm', 'Width 49.9 to 50.1 mm', 'Length -5 to 5 mm', 'Other: Straightness 1 mm/m', '500 kg',
+                     'Bar, 3000 mm long', '20 Nov 2026', 'Monthly', 'Tensile 700 MPa', 'Drilling', 'gear shafts', 'Tata', 'Call first',
+                     'No coils picked yet'):
+            with self.subTest(text=text):
+                self.assertIn(text, html)
+
+    def test_it_links_to_the_query_and_the_quotation(self):
+        html = self.client.get(self.url).content.decode()
+        self.assertIn(reverse('query_detail', kwargs={'pk': self.query.pk}), html)
+        self.assertIn(reverse('quotation_pdf', kwargs={'pk': self.quotation.pk}), html)
+
+    def test_attachments_are_links_only_when_they_exist(self):
+        from django.core.files.base import ContentFile
+        html = self.client.get(self.url).content.decode()
+        self.assertEqual(html.count('Not attached'), 2)
+        with tempfile.TemporaryDirectory() as tmp, override_settings(MEDIA_ROOT=tmp):
+            self.order.drawing_file.save('d.pdf', ContentFile(b'%PDF'), save=False)
+            self.order.purchase_order.save('po.pdf', ContentFile(b'%PDF'), save=True)
+            html = self.client.get(self.url).content.decode()
+        self.assertIn('Open the attached drawing', html)
+        self.assertIn('Open the purchase order', html)
+
+    def test_actions_follow_the_status(self):
+        confirm = reverse('order_confirm', kwargs={'pk': self.order.pk})
+        self.assertIn(confirm, self.client.get(self.url).content.decode())   # pending: confirm / reject
+        self.client.post(confirm)
+        html = self.client.get(self.url).content.decode()
+        self.assertNotIn(confirm, html)
+        self.assertIn('Confirmed', html)
+        Order.objects.filter(pk=self.order.pk).update(status='in_production')
+        self.assertIn(reverse('order_dispatch', kwargs={'pk': self.order.pk}), self.client.get(self.url).content.decode())
+
+    def test_an_order_without_a_product_code_says_why_it_cannot_be_confirmed(self):
+        Order.objects.filter(pk=self.order.pk).update(product_type=None)
+        self.assertIn("can't be confirmed yet", self.client.get(self.url).content.decode())
+
+    def test_picked_coils_are_listed(self):
+        coil = Material.objects.create(grade='EN8D', quantity=Decimal('900'))
+        OrderCoilPick.objects.create(order=self.order, coil=coil, weight_allocated=Decimal('500'))
+        html = self.client.get(self.url).content.decode()
+        self.assertIn(coil.formatted_coil(), html)
+        self.assertIn('500 / 500 kg picked', html)
+        self.assertIn('Fulfilled', html)
+
+    def test_the_list_links_to_it_and_no_longer_expands_in_place(self):
+        html = self.client.get(reverse('order_dashboard')).content.decode()
+        self.assertEqual(html.count(f'href="{self.url}"'), 3)   # order number, customer name, Details button
+        self.assertNotIn('toggleDetail', html)
+        self.assertNotIn('detail-row', html.split('<tbody>', 2)[1] if '<tbody>' in html else html)
+
+    def test_a_missing_order_is_a_404_and_anonymous_users_are_sent_to_log_in(self):
+        self.assertEqual(self.client.get(reverse('order_detail', kwargs={'pk': 99999})).status_code, 404)
+        self.client.logout()
+        self.assertEqual(self.client.get(self.url).status_code, 302)

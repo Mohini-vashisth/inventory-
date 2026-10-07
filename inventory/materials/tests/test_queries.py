@@ -783,7 +783,9 @@ class QueryShowsItsOrderNumbersTests(TestCase):
             with self.subTest(url=url):
                 html = self.client.get(url).content.decode()
                 self.assertIn('Order placed', html)
-                self.assertIn(f'ORD-{first.order_no:04d}, ORD-{second.order_no:04d}', html)
+                self.assertIn(f'ORD-{first.order_no:04d}</a>, <a', html)
+                self.assertIn(f'ORD-{second.order_no:04d}</a>', html)
+                self.assertIn(reverse('order_detail', kwargs={'pk': first.pk}), html)   # each number opens its order
 
     def test_the_number_follows_when_an_earlier_order_is_deleted(self):
         earlier = Order.objects.create(customer=self.customer, quantity=1)
