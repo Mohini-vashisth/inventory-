@@ -505,6 +505,15 @@ class Query(models.Model):
     # Customer itself is created on-demand in quick_send_quote).
     customer      = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='queries')
     created_at    = models.DateTimeField(auto_now_add=True)
+    # WhatsApp bot bookkeeping (see views/whatsapp.py). `last_inbound_at` is when the customer's
+    # newest processed message was *sent* (WhatsApp lets the bot send free-form text only for 24 hours
+    # after it); `last_asked_field` is the question the bot sent last and nobody has answered yet, so a
+    # replayed or duplicate message can't make it ask the same thing twice; `needs_review` flags a
+    # conversation staff should look at (a reply arrived out of order, or the 24-hour window closed).
+    last_inbound_at  = models.DateTimeField(null=True, blank=True, editable=False)
+    last_asked_field = models.CharField(max_length=30, blank=True, editable=False)
+    needs_review     = models.BooleanField(default=False)
+    review_note      = models.CharField(max_length=255, blank=True)
 
     # (field, label) for the free-text answers above, in the order the bot asks
     # them — the one list the dashboard, the edit form and the bot all read.
@@ -575,6 +584,17 @@ class Query(models.Model):
     def __str__(self):
         label = self.company_name or self.contact_phone or f"Query #{self.pk}"
         return f"{label} — {self.get_source_display()}"
+
+
+class WhatsAppMessage(models.Model):
+    """The id of every WhatsApp message the webhook has handled (Meta's `wamid`), so a message
+    Meta delivers twice — it retries any delivery that wasn't acknowledged, and replays a backlog
+    when the app comes back after being offline — is only ever processed once."""
+    message_id  = models.CharField(max_length=128, unique=True)
+    received_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.message_id
 
 
 def _indian_number_to_words(n):

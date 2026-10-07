@@ -8,6 +8,7 @@ import re
 import threading
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
 
 from django.conf import settings
@@ -21,7 +22,7 @@ from django.views.decorators.http import require_http_methods
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
-from ..models import GSTIN_PATTERN, ProductCategory, Query
+from ..models import GSTIN_PATTERN, ProductCategory, Query, WhatsAppMessage
 
 logger = logging.getLogger(__name__)
 
@@ -491,35 +492,81 @@ def _process_whatsapp_change(value):
     contacts = value.get("contacts", [])
     profile_name = contacts[0].get("profile", {}).get("name", "") if contacts else ""
 
-    for msg in incoming_messages:
-        phone = msg.get("from", "")
-        if not phone:
-            continue
-        msg_type = msg.get("type")
-        if msg_type == "text":
-            text = (msg.get("text") or {}).get("body", "").strip()
-            if text:
-                _route_whatsapp_message(phone, text, profile_name)
-        elif msg_type == "interactive":
-            # A tap on a reply button (or list row): its title is the answer.
-            interactive = msg.get("interactive") or {}
-            reply = interactive.get("button_reply") or interactive.get("list_reply") or {}
-            title = (reply.get("title") or "").strip()
-            reply_id = reply.get("id") or ""
-            if reply_id.startswith(WHATSAPP_CATEGORY_ROW_PREFIX):   # a product type row: its title may be cut short
-                category = ProductCategory.objects.filter(pk=reply_id[len(WHATSAPP_CATEGORY_ROW_PREFIX):] or 0).first() \
-                    if reply_id[len(WHATSAPP_CATEGORY_ROW_PREFIX):].isdigit() else None
-                title = category.name if category else title
-            if title:
-                _route_whatsapp_message(phone, title, profile_name)
-        elif msg_type in ("image", "document"):
-            media = msg.get(msg_type) or {}
-            media_id = media.get("id")
-            if media_id:
-                _route_whatsapp_media(phone, media_id, media.get("mime_type", ""))
+    # Meta redelivers anything it didn't get an acknowledgement for, and replays a backlog when
+    # the app comes back after being offline — in any order. So: (1) a message id seen before is
+    # skipped, (2) a batch is handled oldest-first, and (3) when one batch holds several messages
+    # from the same customer only the last one sends the next question, otherwise they would be
+    # asked a string of questions they have already answered.
+    WhatsAppMessage.objects.filter(received_at__lt=timezone.now() - WHATSAPP_MESSAGE_ID_KEEP).delete()   # old ids can't recur
+    ordered = sorted((m for m in incoming_messages if m.get("from")), key=_message_timestamp)
+    fresh = [m for m in ordered if _claim_whatsapp_message(m.get("id"))]
+    last_for_phone = {_normalize_phone(m["from"]): index for index, m in enumerate(fresh)}
+
+    for index, msg in enumerate(fresh):
+        phone = msg["from"]
+        send_next = last_for_phone[_normalize_phone(phone)] == index
+        sent_at = _message_sent_at(msg)
+        try:
+            _handle_whatsapp_message(msg, phone, profile_name, sent_at, send_next)
+        except Exception:
+            for unhandled in fresh[index:]:   # let Meta's retry process these properly
+                _release_whatsapp_message(unhandled.get("id"))
+            raise
 
 
-def _route_whatsapp_message(phone, text, profile_name):
+def _message_timestamp(msg):
+    try:
+        return int(msg.get("timestamp") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _message_sent_at(msg):
+    """When the customer sent this message, from Meta's own timestamp (None if absent)."""
+    seconds = _message_timestamp(msg)
+    return datetime.fromtimestamp(seconds, tz=dt_timezone.utc) if seconds else None
+
+
+def _claim_whatsapp_message(message_id):
+    """True the first time a message id is seen (and records it); False for a repeat.
+    Messages with no id (never the case from Meta) are always handled."""
+    if not message_id:
+        return True
+    _, created = WhatsAppMessage.objects.get_or_create(message_id=message_id)
+    return created
+
+
+def _release_whatsapp_message(message_id):
+    if message_id:
+        WhatsAppMessage.objects.filter(message_id=message_id).delete()
+
+
+def _handle_whatsapp_message(msg, phone, profile_name, sent_at, send_next):
+    msg_type = msg.get("type")
+    if msg_type == "text":
+        text = (msg.get("text") or {}).get("body", "").strip()
+        if text:
+            _route_whatsapp_message(phone, text, profile_name, sent_at, send_next)
+    elif msg_type == "interactive":
+        # A tap on a reply button (or list row): its title is the answer.
+        interactive = msg.get("interactive") or {}
+        reply = interactive.get("button_reply") or interactive.get("list_reply") or {}
+        title = (reply.get("title") or "").strip()
+        reply_id = reply.get("id") or ""
+        if reply_id.startswith(WHATSAPP_CATEGORY_ROW_PREFIX):   # a product type row: its title may be cut short
+            category = ProductCategory.objects.filter(pk=reply_id[len(WHATSAPP_CATEGORY_ROW_PREFIX):] or 0).first() \
+                if reply_id[len(WHATSAPP_CATEGORY_ROW_PREFIX):].isdigit() else None
+            title = category.name if category else title
+        if title:
+            _route_whatsapp_message(phone, title, profile_name, sent_at, send_next)
+    elif msg_type in ("image", "document"):
+        media = msg.get(msg_type) or {}
+        media_id = media.get("id")
+        if media_id:
+            _route_whatsapp_media(phone, media_id, media.get("mime_type", ""), sent_at)
+
+
+def _route_whatsapp_message(phone, text, profile_name, sent_at=None, send_next=True):
     """Route an inbound message to whichever open Query is mid-intake for
     this phone number. A message from a number with no in-progress query —
     either a cold inbound message, or a reply after that query already
@@ -534,12 +581,13 @@ def _route_whatsapp_message(phone, text, profile_name):
         .first()
     )
     if query:
-        _process_whatsapp_answer(query.pk, text)
+        _process_whatsapp_answer(query.pk, text, sent_at, send_next)
     else:
-        Query.objects.create(source='whatsapp', company_name=profile_name, contact_phone=phone, notes=text)
+        Query.objects.create(source='whatsapp', company_name=profile_name, contact_phone=phone, notes=text,
+                             last_inbound_at=sent_at or timezone.now())
 
 
-def _route_whatsapp_media(phone, media_id, mime_type):
+def _route_whatsapp_media(phone, media_id, mime_type, sent_at=None):
     """Same lookup as _route_whatsapp_message, but for an image/document
     reply — only meaningful when 'drawing' is actually the field being
     asked for right now; otherwise there's no in-progress query expecting
@@ -555,7 +603,13 @@ def _route_whatsapp_media(phone, media_id, mime_type):
         .order_by('-created_at')
         .first()
     )
-    if not query or _next_expected_query_field(query) != 'drawing':
+    if not query:
+        return
+    newest = sent_at or timezone.now()   # a file is the customer's newest message too: it re-opens the window
+    if not query.last_inbound_at or newest > query.last_inbound_at:
+        query.last_inbound_at = newest
+        query.save(update_fields=['last_inbound_at'])
+    if _next_expected_query_field(query) != 'drawing':
         return
     _process_whatsapp_drawing_media_background(query.pk, media_id, mime_type)
 
@@ -642,7 +696,37 @@ def _process_whatsapp_drawing_media_background(query_pk, media_id, mime_type):
     return thread
 
 
-def _process_whatsapp_answer(query_pk, text):
+# WhatsApp only lets the bot send free-form text for 24 hours after the customer's last message;
+# a margin is kept so a send never lands right on the edge.
+WHATSAPP_WINDOW = timedelta(hours=23)
+# How long handled message ids are remembered; Meta retries for days, not months.
+WHATSAPP_MESSAGE_ID_KEEP = timedelta(days=30)
+WHATSAPP_WINDOW_CLOSED_NOTE = (
+    "WhatsApp's 24-hour reply window has closed, so the bot can't send the next question — "
+    "message the customer on WhatsApp yourself; the bot carries on when they reply."
+)
+WHATSAPP_OUT_OF_ORDER_NOTE = (
+    "A reply reached the bot out of order (the app was probably offline) — check the answers below "
+    "are in the right fields; the late message is in the notes."
+)
+
+
+def _whatsapp_window_open(query, now=None):
+    """Whether the bot may still send the customer free-form messages."""
+    if query.last_inbound_at is None:
+        return True
+    return (now or timezone.now()) - query.last_inbound_at < WHATSAPP_WINDOW
+
+
+def _flag_for_review(query, note):
+    """Mark a conversation for staff (shown on the dashboard and detail page)."""
+    if note not in query.review_note:
+        query.review_note = f"{query.review_note} {note}".strip()[:255]
+    query.needs_review = True
+    query.save(update_fields=['needs_review', 'review_note'])
+
+
+def _process_whatsapp_answer(query_pk, text, sent_at=None, send_next=True):
     """Save this message as the answer to whichever question is next in
     the intake sequence, then send the following question — or, once the
     sequence is complete, the closing message. A message that arrives after
@@ -654,9 +738,37 @@ def _process_whatsapp_answer(query_pk, text):
     can redeliver the same webhook, and two overlapping deliveries for the
     same phone must not both read the same "next field" and race each
     other into the wrong column. A no-op on SQLite (no row locking there),
-    but real protection once/if this ever runs on Postgres."""
+    but real protection once/if this ever runs on Postgres.
+
+    `sent_at` is when the customer sent it (Meta's timestamp). A message older than one already
+    handled arrived out of order — it is not used as an answer, only noted and flagged for staff.
+    If the 24-hour window since the customer's newest message has closed, answers are still saved
+    but nothing is sent (it would be refused) and staff are told. `send_next=False` is used for all
+    but the last of several messages from one customer in a single delivery."""
     with transaction.atomic():
         query = Query.objects.select_for_update().get(pk=query_pk)
+
+        if sent_at is not None and query.last_inbound_at and sent_at < query.last_inbound_at - timedelta(seconds=1):
+            stamp = timezone.localtime(sent_at).strftime('%d %b %H:%M')
+            query.notes = f"{query.notes}\n[late reply, sent {stamp}] {text}".strip()
+            query.save(update_fields=['notes'])
+            _flag_for_review(query, WHATSAPP_OUT_OF_ORDER_NOTE)
+            return
+
+        newest = sent_at or timezone.now()
+        query.last_inbound_at = max(query.last_inbound_at, newest) if query.last_inbound_at else newest
+        query.save(update_fields=['last_inbound_at'])
+        window_open = _whatsapp_window_open(query)
+        if not window_open:
+            _flag_for_review(query, WHATSAPP_WINDOW_CLOSED_NOTE)
+
+        def say(message):
+            if window_open:
+                _send_whatsapp_text_message_background(query.contact_phone, message)
+
+        def ask(field_name):
+            if window_open:
+                _send_whatsapp_question(query.contact_phone, field_name)
 
         field = _next_expected_query_field(query)
         if field is None:
@@ -668,7 +780,7 @@ def _process_whatsapp_answer(query_pk, text):
         if field == 'gst_number':
             parsed = _parse_whatsapp_gst_details(text)
             if parsed is None:
-                _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_GST_INVALID_MESSAGE)
+                say(WHATSAPP_GST_INVALID_MESSAGE)
                 return
             query.gst_number, address = parsed
             changed = ['gst_number']
@@ -678,14 +790,14 @@ def _process_whatsapp_answer(query_pk, text):
         elif field == 'delivery_form':
             parsed = _parse_whatsapp_delivery_form(text)
             if parsed is None:
-                _send_whatsapp_question(query.contact_phone, 'delivery_form')
+                ask('delivery_form')
                 return
             query.delivery_form = parsed
             changed = ['delivery_form']
         elif field in WHATSAPP_DIMENSION_INVALID_MESSAGES:   # width, thickness
             parsed = _parse_whatsapp_dimension(text)
             if parsed is None:
-                _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_DIMENSION_INVALID_MESSAGES[field])
+                say(WHATSAPP_DIMENSION_INVALID_MESSAGES[field])
                 return
             setattr(query, field, parsed)
             changed = [field]
@@ -696,14 +808,14 @@ def _process_whatsapp_answer(query_pk, text):
         elif field == 'product_category':
             detected = _detect_product_category(text)
             if detected is None:
-                _send_whatsapp_question(query.contact_phone, 'product_category')
+                ask('product_category')
                 return
             query.product_category = detected
             changed = ['product_category']
         elif field == 'contact_email':
             candidate = text.strip()
             if not _is_valid_whatsapp_email(candidate):
-                _send_whatsapp_text_message_background(query.contact_phone, WHATSAPP_QUERY_QUESTIONS['contact_email'])
+                say(WHATSAPP_QUERY_QUESTIONS['contact_email'])
                 return
             query.contact_email = candidate
             changed = ['contact_email']
@@ -729,15 +841,26 @@ def _process_whatsapp_answer(query_pk, text):
                 changed.append('product_type')
         query.save(update_fields=changed)
 
-        _advance_whatsapp_query(query)
+        if send_next:
+            _advance_whatsapp_query(query)
 
 
 def _advance_whatsapp_query(query):
-    """Sends the next question in the intake sequence, or the closing
-    message once it's complete. Shared by the text-answer path above and the
-    drawing-media path (_process_whatsapp_drawing_media_background), since
-    both need to advance the same way once their field is saved."""
+    """Sends the next question in the intake sequence, or the closing message once it's
+    complete. Shared by the text-answer path above and the drawing-media path
+    (_process_whatsapp_drawing_media_background), since both need to advance the same way once
+    their field is saved. Never re-asks a question that was already sent and is still waiting for
+    its answer (so a replayed or duplicated message can't double-ask), and sends nothing once the
+    24-hour window has closed — staff are told instead."""
+    if not _whatsapp_window_open(query):
+        _flag_for_review(query, WHATSAPP_WINDOW_CLOSED_NOTE)
+        return
     next_field = _next_expected_query_field(query)
+    marker = next_field or '_done'
+    if query.last_asked_field == marker:
+        return
+    query.last_asked_field = marker
+    query.save(update_fields=['last_asked_field'])
     if next_field:
         _send_whatsapp_question(query.contact_phone, next_field)
     else:

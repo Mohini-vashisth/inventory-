@@ -26,6 +26,7 @@ urlpatterns = [
     path('queries/<int:pk>/', queries.query_detail, name='query_detail'),
     path('queries/<int:pk>/edit/', queries.query_edit, name='query_edit'),
     path('queries/<int:pk>/not-interested/', queries.query_not_interested, name='query_not_interested'),
+    path('queries/<int:pk>/clear-review/', queries.query_clear_review, name='query_clear_review'),
     path('quotations/new/', quotations.quotation_form, name='quotation_form'),
     path('product-codes/lookup/', quotations.product_code_lookup, name='product_code_lookup'),
     path('quotations/drafts/', quotations.quotation_drafts, name='quotation_drafts'),

@@ -85,6 +85,19 @@ def query_dashboard(request):
 
 
 @staff_required
+def query_clear_review(request, pk):
+    """Staff have looked at a conversation the WhatsApp bot flagged (a reply that arrived out of
+    order, or the 24-hour reply window closing) — clear the flag."""
+    if request.method != 'POST':
+        return redirect('query_detail', pk=pk)
+    query = get_object_or_404(Query, pk=pk)
+    query.needs_review = False
+    query.review_note = ''
+    query.save(update_fields=['needs_review', 'review_note'])
+    return redirect('query_detail', pk=pk)
+
+
+@staff_required
 def query_not_interested(request, pk):
     if request.method != 'POST':
         return redirect('query_dashboard')
