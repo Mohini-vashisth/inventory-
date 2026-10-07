@@ -1,6 +1,7 @@
 """Orders: the staff dashboard and actions, plus the customer-facing quote form."""
 
 import logging
+import os
 import uuid
 
 from django.conf import settings
@@ -13,7 +14,7 @@ from django.db.models import Sum
 from django.http import JsonResponse
 
 from ..models import ProductCategory, ProductType, Customer, Query, Order
-from ..forms import OrderForm, OrderItemFormSet
+from ..forms import CustomerOrderForm, OrderForm, OrderItemFormSet
 from ..decorators import redirect_to_admin_login, staff_required
 from .common import _first_form_error, _first_formset_error, _match_product_type
 from .quotations import _public_quote_base_url
@@ -41,6 +42,10 @@ def _send_order_confirmation_email(order):
     if order.delivery_date:
         details.append(f"Expected delivery: {order.delivery_date:%d %b %Y}")
     lines += [f"  {detail}" for detail in details]
+    if order.tolerance_lines():
+        lines.append("  Tolerance: " + "; ".join(order.tolerance_lines()))
+    if order.drawing_file:
+        lines.append("  Drawing: received")
     contact = ' or '.join(part for part in (settings.COMPANY_PHONE, settings.COMPANY_EMAIL) if part)
     try:
         EmailMessage(
@@ -237,7 +242,7 @@ def quote_form(request, token):
 
     if items:
         initial = [{'line_item': item.pk, 'quantity': item.quantity, **from_query} for item in items]
-        formset = (OrderItemFormSet(request.POST, prefix='item') if request.method == 'POST'
+        formset = (OrderItemFormSet(request.POST, request.FILES, prefix='item') if request.method == 'POST'
                    else OrderItemFormSet(initial=initial, prefix='item'))
         if request.method == 'POST':
             if not formset.is_valid():
@@ -247,6 +252,11 @@ def quote_form(request, token):
             else:
                 po = request.FILES.get('purchase_order')
                 po_bytes = po.read() if po else None
+                # A drawing the customer already sent on WhatsApp is used for any item they attach none to.
+                query_drawing = None
+                if query and query.drawing:
+                    with query.drawing.open('rb') as handle:
+                        query_drawing = (os.path.basename(query.drawing.name), handle.read())
                 with transaction.atomic():
                     for item_form, item in zip(formset.forms, items):
                         order = item_form.save(commit=False)
@@ -257,6 +267,8 @@ def quote_form(request, token):
                         order.width = item.width
                         order.thickness = item.thickness
                         order.status = 'pending'
+                        if not order.drawing_file and query_drawing:
+                            order.drawing_file.save(query_drawing[0], ContentFile(query_drawing[1]), save=False)
                         order.save()
                         if po_bytes is not None:
                             order.purchase_order.save(po.name, ContentFile(po_bytes), save=True)
@@ -265,11 +277,12 @@ def quote_form(request, token):
             'customer': customer,
             'item_forms': list(zip(formset.forms, items)),
             'formset': formset,
+            'has_whatsapp_drawing': bool(query and query.drawing),
             'error': error,
         })
 
     if request.method == 'POST':
-        form = OrderForm(request.POST, request.FILES)
+        form = CustomerOrderForm(request.POST, request.FILES)
         if not form.is_valid():
             error = _first_form_error(form)
         else:
@@ -297,6 +310,7 @@ def quote_form(request, token):
     return render(request, 'materials/quote_form.html', {
         'customer': customer,
         'categories': ProductCategory.objects.all(),
+        'has_whatsapp_drawing': bool(query and query.drawing),
         'error': error,
         'post': request.POST if error else initial,
     })

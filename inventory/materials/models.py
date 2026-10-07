@@ -2,13 +2,24 @@ import re
 import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
-from django.core.validators import MaxValueValidator, RegexValidator
+from django.core.exceptions import ValidationError
+from django.core.validators import FileExtensionValidator, MaxValueValidator, RegexValidator
 from django.db import models
 from django.contrib.auth.models import User
 from django.db.models.functions import Coalesce
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.utils import timezone
+
+
+DRAWING_EXTENSIONS = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'dwg', 'dxf', 'step', 'stp', 'igs', 'iges', 'zip']
+DRAWING_MAX_BYTES = 10 * 1024 * 1024
+
+
+def validate_drawing_size(upload):
+    """A customer's drawing is uploaded through the public order form, so cap its size."""
+    if upload.size > DRAWING_MAX_BYTES:
+        raise ValidationError(f"The drawing is too large ({upload.size // (1024 * 1024)} MB): the limit is {DRAWING_MAX_BYTES // (1024 * 1024)} MB.")
 
 
 def normalize_grade(value):
@@ -565,6 +576,11 @@ class Query(models.Model):
 
     GST_FIELDS = ('gst_number', 'gst_address')
 
+    def order_numbers(self):
+        """["ORD-0003", ...] for the orders placed from this query's quote, oldest first. Numbers are
+        read live (they close up when an earlier order is deleted), so this is always current."""
+        return [f"ORD-{order.order_no:04d}" for order in sorted(self.orders.all(), key=lambda o: o.pk) if order.order_no]
+
     def dimensions_text(self, separator=' x '):
         """"50 x 6.5 mm" — width and thickness without trailing zeros, '' if neither is known."""
         parts = [format(value.normalize(), 'f') for value in (self.width, self.thickness) if value is not None]
@@ -804,6 +820,12 @@ class QuotationLineItem(models.Model):
     class Meta:
         ordering = ['order']
 
+    def width_text(self):
+        return format(self.width.normalize(), 'f') if self.width is not None else ''
+
+    def thickness_text(self):
+        return format(self.thickness.normalize(), 'f') if self.thickness is not None else ''
+
     def product_type_name(self):
         """The product type (e.g. Flat Bright Bar): the line's own, else its product code's."""
         category = self.category or (self.product_type.category if self.product_type else None)
@@ -865,7 +887,19 @@ class Order(models.Model):
     source_query          = models.ForeignKey(Query, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
     product_type          = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Code")
     # 1. Drawing / dimensions
-    drawing_dimensions    = models.TextField(blank=True, verbose_name="Drawing / Dimensions")
+    drawing_dimensions    = models.TextField(blank=True, verbose_name="Drawing / Dimensions")   # typed text: staff entry and older orders
+    # What the customer attaches on the order form (instead of typing dimensions), and their tolerances:
+    # a From and a To for the width and for the thickness (as the customer wrote them — either limits such
+    # as 49.95 / 50.05 or offsets such as -0.05 / +0.05), plus free text for any other tolerance.
+    drawing_file          = models.FileField(
+        upload_to='order_drawings/%Y/%m/', blank=True, null=True, verbose_name="Drawing",
+        validators=[FileExtensionValidator(DRAWING_EXTENSIONS), validate_drawing_size],
+    )
+    width_tol_from        = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True, verbose_name="Width tolerance from")
+    width_tol_to          = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True, verbose_name="Width tolerance to")
+    thickness_tol_from    = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True, verbose_name="Thickness tolerance from")
+    thickness_tol_to      = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True, verbose_name="Thickness tolerance to")
+    other_tolerances      = models.TextField(blank=True, verbose_name="Other tolerances")
     # 2. Grade, width & thickness (grade autofilled from the product code, editable)
     grade                 = GradeField(max_length=100, blank=True, verbose_name="Grade of Material")
     width                 = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
@@ -942,6 +976,17 @@ class Order(models.Model):
             remaining = max(agg['total_remaining'] or Decimal('0'), Decimal('0'))
             total += remaining / ratio
         return total
+
+    def tolerance_lines(self):
+        """["Width 49.95 to 50.05 mm", "Thickness ...", "Other: ..."] — only what was given."""
+        def span(label, low, high):
+            if low is None and high is None:
+                return ''
+            return f"{label} {format(low.normalize(), 'f') if low is not None else '…'} to {format(high.normalize(), 'f') if high is not None else '…'} mm"
+        lines = [span('Width', self.width_tol_from, self.width_tol_to), span('Thickness', self.thickness_tol_from, self.thickness_tol_to)]
+        if self.other_tolerances.strip():
+            lines.append(f"Other: {self.other_tolerances.strip()}")
+        return [line for line in lines if line]
 
     def product_type_name(self):
         """The product type (e.g. Flat Bright Bar), taken from the order's product code."""

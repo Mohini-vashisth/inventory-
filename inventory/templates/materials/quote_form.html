@@ -68,6 +68,12 @@
     .item-head { margin-bottom: 0.9rem; }
     .item-title { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.45rem; }
     .item-spec { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; font-size: 0.85rem; color: #555; }
+    .tolerance { margin: 0.4rem 0 0.9rem; padding: 0.8rem 0.9rem; border: 1px solid #e5e7eb; border-radius: 10px; background: #fafbfc; }
+    .tolerance-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; margin-bottom: 0.5rem; }
+    .tolerance-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; margin-bottom: 0.55rem; }
+    .tolerance-name { min-width: 9rem; font-size: 0.9rem; }
+    .tolerance-row label { display: flex; align-items: center; gap: 0.4rem; margin: 0; text-transform: none; letter-spacing: 0; font-size: 0.85rem; color: #555; }
+    .tolerance-row input { width: 7.5rem; }
     .item-spec b {
       font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em;
       color: #888; margin-right: 0.3rem;
@@ -100,8 +106,8 @@
             <span><b>Product type</b> {{ item.shown_type.name|default:"—" }}</span>
             <span><b>Product code</b> {% if item.shown_code %}{{ item.shown_code.item_code }}{% else %}To be assigned{% endif %}</span>
             <span><b>Grade</b> {{ item.grade|default:"—" }}</span>
-            <span><b>Width</b> {% if item.width %}{{ item.width }} mm{% else %}—{% endif %}</span>
-            <span><b>Thickness</b> {% if item.thickness %}{{ item.thickness }} mm{% else %}—{% endif %}</span>
+            <span><b>Width</b> {% if item.width %}{{ item.width_text }} mm{% else %}—{% endif %}</span>
+            <span><b>Thickness</b> {% if item.thickness %}{{ item.thickness_text }} mm{% else %}—{% endif %}</span>
           </div>
         </div>
         {{ item_form.line_item }}
@@ -115,8 +121,29 @@
           <div class="form-group"><label>Expected Delivery Date</label>{{ item_form.delivery_date }}</div>
         </div>
         <div class="form-row cols-2">
-          <div class="form-group"><label>Drawing / Dimensions</label>{{ item_form.drawing_dimensions }}</div>
+          <div class="form-group">
+            <label>Attach Drawing</label>
+            {{ item_form.drawing_file }}
+            {% if has_whatsapp_drawing %}<p class="muted">We already have the drawing you sent on WhatsApp — attach one here only to replace it.</p>{% endif %}
+          </div>
           <div class="form-group"><label>Mechanical Properties</label>{{ item_form.mechanical_properties }}</div>
+        </div>
+        <div class="tolerance">
+          <div class="tolerance-title">Tolerance</div>
+          <div class="tolerance-row">
+            <span class="tolerance-name">Width <b>{% if item.width %}{{ item.width_text }} mm{% else %}—{% endif %}</b></span>
+            <label>From {{ item_form.width_tol_from }}</label>
+            <label>To {{ item_form.width_tol_to }}</label>
+          </div>
+          <div class="tolerance-row">
+            <span class="tolerance-name">Thickness <b>{% if item.thickness %}{{ item.thickness_text }} mm{% else %}—{% endif %}</b></span>
+            <label>From {{ item_form.thickness_tol_from }}</label>
+            <label>To {{ item_form.thickness_tol_to }}</label>
+          </div>
+          <div class="form-group">
+            <label>Tolerance for anything else</label>
+            {{ item_form.other_tolerances }}
+          </div>
         </div>
         <div class="form-row">
           <div class="form-group"><label>Processes Required</label>{{ item_form.processes }}</div>
@@ -166,14 +193,32 @@
       </div>
       <div class="form-row cols-2">
         <div class="form-group">
-          <label>Drawing / Dimensions</label>
-          <textarea name="drawing_dimensions"
-                    placeholder="Describe dimensions or reference a drawing...">{{ post.drawing_dimensions|default:'' }}</textarea>
+          <label>Attach Drawing</label>
+          <input type="file" name="drawing_file" accept=".pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,.step,.stp,.igs,.iges,.zip">
+          {% if has_whatsapp_drawing %}<p class="muted">We already have the drawing you sent on WhatsApp — attach one here only to replace it.</p>{% endif %}
         </div>
         <div class="form-group">
           <label>Mechanical Properties</label>
           <textarea name="mechanical_properties"
                     placeholder="e.g. Tensile: 700 MPa, Hardness: 200 HB">{{ post.mechanical_properties|default:'' }}</textarea>
+        </div>
+      </div>
+      <div class="tolerance">
+        <div class="tolerance-title">Tolerance</div>
+        <div class="tolerance-row">
+          <span class="tolerance-name">Width</span>
+          <label>From <input type="number" step="any" name="width_tol_from" placeholder="from" value="{{ post.width_tol_from|default:'' }}"></label>
+          <label>To <input type="number" step="any" name="width_tol_to" placeholder="to" value="{{ post.width_tol_to|default:'' }}"></label>
+        </div>
+        <div class="tolerance-row">
+          <span class="tolerance-name">Thickness</span>
+          <label>From <input type="number" step="any" name="thickness_tol_from" placeholder="from" value="{{ post.thickness_tol_from|default:'' }}"></label>
+          <label>To <input type="number" step="any" name="thickness_tol_to" placeholder="to" value="{{ post.thickness_tol_to|default:'' }}"></label>
+        </div>
+        <div class="form-group">
+          <label>Tolerance for anything else</label>
+          <textarea name="other_tolerances" rows="2"
+                    placeholder="Any other tolerance, e.g. straightness, ovality, length">{{ post.other_tolerances|default:'' }}</textarea>
         </div>
       </div>
       <div class="form-row">

@@ -89,6 +89,22 @@ class OrderForm(forms.ModelForm):
         ]
 
 
+_TOLERANCE_FIELDS = ['width_tol_from', 'width_tol_to', 'thickness_tol_from', 'thickness_tol_to']
+_TOLERANCE_WIDGETS = {name: forms.NumberInput(attrs={'step': 'any', 'placeholder': 'from' if name.endswith('from') else 'to'})
+                      for name in _TOLERANCE_FIELDS}
+
+
+class CustomerOrderForm(OrderForm):
+    """The customer's free-form order (an old link with no quotation): like OrderForm, but the drawing is
+    attached as a file with tolerances beside it instead of typed as text."""
+
+    class Meta(OrderForm.Meta):
+        fields = [name for name in OrderForm.Meta.fields if name != 'drawing_dimensions'] + [
+            'drawing_file', *_TOLERANCE_FIELDS, 'other_tolerances']
+        widgets = {**_TOLERANCE_WIDGETS,
+                   'other_tolerances': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Any other tolerance, e.g. straightness, ovality, length'})}
+
+
 class OrderItemForm(forms.ModelForm):
     """One quoted item on the customer's order form. Product code, grade,
     width and thickness are deliberately NOT fields here — the view takes them from the
@@ -99,12 +115,15 @@ class OrderItemForm(forms.ModelForm):
     class Meta:
         model = Order
         fields = [
-            'drawing_dimensions', 'mill_make', 'mechanical_properties', 'processes',
+            'drawing_file', *_TOLERANCE_FIELDS, 'other_tolerances',
+            'mill_make', 'mechanical_properties', 'processes',
             'end_usage', 'delivery_form', 'quantity', 'frequency', 'delivery_date', 'notes',
         ]
         widgets = {
+            **_TOLERANCE_WIDGETS,
+            'drawing_file': forms.ClearableFileInput(attrs={'accept': '.pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,.step,.stp,.igs,.iges,.zip'}),
+            'other_tolerances': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Any other tolerance, e.g. straightness, ovality, length'}),
             'delivery_date': forms.DateInput(attrs={'type': 'date'}),
-            'drawing_dimensions': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Describe dimensions or reference a drawing...'}),
             'mechanical_properties': forms.Textarea(attrs={'rows': 2, 'placeholder': 'e.g. Tensile: 700 MPa, Hardness: 200 HB'}),
             'mill_make': forms.TextInput(attrs={'placeholder': 'e.g. SAIL, Tata, Any'}),
             'processes': forms.TextInput(attrs={'placeholder': 'e.g. Drilling, Tapping, Machining, Heat treatment'}),

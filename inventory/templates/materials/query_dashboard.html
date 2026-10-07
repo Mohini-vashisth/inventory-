@@ -197,6 +197,7 @@
           </td>
           <td>
             <span class="badge badge-{{ query.status }}">{{ query.get_status_display }}</span>
+            {% with orders=query.order_numbers %}{% if orders %}<div class="muted" style="font-size:0.78em; margin-top:0.3rem;">Order placed: <b>{{ orders|join:", " }}</b></div>{% endif %}{% endwith %}
             {% if query.needs_review %}<a href="{% url 'query_detail' query.pk %}" class="badge" style="background:#fef3c7; color:#92400e; text-decoration:none;" title="{{ query.review_note }}">⚠ Needs a look</a>{% endif %}
             {% with latest=query.latest_sent_quotation %}
             {% if latest %}
