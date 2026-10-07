@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import tempfile
+import time
 
 from decimal import Decimal
 from django.contrib.auth.models import User
@@ -11,7 +12,7 @@ from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from unittest.mock import patch, MagicMock
 
-from ..models import ProductCategory, ProductType, Query
+from ..models import ProductCategory, ProductType, Query, WhatsAppMessage
 from ..views import whatsapp
 from ..views.whatsapp import (
     WhatsAppSendError, WHATSAPP_CLOSING_MESSAGE, WHATSAPP_GST_INVALID_MESSAGE, _detect_product_category,
@@ -804,3 +805,160 @@ class WhatsAppMediaDownloadTests(TestCase):
         self.assertEqual(whatsapp._extension_for_mime_type('image/jpeg; charset=binary'), '.jpg')
         self.assertEqual(whatsapp._extension_for_mime_type('application/octet-stream'), '')
         self.assertEqual(whatsapp._extension_for_mime_type(''), '')
+
+
+@override_settings(WHATSAPP_VERIFY_TOKEN='test-verify-token', WHATSAPP_APP_SECRET='test-app-secret')
+class WhatsAppResilienceTests(TestCase):
+    """The app can be offline (the PC off, a restart) while customers keep replying; Meta then
+    replays the backlog — late, repeated and out of order. None of that may corrupt a query."""
+
+    PHONE = '919876543210'
+
+    def _deliver(self, *messages):
+        """POST one webhook delivery holding these (text, id, timestamp) messages."""
+        value = {'messages': [
+            {'from': self.PHONE, 'id': mid, 'timestamp': str(ts), 'type': 'text', 'text': {'body': text}}
+            for text, mid, ts in messages]}
+        body = json.dumps({'entry': [{'changes': [{'value': value}]}]}).encode('utf-8')
+        return self.client.post(reverse('whatsapp_webhook'), data=body, content_type='application/json',
+                                HTTP_X_HUB_SIGNATURE_256=_sign_whatsapp_payload(body, 'test-app-secret'))
+
+    def _now(self):
+        return int(time.time())
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_a_message_delivered_twice_is_handled_once(self, mock_send):
+        _query_awaiting('contact_email')
+        for _ in range(3):
+            self._deliver(('ramesh@example.com', 'wamid.A', self._now()))
+        self.assertEqual(Query.objects.get(contact_phone=self.PHONE).contact_email, 'ramesh@example.com')
+        mock_send.assert_called_once_with(self.PHONE, WHATSAPP_QUERY_QUESTIONS['gst_number'])
+        self.assertEqual(WhatsAppMessage.objects.filter(message_id='wamid.A').count(), 1)
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_a_message_without_an_id_is_still_handled(self, mock_send):
+        _query_awaiting('contact_email')
+        self._deliver(('ramesh@example.com', '', self._now()))
+        self.assertEqual(Query.objects.get(contact_phone=self.PHONE).contact_email, 'ramesh@example.com')
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_a_failed_attempt_does_not_use_up_the_message_so_meta_s_retry_works(self, mock_send):
+        _query_awaiting('contact_email')
+        with patch('materials.views.whatsapp._handle_whatsapp_message', side_effect=RuntimeError('boom')):
+            with self.assertRaises(RuntimeError):
+                self._deliver(('ramesh@example.com', 'wamid.B', self._now()))
+        self.assertFalse(WhatsAppMessage.objects.filter(message_id='wamid.B').exists())
+        self._deliver(('ramesh@example.com', 'wamid.B', self._now()))   # the retry
+        self.assertEqual(Query.objects.get(contact_phone=self.PHONE).contact_email, 'ramesh@example.com')
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_a_batch_is_handled_oldest_first_and_asks_only_one_question(self, mock_send):
+        _query_awaiting('width')
+        now = self._now()
+        # listed newest first, as a replayed backlog might be
+        self._deliver(('6', 'wamid.T', now - 10), ('50', 'wamid.W', now - 20))
+        query = Query.objects.get(contact_phone=self.PHONE)
+        self.assertEqual((query.width, query.thickness), (Decimal('50'), Decimal('6')))   # not swapped
+        mock_send.assert_called_once_with(self.PHONE, WHATSAPP_QUERY_QUESTIONS['technical_requirements'])
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_a_reply_older_than_one_already_handled_is_not_used_as_an_answer(self, mock_send):
+        _query_awaiting('width')
+        now = self._now()
+        self._deliver(('50', 'wamid.NEW', now - 10))
+        mock_send.reset_mock()
+        self._deliver(('40', 'wamid.OLD', now - 60))   # sent earlier, but only delivered now
+        query = Query.objects.get(contact_phone=self.PHONE)
+        self.assertEqual(query.width, Decimal('50'))
+        self.assertIsNone(query.thickness)
+        self.assertIn('[late reply', query.notes)
+        self.assertIn('40', query.notes)
+        self.assertTrue(query.needs_review)
+        self.assertIn('out of order', query.review_note)
+        mock_send.assert_not_called()
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_when_the_24_hour_window_has_closed_the_answer_is_kept_but_nothing_is_sent(self, mock_send):
+        _query_awaiting('width')
+        two_days_ago = self._now() - 2 * 86400
+        self._deliver(('50', 'wamid.STALE', two_days_ago))
+        query = Query.objects.get(contact_phone=self.PHONE)
+        self.assertEqual(query.width, Decimal('50'))   # the data is fine, keep it
+        mock_send.assert_not_called()                  # Meta would refuse a free-form message now
+        self.assertTrue(query.needs_review)
+        self.assertIn('24-hour', query.review_note)
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_the_bot_carries_on_once_the_customer_writes_again(self, mock_send):
+        _query_awaiting('width')
+        self._deliver(('50', 'wamid.STALE', self._now() - 2 * 86400))
+        self._deliver(('6', 'wamid.FRESH', self._now()))   # a new message re-opens the window
+        query = Query.objects.get(contact_phone=self.PHONE)
+        self.assertEqual(query.thickness, Decimal('6'))
+        mock_send.assert_called_once_with(self.PHONE, WHATSAPP_QUERY_QUESTIONS['technical_requirements'])
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_a_question_already_asked_is_not_asked_again(self, mock_send):
+        _query_awaiting('width')
+        self._deliver(('50', 'wamid.W', self._now()))
+        mock_send.assert_called_once_with(self.PHONE, WHATSAPP_QUERY_QUESTIONS['thickness'])
+        whatsapp._advance_whatsapp_query(Query.objects.get(contact_phone=self.PHONE))
+        whatsapp._advance_whatsapp_query(Query.objects.get(contact_phone=self.PHONE))
+        self.assertEqual(mock_send.call_count, 1)
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_the_closing_message_is_sent_once(self, mock_send):
+        _query_awaiting('quantity_text')
+        self._deliver(('8000 kgs monthly', 'wamid.Q', self._now()))
+        mock_send.assert_called_once_with(self.PHONE, WHATSAPP_CLOSING_MESSAGE)
+        whatsapp._advance_whatsapp_query(Query.objects.get(contact_phone=self.PHONE))
+        self.assertEqual(mock_send.call_count, 1)
+
+    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
+    def test_an_invalid_reply_is_still_told_so_in_a_normal_conversation(self, mock_send):
+        _query_awaiting('width')
+        self._deliver(('as per drawing', 'wamid.X', self._now()))
+        mock_send.assert_called_once_with(self.PHONE, WHATSAPP_DIMENSION_INVALID_MESSAGES['width'])
+
+    def test_old_message_ids_are_not_kept_forever(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        old = WhatsAppMessage.objects.create(message_id='wamid.OLD')
+        WhatsAppMessage.objects.filter(pk=old.pk).update(received_at=timezone.now() - timedelta(days=60))
+        _query_awaiting('contact_email')
+        with patch('materials.views.whatsapp._send_whatsapp_text_message_background'):
+            self._deliver(('ramesh@example.com', 'wamid.NEW', self._now()))
+        self.assertFalse(WhatsAppMessage.objects.filter(message_id='wamid.OLD').exists())
+        self.assertTrue(WhatsAppMessage.objects.filter(message_id='wamid.NEW').exists())
+
+
+class QueryReviewFlagTests(TestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user('review_staff', password='pw', is_staff=True)
+        self.client.force_login(self.staff)
+        self.query = Query.objects.create(source='whatsapp', contact_phone='919876543299', company_name='Flag Co',
+                                          needs_review=True, review_note='A reply reached the bot out of order.')
+
+    def test_a_flagged_query_shows_on_the_dashboard_and_detail_page(self):
+        self.assertContains(self.client.get(reverse('query_dashboard')), 'Needs a look')
+        detail = self.client.get(reverse('query_detail', kwargs={'pk': self.query.pk}))
+        self.assertContains(detail, 'needs a look')
+        self.assertContains(detail, 'A reply reached the bot out of order.')
+
+    def test_marking_it_reviewed_clears_the_flag(self):
+        self.client.post(reverse('query_clear_review', kwargs={'pk': self.query.pk}))
+        self.query.refresh_from_db()
+        self.assertFalse(self.query.needs_review)
+        self.assertEqual(self.query.review_note, '')
+        self.assertNotContains(self.client.get(reverse('query_dashboard')), 'Needs a look')
+
+    def test_a_get_does_not_clear_it(self):
+        self.client.get(reverse('query_clear_review', kwargs={'pk': self.query.pk}))
+        self.query.refresh_from_db()
+        self.assertTrue(self.query.needs_review)
+
+    def test_anonymous_cannot_clear_it(self):
+        self.client.logout()
+        self.client.post(reverse('query_clear_review', kwargs={'pk': self.query.pk}))
+        self.query.refresh_from_db()
+        self.assertTrue(self.query.needs_review)
