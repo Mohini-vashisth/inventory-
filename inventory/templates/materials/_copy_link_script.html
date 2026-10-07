@@ -1,9 +1,35 @@
 <script>
+  // Copy a link to the clipboard. navigator.clipboard only exists on a secure page (HTTPS or localhost);
+  // staff often reach this app over plain http (a Tailscale or LAN address), where it is undefined and the
+  // old button silently did nothing. So: use it when it exists, otherwise copy through a hidden text box
+  // (works on http), and if even that is refused show the link in a box to copy by hand.
   function copyLink(url, btn) {
-    navigator.clipboard.writeText(url).then(function() {
-      const orig = btn.textContent;
+    function copyWithTextBox() {
+      var box = document.createElement('textarea');
+      box.value = url;
+      box.setAttribute('readonly', '');
+      box.style.position = 'fixed';
+      box.style.opacity = '0';
+      document.body.appendChild(box);
+      box.select();
+      var copied = false;
+      try { copied = document.execCommand('copy'); } catch (e) { copied = false; }
+      document.body.removeChild(box);
+      return copied;
+    }
+    function finish(copied) {
+      if (!copied) {
+        window.prompt('Copy this link (Ctrl+C, then Enter):', url);
+        return;
+      }
+      var original = btn.textContent;
       btn.textContent = '✓ Copied!';
-      setTimeout(function() { btn.textContent = orig; }, 1500);
-    });
+      setTimeout(function () { btn.textContent = original; }, 1500);
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(url).then(function () { finish(true); }, function () { finish(copyWithTextBox()); });
+    } else {
+      finish(copyWithTextBox());
+    }
   }
 </script>
