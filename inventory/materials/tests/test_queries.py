@@ -763,3 +763,48 @@ class QueryProductCodeLinkTests(TestCase):
         query = Query.objects.create(source='call', contact_phone='9123456782', product_category=self.flat,
                                      grade='EN8D', product_type=other)
         self.assertEqual(query.effective_product_code(), other)
+
+
+class QueryShowsItsOrderNumbersTests(TestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user('order_no_staff', password='pw', is_staff=True)
+        self.client.force_login(self.staff)
+        self.customer = Customer.objects.create(name='Numbered Co')
+        self.query = Query.objects.create(source='whatsapp', contact_phone='919876500030', company_name='Numbered Co',
+                                          customer=self.customer, status='converted')
+
+    def test_no_orders_shows_nothing(self):
+        self.assertNotIn('Order placed: <b>', self.client.get(reverse('query_dashboard')).content.decode())
+
+    def test_the_dashboard_and_detail_page_show_the_order_numbers(self):
+        first = Order.objects.create(customer=self.customer, source_query=self.query, quantity=10)
+        second = Order.objects.create(customer=self.customer, source_query=self.query, quantity=20)
+        for url in (reverse('query_dashboard'), reverse('query_detail', kwargs={'pk': self.query.pk})):
+            with self.subTest(url=url):
+                html = self.client.get(url).content.decode()
+                self.assertIn('Order placed', html)
+                self.assertIn(f'ORD-{first.order_no:04d}, ORD-{second.order_no:04d}', html)
+
+    def test_the_number_follows_when_an_earlier_order_is_deleted(self):
+        earlier = Order.objects.create(customer=self.customer, quantity=1)
+        mine = Order.objects.create(customer=self.customer, source_query=self.query, quantity=5)
+        self.assertIn('ORD-0002', self.client.get(reverse('query_dashboard')).content.decode())
+        earlier.delete()   # order numbers close up, so the dashboard must read the current one
+        self.assertIn('ORD-0001', self.client.get(reverse('query_dashboard')).content.decode())
+        self.assertEqual(mine.pk, Order.objects.get(source_query=self.query).pk)
+
+    def test_the_dashboard_does_not_query_per_row_for_orders(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        Order.objects.create(customer=self.customer, source_query=self.query, quantity=1)
+
+        def count():
+            with CaptureQueriesContext(connection) as context:
+                self.client.get(reverse('query_dashboard'))
+            return len(context)
+
+        before = count()
+        for index in range(5):
+            query = Query.objects.create(source='call', contact_phone=f'91987650004{index}', customer=self.customer)
+            Order.objects.create(customer=self.customer, source_query=query, quantity=1)
+        self.assertEqual(count(), before)   # more rows, same number of queries

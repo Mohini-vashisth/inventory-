@@ -555,13 +555,16 @@ class OrderAdmin(admin.ModelAdmin):
     list_filter   = ['status', 'delivery_form', 'frequency', 'customer']
     search_fields = ['customer__name', 'grade', 'mill_make']
     ordering      = ['-created_at']
-    readonly_fields = ['purchase_order_link']
+    readonly_fields = ['purchase_order_link', 'drawing_link']
     fieldsets = (
         ('Order Info', {
             'fields': ('customer', 'product_type', 'status', 'delivery_date', 'frequency', 'notes')
         }),
         ('Material Requirements', {
-            'fields': ('grade', 'width', 'thickness', 'mill_make', 'drawing_dimensions', 'mechanical_properties', 'processes', 'end_usage')
+            'fields': ('grade', 'width', 'thickness', 'mill_make', 'drawing_dimensions', 'drawing_file', 'drawing_link', 'mechanical_properties', 'processes', 'end_usage')
+        }),
+        ('Tolerances', {
+            'fields': (('width_tol_from', 'width_tol_to'), ('thickness_tol_from', 'thickness_tol_to'), 'other_tolerances')
         }),
         ('Quantity & Delivery', {
             'fields': ('quantity', 'delivery_form')
@@ -576,6 +579,12 @@ class OrderAdmin(admin.ModelAdmin):
             return 'No PO attached'
         return format_html('<a href="{}" target="_blank">Download PO</a>', obj.purchase_order.url)
     purchase_order_link.short_description = 'Purchase Order'
+
+    def drawing_link(self, obj):
+        if not obj.drawing_file:
+            return 'No drawing attached'
+        return format_html('<a href="{}" target="_blank">Open drawing</a>', obj.drawing_file.url)
+    drawing_link.short_description = 'Attached drawing'
 
     def order_number(self, obj):
         return f'ORD-{obj.order_no:04d}'

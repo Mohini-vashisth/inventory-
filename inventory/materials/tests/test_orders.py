@@ -385,7 +385,7 @@ class CustomerOrderFormTests(TestCase):
 
     def test_each_quoted_item_is_shown_with_its_code_grade_width_and_thickness_locked(self):
         html = self.client.get(self.url).content.decode()
-        for text in ('CODE-A', 'EN8D', '50.000', '6.000', 'CODE-B', 'SS304', '60.500', '8.000', 'Bar A', 'Bar B'):
+        for text in ('CODE-A', 'EN8D', '50 mm', '6 mm', 'CODE-B', 'SS304', '60.5 mm', '8 mm', 'Bar A', 'Bar B'):
             with self.subTest(text=text):
                 self.assertIn(text, html)
         for name in ('product_type', 'grade', 'width', 'thickness'):
@@ -791,3 +791,129 @@ class OrderConfirmationEmailTests(TestCase):
         self.client.post(reverse('quote_form', kwargs={'token': customer.quote_token}), {'quantity': '250', 'grade': 'EN8D'})
         self.assertEqual(Order.objects.filter(customer=customer).count(), 1)
         self.assertEqual(len(self.mail.outbox), 0)   # the email goes out when staff confirm
+
+
+class OrderDrawingAndToleranceTests(TestCase):
+    """The order form takes a drawing as an attachment (not typed text) and tolerances: a From and a To
+    beside the width and the thickness, plus a box for any other tolerance."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        override = override_settings(MEDIA_ROOT=self._tmp.name)
+        override.enable()
+        self.addCleanup(override.disable)
+        self.addCleanup(self._tmp.cleanup)
+        self.customer = Customer.objects.create(name='Tol Co', email='tol@example.com')
+        self.code = ProductType.objects.create(item_code='FBB009', category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='EN8D')
+        quotation = Quotation.objects.create(customer=self.customer, status='sent')
+        self.item = QuotationLineItem.objects.create(
+            quotation=quotation, order=1, description='Flat bar', product_type=self.code, grade='EN8D',
+            width=Decimal('50'), thickness=Decimal('6.5'), quantity=Decimal('500'), rate_per_kg=90)
+        self.url = reverse('quote_form', kwargs={'token': self.customer.quote_token})
+
+    def _data(self, **extra):
+        data = {'item-TOTAL_FORMS': '1', 'item-INITIAL_FORMS': '1', 'item-MIN_NUM_FORMS': '0', 'item-MAX_NUM_FORMS': '1000',
+                'item-0-line_item': str(self.item.pk), 'item-0-quantity': '500'}
+        data.update(extra)
+        return data
+
+    def _pdf(self, name='drawing.pdf'):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        return SimpleUploadedFile(name, b'%PDF-1.4 a drawing', content_type='application/pdf')
+
+    def test_the_form_has_an_attachment_box_and_tolerance_rows_instead_of_a_typed_drawing_box(self):
+        html = self.client.get(self.url).content.decode()
+        self.assertIn('name="item-0-drawing_file"', html)
+        self.assertIn('type="file"', html)
+        self.assertNotIn('drawing_dimensions', html)
+        self.assertNotIn('Drawing / Dimensions', html)
+        self.assertIn('Width <b>50 mm</b>', html)          # the value is already written ...
+        self.assertIn('Thickness <b>6.5 mm</b>', html)
+        for name in ('width_tol_from', 'width_tol_to', 'thickness_tol_from', 'thickness_tol_to', 'other_tolerances'):
+            self.assertIn(f'name="item-0-{name}"', html)    # ... with a From and a To in front of it
+        self.assertIn('Tolerance for anything else', html)
+
+    def test_the_drawing_and_tolerances_are_saved_on_the_order(self):
+        self.client.post(self.url, self._data(**{
+            'item-0-drawing_file': self._pdf(), 'item-0-width_tol_from': '49.95', 'item-0-width_tol_to': '50.05',
+            'item-0-thickness_tol_from': '-0.02', 'item-0-thickness_tol_to': '0.02', 'item-0-other_tolerances': 'Straightness 1 mm per metre'}))
+        order = Order.objects.get(customer=self.customer)
+        self.assertTrue(order.drawing_file.name.startswith('order_drawings/'))
+        self.assertEqual(order.drawing_file.read()[:4], b'%PDF')
+        self.assertEqual((order.width_tol_from, order.width_tol_to), (Decimal('49.95'), Decimal('50.05')))
+        self.assertEqual((order.thickness_tol_from, order.thickness_tol_to), (Decimal('-0.02'), Decimal('0.02')))
+        self.assertEqual(order.tolerance_lines(), ['Width 49.95 to 50.05 mm', 'Thickness -0.02 to 0.02 mm', 'Other: Straightness 1 mm per metre'])
+
+    def test_everything_here_is_optional(self):
+        self.client.post(self.url, self._data())
+        order = Order.objects.get(customer=self.customer)
+        self.assertFalse(order.drawing_file)
+        self.assertEqual(order.tolerance_lines(), [])
+
+    def test_a_half_filled_tolerance_still_reads_sensibly(self):
+        self.client.post(self.url, self._data(**{'item-0-width_tol_to': '0.1'}))
+        self.assertEqual(Order.objects.get(customer=self.customer).tolerance_lines(), ['Width … to 0.1 mm'])
+
+    def test_a_file_type_that_could_run_in_a_browser_is_refused_and_the_link_is_not_burned(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        token = self.customer.quote_token
+        response = self.client.post(self.url, self._data(**{'item-0-drawing_file': SimpleUploadedFile('x.html', b'<script>1</script>')}))
+        self.assertContains(response, 'error-msg')
+        self.assertEqual(Order.objects.count(), 0)
+        self.customer.refresh_from_db()
+        self.assertEqual(self.customer.quote_token, token)
+
+    def test_a_drawing_over_the_size_limit_is_refused(self):
+        with patch('materials.models.DRAWING_MAX_BYTES', 5):
+            response = self.client.post(self.url, self._data(**{'item-0-drawing_file': self._pdf()}))
+        self.assertContains(response, 'too large')
+        self.assertEqual(Order.objects.count(), 0)
+
+    def test_a_drawing_already_sent_on_whatsapp_is_used_when_none_is_attached(self):
+        from django.core.files.base import ContentFile
+        query = Query.objects.create(source='whatsapp', contact_phone='919876500020', customer=self.customer, status='quote_sent')
+        query.drawing.save('wa.pdf', ContentFile(b'%PDF whatsapp drawing'), save=True)
+        self.assertIn('We already have the drawing you sent on WhatsApp', self.client.get(self.url).content.decode())
+        self.client.post(self.url, self._data())
+        self.assertEqual(Order.objects.get(customer=self.customer).drawing_file.read(), b'%PDF whatsapp drawing')
+
+    def test_a_newly_attached_drawing_replaces_the_whatsapp_one(self):
+        from django.core.files.base import ContentFile
+        query = Query.objects.create(source='whatsapp', contact_phone='919876500021', customer=self.customer, status='quote_sent')
+        query.drawing.save('wa.pdf', ContentFile(b'%PDF whatsapp drawing'), save=True)
+        self.client.post(self.url, self._data(**{'item-0-drawing_file': self._pdf('new.pdf')}))
+        self.assertEqual(Order.objects.get(customer=self.customer).drawing_file.read(), b'%PDF-1.4 a drawing')
+
+    def test_the_form_without_a_quote_has_them_too(self):
+        plain = Customer.objects.create(name='Plain Co')
+        url = reverse('quote_form', kwargs={'token': plain.quote_token})
+        html = self.client.get(url).content.decode()
+        self.assertIn('name="drawing_file"', html)
+        self.assertNotIn('drawing_dimensions', html)
+        self.assertIn('name="width_tol_from"', html)
+        self.assertIn('name="other_tolerances"', html)
+        self.client.post(url, {'quantity': '10', 'grade': 'EN8D', 'width': '40', 'thickness': '4', 'drawing_file': self._pdf(),
+                               'thickness_tol_from': '3.9', 'thickness_tol_to': '4.1'})
+        order = Order.objects.get(customer=plain)
+        self.assertTrue(order.drawing_file)
+        self.assertEqual(order.tolerance_lines(), ['Thickness 3.9 to 4.1 mm'])
+
+    def test_staff_see_the_drawing_and_tolerances_on_the_order(self):
+        staff = User.objects.create_user('tol_staff', password='pw', is_staff=True)
+        self.client.post(self.url, self._data(**{'item-0-drawing_file': self._pdf(), 'item-0-width_tol_from': '49.9', 'item-0-width_tol_to': '50.1'}))
+        self.client.force_login(staff)
+        html = self.client.get(reverse('order_dashboard')).content.decode()
+        self.assertIn('Open the attached drawing', html)
+        self.assertIn('Width 49.9 to 50.1 mm', html)
+
+    @override_settings(EMAIL_HOST_USER='sender@example.com', DEFAULT_FROM_EMAIL='sender@example.com')
+    def test_the_confirmation_email_mentions_them(self):
+        from django.core import mail
+        staff = User.objects.create_user('tol_staff2', password='pw', is_staff=True)
+        self.client.post(self.url, self._data(**{'item-0-drawing_file': self._pdf(), 'item-0-width_tol_from': '49.9', 'item-0-width_tol_to': '50.1'}))
+        order = Order.objects.get(customer=self.customer)
+        self.client.force_login(staff)
+        self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}))
+        body = mail.outbox[0].body
+        self.assertIn('Tolerance: Width 49.9 to 50.1 mm', body)
+        self.assertIn('Drawing: received', body)

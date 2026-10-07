@@ -449,7 +449,8 @@
         <tr id="detail-{{ order.pk }}" class="detail-row">
           <td colspan="9" style="padding: 0 1rem 0.75rem;">
             <div class="detail-box">
-              <div class="detail-item"><strong>Drawing / Dimensions</strong>{{ order.drawing_dimensions|default:"—" }}</div>
+              <div class="detail-item"><strong>Drawing</strong>{% if order.drawing_file %}<a href="{{ order.drawing_file.url }}" target="_blank">Open the attached drawing</a>{% else %}{{ order.drawing_dimensions|default:"—" }}{% endif %}</div>
+              <div class="detail-item"><strong>Tolerances</strong>{% for line in order.tolerance_lines %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% empty %}—{% endfor %}</div>
               <div class="detail-item"><strong>Mechanical Properties</strong>{{ order.mechanical_properties|default:"—" }}</div>
               <div class="detail-item"><strong>Mill Make</strong>{{ order.mill_make|default:"—" }}</div>
               <div class="detail-item"><strong>Processes</strong>{{ order.processes|default:"—" }}</div>

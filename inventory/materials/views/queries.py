@@ -22,7 +22,7 @@ def query_dashboard(request):
     a phone number here; everything else arrives via WhatsApp. Staff decide
     which ones to pursue via query_send_quote once that sequence completes."""
 
-    queries = Query.objects.select_related('product_type', 'customer').prefetch_related('quotations').all()
+    queries = Query.objects.select_related('product_type', 'customer').prefetch_related('quotations', 'orders').all()
     error = None
 
     if request.method == 'POST':
