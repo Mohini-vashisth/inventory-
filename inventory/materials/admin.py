@@ -9,7 +9,7 @@ from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django import forms
 from .product_codes import canonical_grade, item_code_for, reserve_grade_number
-from .models import GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductCategory, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
+from .models import QueryItem, GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductCategory, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
 
 
 class GateEntryLotInline(admin.TabularInline):
@@ -525,9 +525,17 @@ class CustomerAdmin(admin.ModelAdmin):
     order_count.short_description = 'Orders'
 
 
+class QueryItemInline(admin.TabularInline):
+    """The products a query asks about — one row each."""
+    model = QueryItem
+    extra = 0
+    fields = ['position', 'product_category', 'product_type', 'grade', 'width', 'thickness', 'quantity', 'delivery_form']
+
+
 @admin.register(Query)
 class QueryAdmin(admin.ModelAdmin):
-    list_display  = ['display_name', 'source', 'status', 'product_type', 'has_drawing', 'created_at']
+    inlines = [QueryItemInline]
+    list_display  = ['display_name', 'source', 'status', 'product_summary', 'has_drawing', 'created_at']
     list_filter   = ['source', 'status']
     search_fields = ['company_name', 'contact_email', 'contact_phone']
     ordering      = ['-created_at']
@@ -537,6 +545,10 @@ class QueryAdmin(admin.ModelAdmin):
     @admin.display(description='Company / Contact')
     def display_name(self, obj):
         return obj.company_name or obj.contact_phone or f"Query #{obj.pk}"
+
+    @admin.display(description='Products')
+    def product_summary(self, obj):
+        return ' | '.join(item.summary_text() for item in obj.item_list()) or '—'
 
     @admin.display(description='Drawing', boolean=True)
     def has_drawing(self, obj):

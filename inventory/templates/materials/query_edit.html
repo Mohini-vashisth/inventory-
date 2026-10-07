@@ -53,6 +53,12 @@
     }
     .btn-secondary:hover { background: #f8f9fb; }
 
+    .section-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #4e73df; margin: 1.1rem 0 0.6rem; padding-bottom: 0.3rem; border-bottom: 1px solid #e8ecff; }
+    .item-row { border: 1px solid #e8ecff; border-radius: 10px; padding: 0.9rem 1rem 0.3rem; margin-bottom: 0.9rem; background: #fafbff; }
+    .item-row[hidden] { display: none; }
+    .item-row-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.7rem; font-size: 0.9rem; }
+    .item-row .code-hint { font-size: 0.75rem; }
+
     @media (max-width: 640px) {
       header { padding: 1rem; flex-wrap: wrap; gap: 0.5rem; }
       .content { padding: 0 0.85rem; margin: 1rem auto; }
@@ -110,58 +116,21 @@
         </div>
         {% endif %}
 
-        <div class="form-row cols-2">
+        <div class="form-row">
           <div class="form-group">
             <label>Email</label>
             <input type="email" name="contact_email" value="{{ query.contact_email }}">
           </div>
-          <div class="form-group">
-            <label>Product Type</label>
-            <select name="product_category">
-              <option value="">— none —</option>
-              {% for category in categories %}
-              <option value="{{ category.pk }}" {% if query.product_category_id == category.pk %}selected{% endif %}>{{ category.name }}</option>
-              {% endfor %}
-            </select>
-          </div>
         </div>
 
-        <div class="form-row cols-2">
-          <div class="form-group">
-            <label>Product Code</label>
-            <select name="product_type">
-              <option value="">— none —</option>
-              {% for pt in product_types %}
-              <option value="{{ pt.pk }}" {% if query.product_type_id == pt.pk %}selected{% endif %}>
-                {{ pt.item_code }}
-              </option>
-              {% endfor %}
-            </select>
-          </div>
+        <div class="section-title">Products</div>
+        {{ formset.management_form }}
+        <datalist id="grade-options">{% for g in grade_options %}<option value="{{ g }}">{% endfor %}</datalist>
+        <div id="item-rows">
+          {% for form in formset %}{% include "materials/_query_item_row.html" %}{% endfor %}
         </div>
-
-        <div class="form-row cols-3">
-          <div class="form-group">
-            <label>Grade</label>
-            <input type="text" name="grade" value="{{ query.grade }}" list="grade-options" autocomplete="off">
-            <datalist id="grade-options">{% for g in grade_options %}<option value="{{ g }}">{% endfor %}</datalist>
-          </div>
-          <div class="form-group">
-            <label>Width (mm)</label>
-            <input type="number" name="width" step="0.001" min="0" value="{{ query.width|default:'' }}">
-          </div>
-          <div class="form-group">
-            <label>Thickness (mm)</label>
-            <input type="number" name="thickness" step="0.001" min="0" value="{{ query.thickness|default:'' }}">
-          </div>
-        </div>
-
-        <div class="form-row cols-2">
-          <div class="form-group">
-            <label>Quantity (kg)</label>
-            <input type="number" name="quantity" step="0.001" min="0" value="{{ query.quantity|default:'' }}">
-          </div>
-        </div>
+        <template id="item-template">{% include "materials/_query_item_row.html" with form=formset.empty_form %}</template>
+        <p><button type="button" class="icon-btn" id="add-item">+ Add a product</button></p>
 
         {% for name, label, value in intake_fields %}
         <div class="form-row">
@@ -169,13 +138,6 @@
             <label>{{ label }}</label>
             {% if name == 'gst_number' %}
             <input type="text" name="{{ name }}" maxlength="15" value="{{ value }}" placeholder="15-character GSTIN">
-            {% elif name == 'delivery_form' %}
-            <select name="{{ name }}">
-              <option value="">— none —</option>
-              {% for choice, choice_label in delivery_choices %}
-              <option value="{{ choice }}" {% if value == choice %}selected{% endif %}>{{ choice_label }}</option>
-              {% endfor %}
-            </select>
             {% else %}
             <textarea name="{{ name }}" rows="2">{{ value }}</textarea>
             {% endif %}
@@ -200,40 +162,75 @@
 </div>
 {{ product_code_map|json_script:"product-code-map" }}
 <script>
-  // Fills Product Code from product type + grade as they're entered. A code picked by hand is
-  // never replaced; one filled in here is cleared again if the combination stops matching.
+  // Product rows: add / remove, and fill each row's Product Code from its product type + grade. A code picked by
+  // hand is never replaced; one filled in here is cleared again if the combination stops matching.
   (function () {
     var codes = JSON.parse(document.getElementById('product-code-map').textContent);
-    var category = document.querySelector('[name=product_category]');
-    var grade = document.querySelector('[name=grade]');
-    var code = document.querySelector('[name=product_type]');
-    var autoFilled = false;
+    var rows = document.getElementById('item-rows');
+    var total = document.getElementById('id_item-TOTAL_FORMS');
     // Same rule as Python's grade_key: case, spaces and punctuation don't make a different grade.
     function gradeKey(value) { return (value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
     // Grades are stored as capital letters and digits only (models.normalize_grade): "en-8d" -> "EN8D".
-    grade.addEventListener('change', function () {
-      var normalized = grade.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      if (normalized !== grade.value) { grade.value = normalized; sync(); }
-    });
-    function sync() {
-      var g = gradeKey(grade.value);
+    function normalizeGrade(value) { return (value || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+
+    function field(row, suffix) { return row.querySelector('[name$="-' + suffix + '"]'); }
+
+    function renumber() {
+      var shown = 0;
+      rows.querySelectorAll('[data-item-row]').forEach(function (row) {
+        if (row.hidden) return;
+        shown += 1;
+        row.querySelector('.item-number').textContent = 'Product ' + shown;
+      });
+    }
+
+    function match(row) {
+      var category = field(row, 'product_category').value;
+      var grade = gradeKey(field(row, 'grade').value);
+      var select = field(row, 'product_type');
+      if (select.value && select.dataset.auto !== '1') return;   // chosen by hand: leave it
       var found = null;
-      if (g && category.value) {
+      if (grade && category) {
         codes.forEach(function (c) {
-          if (String(c.category) === category.value && c.grade === g) { found = c; }
+          if (String(c.category) === category && c.grade === grade) { found = c; }
         });
       }
-      if (found) {
-        if (!code.value || autoFilled) { code.value = String(found.pk); autoFilled = true; }
-      } else if (autoFilled) {
-        code.value = ''; autoFilled = false;
-      }
+      select.value = found ? String(found.pk) : '';
+      select.dataset.auto = found ? '1' : '';
     }
-    code.addEventListener('change', function () { autoFilled = false; });
-    [category, grade].forEach(function (el) {
-      el.addEventListener('input', sync);
-      el.addEventListener('change', sync);
+
+    rows.addEventListener('input', function (event) {
+      var row = event.target.closest('[data-item-row]');
+      if (row && /-(grade|product_category)$/.test(event.target.name || '')) match(row);
     });
+    rows.addEventListener('change', function (event) {
+      var row = event.target.closest('[data-item-row]');
+      if (!row) return;
+      if (/-grade$/.test(event.target.name || '')) {
+        var normalized = normalizeGrade(event.target.value);
+        if (normalized !== event.target.value) { event.target.value = normalized; }
+        match(row);
+      }
+      if (/-product_type$/.test(event.target.name || '')) { event.target.dataset.auto = ''; }
+      if (/-product_category$/.test(event.target.name || '')) { match(row); }
+    });
+    rows.addEventListener('click', function (event) {
+      var button = event.target.closest('[data-remove-item]');
+      if (!button) return;
+      var row = button.closest('[data-item-row]');
+      row.querySelector('input[type="checkbox"][name$="-DELETE"]').checked = true;   // Django drops it on save
+      row.hidden = true;
+      renumber();
+    });
+    document.getElementById('add-item').addEventListener('click', function () {
+      var html = document.getElementById('item-template').innerHTML.replace(/__prefix__/g, total.value);
+      var holder = document.createElement('div');
+      holder.innerHTML = html.trim();
+      rows.appendChild(holder.firstElementChild);
+      total.value = String(parseInt(total.value, 10) + 1);
+      renumber();
+    });
+    renumber();
   })();
 </script>
 {% endblock %}

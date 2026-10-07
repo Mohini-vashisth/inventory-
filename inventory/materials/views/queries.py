@@ -2,12 +2,13 @@
 
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
-from decimal import InvalidOperation
 from django.core.exceptions import ValidationError
+from django.db import transaction
 
-from ..models import GradeOption, ProductCategory, ProductType, Query
-from ..product_codes import canonical_grade, grade_key
-from .common import _match_product_type
+from ..forms import QueryItemFormSet
+from ..models import GradeOption, ProductType, Query, QueryItem
+from ..product_codes import grade_key
+from .common import _first_formset_error, _match_product_type
 from ..decorators import redirect_to_admin_login, staff_required
 from .quotations import _public_quote_base_url
 from . import whatsapp
@@ -22,7 +23,7 @@ def query_dashboard(request):
     a phone number here; everything else arrives via WhatsApp. Staff decide
     which ones to pursue via query_send_quote once that sequence completes."""
 
-    queries = Query.objects.select_related('product_type', 'customer').prefetch_related('quotations', 'orders').all()
+    queries = Query.objects.select_related('customer').prefetch_related('quotations', 'orders', 'items').all()
     error = None
 
     if request.method == 'POST':
@@ -113,9 +114,10 @@ def query_detail(request, pk):
     shows name and number, so this is where the rest lives. Read-only; edits
     go through query_edit, and the same status-dependent actions as the
     dashboard (send quote, copy link, ...) are offered here too."""
-    query = get_object_or_404(Query.objects.select_related('product_type', 'customer'), pk=pk)
+    query = get_object_or_404(Query.objects.select_related('customer'), pk=pk)
     return render(request, 'materials/query_detail.html', {
         'query': query,
+        'items': list(query.items.select_related('product_category', 'product_type').order_by('position', 'pk')),
         'history': query.quotation_history(),
         'quote_base_url': _public_quote_base_url(request),
     })
@@ -130,23 +132,14 @@ def query_edit(request, pk):
     changes go through query_send_quote/query_not_interested so they can't
     drift out of sync with what those actions actually did."""
     query = get_object_or_404(Query, pk=pk)
-    product_types = ProductType.objects.order_by('item_code')
     error = None
+    formset = QueryItemFormSet(request.POST or None, instance=query, prefix='item')
 
     if request.method == 'POST':
-        raw_width = request.POST.get('width') or None
-        raw_thickness = request.POST.get('thickness') or None
-        raw_quantity = request.POST.get('quantity') or None
         try:
             query.company_name = request.POST.get('company_name', '').strip()
             query.contact_phone = whatsapp._normalize_phone(request.POST.get('contact_phone', ''))
             query.contact_email = request.POST.get('contact_email', '').strip()
-            query.product_type_id = request.POST.get('product_type') or None
-            query.product_category_id = request.POST.get('product_category') or None
-            query.grade = canonical_grade(request.POST.get('grade'))
-            query.width = raw_width
-            query.thickness = raw_thickness
-            query.quantity = raw_quantity
             query.notes = request.POST.get('notes', '').strip()
             if query.source == 'referral':
                 query.referrer_name = request.POST.get('referrer_name', '').strip()
@@ -159,25 +152,32 @@ def query_edit(request, pk):
             query.full_clean(exclude=['source', 'status', 'customer'])
         except ValidationError as e:
             error = e.messages[0] if e.messages else "Check the values entered."
-        except (InvalidOperation, ValueError):
-            error = "Check that width, thickness and quantity are valid numbers."
         else:
-            if not query.product_type_id:   # no code picked by hand: look it up from type + grade + size
-                query.product_type = _match_product_type(query.grade, query.product_category)
-            query.save(update_fields=[
-                'company_name', 'contact_phone', 'contact_email',
-                'product_type', 'product_category', 'grade', 'width', 'thickness', 'quantity', 'notes',
-                'referrer_name', 'referrer_phone', 'source_detail',
-                *[field for field, _label in Query.INTAKE_TEXT_FIELDS],
-            ])
-            return redirect('query_dashboard')
+            if not formset.is_valid():
+                error = _first_formset_error(formset, 'Product')
+            else:
+                with transaction.atomic():
+                    query.save(update_fields=[
+                        'company_name', 'contact_phone', 'contact_email', 'notes',
+                        'referrer_name', 'referrer_phone', 'source_detail',
+                        *[field for field, _label in Query.INTAKE_TEXT_FIELDS],
+                    ])
+                    items = formset.save(commit=False)
+                    for removed in formset.deleted_objects:
+                        removed.delete()
+                    for item in items:
+                        if not item.product_type_id:   # no code picked by hand: look it up from type + grade
+                            item.product_type = _match_product_type(item.grade, item.product_category)
+                        item.save()
+                    for position, item in enumerate(query.items.order_by('position', 'pk'), start=1):   # keep 1..n
+                        if item.position != position:
+                            QueryItem.objects.filter(pk=item.pk).update(position=position)
+                return redirect('query_dashboard')
 
     return render(request, 'materials/query_edit.html', {
         'query': query,
-        'product_types': product_types,
+        'formset': formset,
         'intake_fields': [(f, label, getattr(query, f)) for f, label in Query.INTAKE_TEXT_FIELDS],
-        'delivery_choices': Query.DELIVERY_FORM_CHOICES,
-        'categories': ProductCategory.objects.all(),
         # type + grade -> product code, for the form's live auto-match (same as the quote form)
         'product_code_map': [
             {'pk': pt.pk, 'category': pt.category_id, 'grade': grade_key(pt.grade)}

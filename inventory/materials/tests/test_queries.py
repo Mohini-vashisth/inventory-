@@ -15,7 +15,7 @@ from ..views.whatsapp import (
     WHATSAPP_QUERY_INTAKE_TEMPLATE,
     WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE,
 )
-from .helpers import quotation_item_post_data
+from .helpers import create_query, item_row, query_edit_data, quotation_item_post_data
 
 
 class QueryDashboardTests(TestCase):
@@ -158,7 +158,7 @@ class QueryDashboardTests(TestCase):
         submitting it unchanged (the normal path: a real browser submits
         whatever's already in the pre-filled inputs) carries those values
         through to the QuotationLineItem."""
-        query = Query.objects.create(
+        query = create_query(
             source='call', company_name='Prefill Rate Co', contact_email='prefill@example.com',
             product_type=self.product_type, grade='EN8D', width=Decimal('50'), thickness=Decimal('6'),
         )
@@ -217,37 +217,34 @@ class QueryDashboardTests(TestCase):
     def test_edit_query_updates_fields(self):
         query = Query.objects.create(source='whatsapp', contact_phone='919123456780')
         self.client.force_login(self.staff)
-        response = self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), {
-            'company_name': 'Fixed Co Name', 'contact_phone': '+91 91234 56780',
-            'contact_email': 'fixed@example.com', 'grade': 'EN8D',
-            'width': '50', 'thickness': '6', 'quantity': '500', 'notes': 'corrected via dashboard',
-        })
+        response = self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), query_edit_data(
+            query, rows=[{'grade': 'EN8D', 'width': '50', 'thickness': '6', 'quantity': '500'}],
+            company_name='Fixed Co Name', contact_phone='+91 91234 56780', contact_email='fixed@example.com',
+            notes='corrected via dashboard'))
         self.assertRedirects(response, reverse('query_dashboard'))
         query.refresh_from_db()
         self.assertEqual(query.company_name, 'Fixed Co Name')
         self.assertEqual(query.contact_phone, '919123456780')
         self.assertEqual(query.contact_email, 'fixed@example.com')
-        self.assertEqual(query.grade, 'EN8D')
-        self.assertEqual((query.width, query.thickness), (Decimal('50'), Decimal('6')))
-        self.assertEqual(query.quantity, Decimal('500'))
+        item = query.items.get()
+        self.assertEqual(item.grade, 'EN8D')
+        self.assertEqual((item.width, item.thickness), (Decimal('50'), Decimal('6')))
+        self.assertEqual(item.quantity, Decimal('500'))
         self.assertEqual(query.notes, 'corrected via dashboard')
 
     def test_edit_query_links_product_type(self):
         product_type = ProductType.objects.create(item_code='Edit Bar', grade='SS304')
         query = Query.objects.create(source='call', contact_phone='9123456780')
         self.client.force_login(self.staff)
-        self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), {
-            'company_name': '', 'contact_phone': '9123456780', 'contact_email': '',
-            'product_type': str(product_type.pk), 'grade': '', 'width': '', 'thickness': '', 'quantity': '', 'notes': '',
-        })
-        query.refresh_from_db()
-        self.assertEqual(query.product_type, product_type)
+        self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), query_edit_data(
+            query, rows=[{'product_type': str(product_type.pk)}]))
+        self.assertEqual(query.items.get().product_type, product_type)
 
-    def _edit(self, query, **fields):
-        data = {'company_name': '', 'contact_phone': '9123456780', 'contact_email': '', 'product_type': '',
-                'grade': '', 'width': '', 'thickness': '', 'quantity': '', 'notes': ''}
-        data.update(fields)
-        return self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), data)
+    def _edit(self, query, **row):
+        """Edit the query's (only) product row: `row` fields replace what it has."""
+        existing = list(query.item_list())
+        rows = [{**item_row(existing[0]), **row}] if existing else [row]
+        return self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), query_edit_data(query, rows=rows))
 
     def test_editing_type_and_grade_fills_in_the_matching_product_code(self):
         from ..models import ProductCategory
@@ -258,9 +255,9 @@ class QueryDashboardTests(TestCase):
         query = Query.objects.create(source='call', contact_phone='9123456780')
         self.client.force_login(self.staff)
         self._edit(query, product_category=str(flat.pk), grade='en8d', width='50', thickness='6')
-        query.refresh_from_db()
-        self.assertEqual(query.product_type, code)
-        self.assertEqual(query.grade, 'EN8D')   # tidied to the listed spelling too
+        item = query.items.get()
+        self.assertEqual(item.product_type, code)
+        self.assertEqual(item.grade, 'EN8D')   # tidied to the listed spelling too
 
     def test_a_code_picked_by_hand_is_not_replaced_by_the_match(self):
         from ..models import ProductCategory
@@ -270,8 +267,7 @@ class QueryDashboardTests(TestCase):
         query = Query.objects.create(source='call', contact_phone='9123456780')
         self.client.force_login(self.staff)
         self._edit(query, product_category=str(flat.pk), grade='EN8D', width='50', thickness='6', product_type=str(picked.pk))
-        query.refresh_from_db()
-        self.assertEqual(query.product_type, picked)
+        self.assertEqual(query.items.get().product_type, picked)
 
     def test_no_match_leaves_the_code_empty(self):
         from ..models import ProductCategory
@@ -279,8 +275,7 @@ class QueryDashboardTests(TestCase):
         query = Query.objects.create(source='call', contact_phone='9123456780')
         self.client.force_login(self.staff)
         self._edit(query, product_category=str(flat.pk), grade='EN8D', width='50', thickness='6')
-        query.refresh_from_db()
-        self.assertIsNone(query.product_type)
+        self.assertIsNone(query.items.get().product_type)
 
     def test_the_edit_page_carries_the_code_map_and_grade_suggestions_for_live_fill(self):
         from ..models import GradeOption, ProductCategory
@@ -300,30 +295,24 @@ class QueryDashboardTests(TestCase):
             with self.subTest(field=field):
                 query = Query.objects.create(source='call', contact_phone='9123456780')
                 self.client.force_login(self.staff)
-                response = self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), {
-                    'company_name': '', 'contact_phone': '9123456780', 'contact_email': '',
-                    'grade': '', field: 'not-a-number', 'quantity': '', 'notes': '',
-                })
+                response = self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), query_edit_data(
+                    query, rows=[{field: 'not-a-number'}]))
                 self.assertEqual(response.status_code, 200)
-                self.assertContains(response, "must be a decimal number")
-                query.refresh_from_db()
-                self.assertIsNone(getattr(query, field))
+                self.assertContains(response, "Enter a number")
+                self.assertEqual(query.items.count(), 0)   # nothing saved
                 query.delete()
 
     def test_edit_query_does_not_change_status_or_source(self):
         query = Query.objects.create(source='call', contact_phone='9123456780', status='quote_sent')
         self.client.force_login(self.staff)
-        self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), {
-            'company_name': 'Renamed Co', 'contact_phone': '9123456780', 'contact_email': '',
-            'grade': '', 'width': '', 'thickness': '', 'quantity': '', 'notes': '',
-        })
+        self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), query_edit_data(query, company_name='Renamed Co'))
         query.refresh_from_db()
         self.assertEqual(query.source, 'call')
         self.assertEqual(query.status, 'quote_sent')
 
     def test_quote_form_prefills_from_in_flight_query(self):
         customer = Customer.objects.create(name='Prefill Co')
-        Query.objects.create(
+        create_query(
             source='call', company_name='Prefill Co', customer=customer, status='quote_sent',
             product_type=self.product_type, grade='EN8D', width=Decimal('50'), thickness=Decimal('6'),
             quantity=Decimal('750'), notes='Call back before Friday',
@@ -374,12 +363,11 @@ class QueryIntakeDetailsTests(TestCase):
     def setUp(self):
         self.staff = User.objects.create_user('intake_staff', password='pw', is_staff=True)
         self.client.force_login(self.staff)
-        self.query = Query.objects.create(
+        self.query = create_query(
             source='whatsapp', contact_phone='919876543210', company_name='Intake Co',
             contact_email='intake@example.com', grade='EN8D', quantity=Decimal('500'),
             gst_number='22AAAAA0000A1Z5', gst_address='12 Industrial Area, Faridabad',
             product_description='Round bar, 12 mm\nwith chamfer', technical_requirements='Tata make',
-            quantity_text='2 tons monthly',
         )
 
     def test_gst_and_requirement_rows_are_kept_apart_and_in_asking_order(self):
@@ -390,8 +378,6 @@ class QueryIntakeDetailsTests(TestCase):
         self.assertEqual(self.query.requirement_rows(), [
             ('Make / properties / process', 'Tata make'),
             ('End use', ''),  # blank rows are kept so the detail page can show a dash
-            ('Delivery form', ''),
-            ('Quantity & frequency', '2 tons monthly'),
         ])
 
     def test_dashboard_shows_only_name_and_number(self):
@@ -413,7 +399,7 @@ class QueryIntakeDetailsTests(TestCase):
         response = self.client.get(reverse('query_detail', kwargs={'pk': self.query.pk}))
         self.assertEqual(response.status_code, 200)
         for text in ('Intake Co', '919876543210', 'intake@example.com', 'WhatsApp', 'EN8D', '22AAAAA0000A1Z5',
-                     '12 Industrial Area, Faridabad', 'Tata make', '2 tons monthly'):
+                     '12 Industrial Area, Faridabad', 'Tata make', '500'):
             with self.subTest(text=text):
                 self.assertContains(response, text)
 
@@ -452,22 +438,15 @@ class QueryIntakeDetailsTests(TestCase):
         self.assertContains(response, '22AAAAA0000A1Z5')
         self.assertContains(response, '12 Industrial Area, Faridabad')
 
-    def _edit(self, **overrides):
-        data = {
-            'company_name': 'Intake Co', 'contact_phone': '919876543210', 'contact_email': '',
-            'product_type': '', 'grade': '', 'width': '', 'thickness': '', 'quantity': '', 'notes': '',
-        }
-        data.update({f: getattr(self.query, f) for f, _ in Query.INTAKE_TEXT_FIELDS})
-        data.update(overrides)
-        return self.client.post(reverse('query_edit', kwargs={'pk': self.query.pk}), data)
+    def _edit(self, rows=None, **overrides):
+        return self.client.post(reverse('query_edit', kwargs={'pk': self.query.pk}), query_edit_data(self.query, rows=rows, **overrides))
 
     def test_edit_saves_intake_fields_and_normalises_the_gst_number(self):
-        response = self._edit(gst_number=' 27 bbbbb 1111 b 1z6 ', end_use='shafts', delivery_form='Bar', technical_requirements='polishing')
+        response = self._edit(gst_number=' 27 bbbbb 1111 b 1z6 ', end_use='shafts', technical_requirements='polishing')
         self.assertRedirects(response, reverse('query_dashboard'))
         self.query.refresh_from_db()
         self.assertEqual(self.query.gst_number, '27BBBBB1111B1Z6')
         self.assertEqual(self.query.end_use, 'shafts')
-        self.assertEqual(self.query.delivery_form, 'Bar')
         self.assertEqual(self.query.technical_requirements, 'polishing')
 
     def test_edit_rejects_a_malformed_gst_number_and_saves_nothing(self):
@@ -480,17 +459,20 @@ class QueryIntakeDetailsTests(TestCase):
                 self.assertEqual(self.query.end_use, '')
 
     def test_edit_rejects_a_delivery_form_that_is_not_coil_or_bar(self):
-        response = self._edit(delivery_form='Sheet', end_use='should not be saved')
+        item = self.query.items.get()
+        response = self._edit(rows=[{**item_row(item), 'delivery_form': 'Sheet'}], end_use='should not be saved')
         self.assertContains(response, 'error-msg')
         self.query.refresh_from_db()
-        self.assertEqual((self.query.delivery_form, self.query.end_use), ('', ''))
+        self.assertEqual(self.query.end_use, '')
+        self.assertEqual(self.query.items.get().delivery_form, '')
 
-    def test_edit_form_offers_delivery_form_as_a_coil_or_bar_dropdown(self):
-        self.query.delivery_form = 'Bar'
-        self.query.save(update_fields=['delivery_form'])
+    def test_edit_form_offers_delivery_form_as_a_coil_or_bar_dropdown_per_product(self):
+        item = self.query.items.get()
+        item.delivery_form = 'Bar'
+        item.save(update_fields=['delivery_form'])
         html = self.client.get(reverse('query_edit', kwargs={'pk': self.query.pk})).content.decode()
-        self.assertIn('<select name="delivery_form">', html)
-        self.assertIn('<option value="Coil" >Coil</option>', html)
+        self.assertIn('name="item-0-delivery_form"', html)
+        self.assertIn('<option value="Coil">Coil</option>', html)
         self.assertIn('<option value="Bar" selected>Bar</option>', html)
 
     def test_edit_can_leave_the_gst_number_blank(self):
@@ -600,16 +582,14 @@ class QuerySourceTests(TestCase):
         url = reverse('query_edit', kwargs={'pk': referral.pk})
         self.assertContains(self.client.get(url), 'name="referrer_name"')
         self.assertNotContains(self.client.get(url), 'name="source_detail"')
-        base = {'company_name': '', 'contact_phone': '9000000010', 'contact_email': '', 'product_type': '',
-                'grade': '', 'width': '', 'thickness': '', 'quantity': '', 'notes': ''}
-        self.client.post(url, {**base, 'referrer_name': 'Raju Traders', 'referrer_phone': '98100 12345', 'source_detail': 'ignored'})
+        self.client.post(url, query_edit_data(referral, referrer_name='Raju Traders', referrer_phone='98100 12345', source_detail='ignored'))
         referral.refresh_from_db()
         self.assertEqual((referral.referrer_name, referral.referrer_phone, referral.source_detail), ('Raju Traders', '98100 12345', ''))
 
         other = Query.objects.create(source='other', contact_phone='9000000011')
         other_url = reverse('query_edit', kwargs={'pk': other.pk})
         self.assertContains(self.client.get(other_url), 'name="source_detail"')
-        self.client.post(other_url, {**base, 'contact_phone': '9000000011', 'source_detail': 'Walk-in'})
+        self.client.post(other_url, query_edit_data(other, source_detail='Walk-in'))
         other.refresh_from_db()
         self.assertEqual(other.source_detail, 'Walk-in')
 
@@ -707,30 +687,28 @@ class QueryProductTypeTests(TestCase):
         self.round_bar = ProductCategory.objects.get(name='Square Bright Bar')
         self.query = Query.objects.create(source='indiamart', contact_phone='9123456780', company_name='Type Co')
 
-    def _edit(self, **overrides):
-        data = {'company_name': 'Type Co', 'contact_phone': '9123456780', 'contact_email': '', 'product_type': '',
-                'grade': '', 'width': '', 'thickness': '', 'quantity': '', 'notes': '', 'product_category': ''}
-        data.update(overrides)
-        return self.client.post(reverse('query_edit', kwargs={'pk': self.query.pk}), data)
+    def _edit(self, product_category=''):
+        existing = list(self.query.item_list())
+        row = {**item_row(existing[0]), 'product_category': product_category} if existing else {'product_category': product_category}
+        return self.client.post(reverse('query_edit', kwargs={'pk': self.query.pk}), query_edit_data(self.query, rows=[row]))
 
-    def test_edit_page_offers_all_fourteen_product_types(self):
-        html = self.client.get(reverse('query_edit', kwargs={'pk': self.query.pk})).content.decode()
-        self.assertIn('<select name="product_category">', html)
+    def test_edit_page_offers_all_the_product_types_in_each_product_row(self):
+        create_query(source='call', contact_phone='9123456799', product_category=self.round_bar)
+        html = self.client.get(reverse('query_edit', kwargs={'pk': Query.objects.latest('pk').pk})).content.decode()
+        self.assertIn('name="item-0-product_category"', html)
         for name in ProductCategory.objects.values_list('name', flat=True):
             with self.subTest(name=name):
                 self.assertIn(f'>{name}</option>', html)
 
     def test_edit_saves_and_clears_the_product_type(self):
         self._edit(product_category=str(self.round_bar.pk))
-        self.query.refresh_from_db()
-        self.assertEqual(self.query.product_category, self.round_bar)
+        self.assertEqual(self.query.items.get().product_category, self.round_bar)
         self._edit(product_category='')
-        self.query.refresh_from_db()
-        self.assertIsNone(self.query.product_category)
+        self.assertIsNone(self.query.items.get().product_category)
 
     def test_detail_page_shows_the_product_type(self):
-        self.query.product_category = self.round_bar
-        self.query.save(update_fields=['product_category'])
+        from ..models import QueryItem
+        QueryItem.objects.create(query=self.query, product_category=self.round_bar)
         html = self.client.get(reverse('query_detail', kwargs={'pk': self.query.pk})).content.decode()
         self.assertIn('Product type', html)
         self.assertIn('Square Bright Bar', html)
@@ -747,22 +725,22 @@ class QueryProductCodeLinkTests(TestCase):
         self.code = ProductType.objects.create(item_code='FBB009', category=self.flat, grade='EN8D')
 
     def test_the_detail_page_shows_the_code_for_the_type_and_grade_even_if_not_linked(self):
-        query = Query.objects.create(source='call', contact_phone='9123456780', product_category=self.flat, grade='en-8d')
-        self.assertIsNone(query.product_type)
+        query = create_query(source='call', contact_phone='9123456780', product_category=self.flat, grade='en-8d')
+        self.assertIsNone(query.items.get().product_type)
         html = self.client.get(reverse('query_detail', kwargs={'pk': query.pk})).content.decode()
         self.assertIn('FBB009', html)
 
     def test_no_code_is_shown_when_none_matches(self):
-        query = Query.objects.create(source='call', contact_phone='9123456781', product_category=self.flat, grade='SS304')
-        self.assertIsNone(query.effective_product_code())
+        query = create_query(source='call', contact_phone='9123456781', product_category=self.flat, grade='SS304')
+        self.assertIsNone(query.items.get().effective_product_code())
         html = self.client.get(reverse('query_detail', kwargs={'pk': query.pk})).content.decode()
         self.assertNotIn('FBB009', html)
 
     def test_a_linked_code_wins_over_the_match(self):
         other = ProductType.objects.create(item_code='HAND', grade='SS304')
-        query = Query.objects.create(source='call', contact_phone='9123456782', product_category=self.flat,
+        query = create_query(source='call', contact_phone='9123456782', product_category=self.flat,
                                      grade='EN8D', product_type=other)
-        self.assertEqual(query.effective_product_code(), other)
+        self.assertEqual(query.items.get().effective_product_code(), other)
 
 
 class QueryShowsItsOrderNumbersTests(TestCase):

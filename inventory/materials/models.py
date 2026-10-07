@@ -471,14 +471,7 @@ class Query(models.Model):
     company_name  = models.CharField(max_length=100, blank=True)
     contact_phone = models.CharField(max_length=20, blank=True)
     contact_email = models.EmailField(blank=True)
-    # The product type (family) the customer asked for — set by staff, or detected
-    # from the bot's "Your requirements" answer when it names exactly one.
-    product_category = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
-    product_type  = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)
-    grade         = GradeField(max_length=100, blank=True)
-    width         = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
-    thickness     = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Thickness (mm)")
-    quantity      = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    # What the customer wants to buy lives in the query's items (QueryItem below): one row per product.
     # Collected by the WhatsApp intake bot after email. One WhatsApp message
     # maps to one field: GST number + address arrive together and are split
     # by _parse_whatsapp_gst_details; the other combined questions are saved
@@ -502,13 +495,6 @@ class Query(models.Model):
     product_description    = models.TextField(blank=True)
     technical_requirements = models.TextField(blank=True)  # particular make, mechanical properties, process
     end_use                = models.TextField(blank=True)
-    # Only two options, so the bot offers them as tappable buttons (see
-    # WHATSAPP_QUERY_CHOICES) and the edit form/admin get a dropdown from `choices`.
-    delivery_form          = models.CharField(max_length=10, blank=True, choices=DELIVERY_FORM_CHOICES)
-    # Free text on purpose ("2 tons monthly"): the numeric `quantity` above is
-    # kg and feeds the quotation form, and guessing units from a customer's
-    # sentence would put a wrong number into a quote. Also holds frequency.
-    quantity_text          = models.TextField(blank=True)
     notes         = models.TextField(blank=True)
     status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new', db_index=True)
     # Set only once a quote is actually sent — before that, a query is just
@@ -542,8 +528,6 @@ class Query(models.Model):
         ('gst_address', 'GST address'),
         ('technical_requirements', 'Make / properties / process'),
         ('end_use', 'End use'),
-        ('delivery_form', 'Delivery form'),
-        ('quantity_text', 'Quantity & frequency'),
     ]
 
     class Meta:
@@ -581,22 +565,11 @@ class Query(models.Model):
         read live (they close up when an earlier order is deleted), so this is always current."""
         return [f"ORD-{order.order_no:04d}" for order in sorted(self.orders.all(), key=lambda o: o.pk) if order.order_no]
 
-    def dimensions_text(self, separator=' x '):
-        """"50 x 6.5 mm" — width and thickness without trailing zeros, '' if neither is known."""
-        parts = [format(value.normalize(), 'f') for value in (self.width, self.thickness) if value is not None]
-        return f"{separator.join(parts)} mm" if parts else ''
+    MAX_ITEMS = 5   # the bot offers 1 to 5 products; staff can add more by hand
 
-    def matching_product_code(self):
-        """The catalogue product code for this query's product type + grade, or None
-        (size plays no part in a code)."""
-        if not (self.product_category_id and self.grade):
-            return None
-        from .product_codes import find_product_code
-        return find_product_code(self.product_category, self.grade)
-
-    def effective_product_code(self):
-        """The code linked to the query, else the one its type + grade point to."""
-        return self.product_type or self.matching_product_code()
+    def item_list(self):
+        """The products the customer asked about, in order (honouring a prefetch)."""
+        return sorted(self.items.all(), key=lambda item: (item.position, item.pk))
 
     def gst_rows(self):
         """[(label, value)] for the GST answers, blank ones included (the detail page shows a dash)."""
@@ -609,6 +582,53 @@ class Query(models.Model):
     def __str__(self):
         label = self.company_name or self.contact_phone or f"Query #{self.pk}"
         return f"{label} — {self.get_source_display()}"
+
+
+class QueryItem(models.Model):
+    """One product a customer asked about in a query. A query holds one or more (up to 5 through the
+    WhatsApp bot): the bot asks how many products first, then each question once with a comma-separated
+    answer, one value per product, and fills the matching column of every item. The quote form opens
+    with one line per item."""
+    query            = models.ForeignKey(Query, on_delete=models.CASCADE, related_name='items')
+    position         = models.PositiveSmallIntegerField(default=1)
+    # The product type (family) — chosen from the bot's list, or set by staff.
+    product_category = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
+    product_type     = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)   # the product code
+    grade            = GradeField(max_length=100, blank=True)
+    width            = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
+    thickness        = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Thickness (mm)")
+    quantity         = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Quantity (kg)")
+    delivery_form    = models.CharField(max_length=10, blank=True, choices=Query.DELIVERY_FORM_CHOICES)
+
+    class Meta:
+        ordering = ['position', 'pk']
+
+    def __str__(self):
+        return f"Product {self.position} of query {self.query_id}"
+
+    def dimensions_text(self, separator=' x '):
+        """"50 x 6.5 mm" — width and thickness without trailing zeros, '' if neither is known."""
+        parts = [format(value.normalize(), 'f') for value in (self.width, self.thickness) if value is not None]
+        return f"{separator.join(parts)} mm" if parts else ''
+
+    def matching_product_code(self):
+        """The catalogue product code for this item's product type + grade, or None
+        (size plays no part in a code)."""
+        if not (self.product_category_id and self.grade):
+            return None
+        from .product_codes import find_product_code
+        return find_product_code(self.product_category, self.grade)
+
+    def effective_product_code(self):
+        """The code linked to the item, else the one its type + grade point to."""
+        return self.product_type or self.matching_product_code()
+
+    def summary_text(self):
+        """"Flat Bright Bar · EN8D · 50 x 6.5 mm · 500 kg · Coil" — whatever is known about it."""
+        quantity = f"{format(self.quantity.normalize(), 'f')} kg" if self.quantity is not None else ''
+        parts = [self.product_category.name if self.product_category_id else '', self.grade, self.dimensions_text(),
+                 quantity, self.delivery_form]
+        return ' · '.join(part for part in parts if part)
 
 
 class WhatsAppMessage(models.Model):

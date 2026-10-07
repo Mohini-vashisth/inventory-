@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from ..models import Customer, ProductCategory, ProductType, Query, Quotation, QuotationLineItem
 from ..pdf import generate_quotation_pdf
-from .helpers import quotation_item_post_data
+from .helpers import create_query, quotation_item_post_data
 
 
 class QuotationFormDispatchTests(TestCase):
@@ -547,7 +547,7 @@ class ProductCodeMatchingTests(TestCase):
         from ..models import ProductCategory
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
         code = ProductType.objects.create(item_code='FBB009', category=flat, grade='EN8D')
-        query = Query.objects.create(source='whatsapp', contact_phone='9123456783', company_name='Show Co',
+        query = create_query(source='whatsapp', contact_phone='9123456783', company_name='Show Co',
                                      product_category=flat, grade='EN8D', width='50', thickness='6.5')
         response = self.client.get(f"{reverse('quotation_form')}?query={query.pk}")
         html = response.content.decode()
@@ -560,12 +560,12 @@ class ProductCodeMatchingTests(TestCase):
 
     def test_the_form_says_when_the_catalogue_has_no_code_yet(self):
         from ..models import ProductCategory
-        query = Query.objects.create(source='whatsapp', contact_phone='9123456784', company_name='NoCode Co',
+        query = create_query(source='whatsapp', contact_phone='9123456784', company_name='NoCode Co',
                                      product_category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='SS304')
         self.assertContains(self.client.get(f"{reverse('quotation_form')}?query={query.pk}"), 'none in the catalogue yet')
 
     def test_the_first_quote_line_is_described_from_what_the_query_knows(self):
-        query = Query.objects.create(source='whatsapp', contact_phone='9123456781', company_name='Desc Co',
+        query = create_query(source='whatsapp', contact_phone='9123456781', company_name='Desc Co',
                                      product_category=self.hex_bar, grade='EN8D', width='50', thickness='6.5')
         initial = self.client.get(f"{reverse('quotation_form')}?query={query.pk}").context['formset'].forms[0].initial
         self.assertEqual(initial['description'], 'Triangle Bright Bar EN8D 50 x 6.5 mm')
@@ -574,7 +574,7 @@ class ProductCodeMatchingTests(TestCase):
         self.assertEqual(initial['description'], 'Item')
 
     def test_grade_width_thickness_and_quantity_the_bot_collected_are_in_the_quote_form(self):
-        query = Query.objects.create(source='whatsapp', contact_phone='9123456780', company_name='Bot Co',
+        query = create_query(source='whatsapp', contact_phone='9123456780', company_name='Bot Co',
                                      product_category=self.hex_bar, grade='EN8D', width='50.000', thickness='6.000', quantity='8000')
         response = self.client.get(f"{reverse('quotation_form')}?query={query.pk}")
         initial = response.context['formset'].forms[0].initial
@@ -593,7 +593,7 @@ class ProductCodeMatchingTests(TestCase):
         self.assertIn('8000', detail)
 
     def test_the_form_prefills_the_product_type_from_the_query(self):
-        query = Query.objects.create(source='indiamart', contact_phone='9123456780', company_name='Match Co',
+        query = create_query(source='indiamart', contact_phone='9123456780', company_name='Match Co',
                                      product_category=self.hex_bar, grade='EN8D')
         response = self.client.get(f"{reverse('quotation_form')}?query={query.pk}")
         self.assertEqual(response.context['formset'].forms[0].initial['category'], self.hex_bar.pk)

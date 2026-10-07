@@ -1,8 +1,8 @@
 import re
 
 from django import forms
-from django.forms import formset_factory
-from .models import GSTIN_PATTERN, GateEntry, Material, GradeOption, SizeOption, Order
+from django.forms import formset_factory, inlineformset_factory
+from .models import GSTIN_PATTERN, GateEntry, Material, GradeOption, SizeOption, Order, Query, QueryItem
 
 
 class GateEntryForm(forms.ModelForm):
@@ -87,6 +87,30 @@ class OrderForm(forms.ModelForm):
             'mechanical_properties', 'processes', 'end_usage', 'delivery_form',
             'quantity', 'frequency', 'delivery_date', 'notes', 'purchase_order',
         ]
+
+
+class QueryItemForm(forms.ModelForm):
+    """One product row on the query's Edit page."""
+
+    class Meta:
+        model = QueryItem
+        fields = ['product_category', 'product_type', 'grade', 'width', 'thickness', 'quantity', 'delivery_form']
+        widgets = {
+            'width': forms.NumberInput(attrs={'step': '0.001', 'min': '0'}),
+            'thickness': forms.NumberInput(attrs={'step': '0.001', 'min': '0'}),
+            'quantity': forms.NumberInput(attrs={'step': '0.001', 'min': '0'}),
+            'grade': forms.TextInput(attrs={'list': 'grade-options', 'autocomplete': 'off'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['product_type'].queryset = self.fields['product_type'].queryset.order_by('item_code')
+        for name in ('product_category', 'product_type'):
+            self.fields[name].empty_label = '— none —'
+        self.fields['delivery_form'].choices = [('', '— none —')] + list(Query.DELIVERY_FORM_CHOICES)
+
+
+QueryItemFormSet = inlineformset_factory(Query, QueryItem, form=QueryItemForm, extra=0, can_delete=True)
 
 
 _TOLERANCE_FIELDS = ['width_tol_from', 'width_tol_to', 'thickness_tol_from', 'thickness_tol_to']

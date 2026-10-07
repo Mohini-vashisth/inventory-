@@ -131,16 +131,32 @@
     </div>
   </div>
 
+  {% for item in items %}
   <div class="card">
-    <div class="card-header">Product &amp; requirements</div>
+    <div class="card-header"><span>{% if items|length > 1 %}Product {{ forloop.counter }} of {{ items|length }}{% else %}Product{% endif %}</span></div>
     <div class="card-body">
       <dl class="rows">
-        <dt>Product type</dt><dd>{% if query.product_category %}{{ query.product_category.name }}{% else %}<span class="blank">—</span>{% endif %}</dd>
-        <dt>Product code</dt><dd>{% with code=query.effective_product_code %}{% if code %}{{ code.item_code }}{% else %}<span class="blank">—</span>{% endif %}{% endwith %}</dd>
-        <dt>Grade</dt><dd>{{ query.grade|default:"—" }}</dd>
-        <dt>Width</dt><dd>{% if query.width %}{{ query.width }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>
-        <dt>Thickness</dt><dd>{% if query.thickness %}{{ query.thickness }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>
-        <dt>Quantity (kg)</dt><dd>{{ query.quantity|default:"—" }}</dd>
+        <dt>Product type</dt><dd>{% if item.product_category %}{{ item.product_category.name }}{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Product code</dt><dd>{% with code=item.effective_product_code %}{% if code %}{{ code.item_code }}{% else %}<span class="blank">—</span>{% endif %}{% endwith %}</dd>
+        <dt>Grade</dt><dd>{{ item.grade|default:"—" }}</dd>
+        <dt>Width</dt><dd>{% if item.width %}{{ item.width }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Thickness</dt><dd>{% if item.thickness %}{{ item.thickness }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Quantity</dt><dd>{% if item.quantity %}{{ item.quantity }} kg{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Delivery form</dt><dd>{{ item.delivery_form|default:"—" }}</dd>
+      </dl>
+    </div>
+  </div>
+  {% empty %}
+  <div class="card">
+    <div class="card-header">Product</div>
+    <div class="card-body"><p class="muted">No product details yet. <a class="link" href="{% url 'query_edit' query.pk %}">Add them on the Edit page.</a></p></div>
+  </div>
+  {% endfor %}
+
+  <div class="card">
+    <div class="card-header">Requirements</div>
+    <div class="card-body">
+      <dl class="rows">
         {% for label, value in query.requirement_rows %}
         <dt>{{ label }}</dt><dd>{% if value %}<span class="pre">{{ value }}</span>{% else %}<span class="blank">—</span>{% endif %}</dd>
         {% endfor %}

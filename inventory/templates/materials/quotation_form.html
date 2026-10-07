@@ -155,20 +155,22 @@
             <div class="readonly-value">{{ query.company_name|default:query.contact_phone }}</div>
             <p class="muted">From the logged query — company name is fixed here, edit it on the Query dashboard if it's wrong.</p>
           </div>
+          {% for item in query_items %}
           <div class="form-row cols-3">
             <div class="form-group">
-              <label>Product Type (from the query)</label>
-              <div class="readonly-value">{{ query.product_category.name|default:"—" }}</div>
+              <label>{% if query_items|length > 1 %}Product {{ forloop.counter }} — {% endif %}Product Type (from the query)</label>
+              <div class="readonly-value">{{ item.product_category.name|default:"—" }}</div>
             </div>
             <div class="form-group">
               <label>Product Code</label>
-              <div class="readonly-value">{% with code=query.effective_product_code %}{% if code %}{{ code.item_code }}{% else %}<span class="muted">{% if query.product_category and query.grade %}none in the catalogue yet{% else %}—{% endif %}</span>{% endif %}{% endwith %}</div>
+              <div class="readonly-value">{% with code=item.effective_product_code %}{% if code %}{{ code.item_code }}{% else %}<span class="muted">{% if item.product_category and item.grade %}none in the catalogue yet{% else %}—{% endif %}</span>{% endif %}{% endwith %}</div>
             </div>
             <div class="form-group">
               <label>Grade · Width × Thickness</label>
-              <div class="readonly-value">{{ query.grade|default:"—" }}{% with dims=query.dimensions_text %}{% if dims %} · {{ dims }}{% endif %}{% endwith %}</div>
+              <div class="readonly-value">{{ item.grade|default:"—" }}{% with dims=item.dimensions_text %}{% if dims %} · {{ dims }}{% endif %}{% endwith %}</div>
             </div>
           </div>
+          {% endfor %}
         {% elif existing_customer %}
           <div class="form-row cols-3">
             <div class="form-group">

@@ -12,6 +12,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
+from .helpers import create_query
 from ..models import (
     AllowedCoilSpec, Customer, Material, Order, OrderCoilPick, ProductCategory, ProductType, Query, Quotation,
     QuotationLineItem,
@@ -596,7 +597,7 @@ class OrderFormPrefillFromQueryTests(TestCase):
         self.item = QuotationLineItem.objects.create(
             quotation=quotation, order=1, description='Bar', product_type=self.code,
             grade='EN8D', width=Decimal('50'), thickness=Decimal('6'), quantity=Decimal('500'), rate_per_kg=90)
-        self.query = Query.objects.create(
+        self.query = create_query(
             source='whatsapp', contact_phone='9123456780', company_name='Prefill Order Co',
             customer=self.customer, status='quote_sent', end_use='automotive shafts', delivery_form='Coil')
         self.url = reverse('quote_form', kwargs={'token': self.customer.quote_token})
@@ -615,8 +616,7 @@ class OrderFormPrefillFromQueryTests(TestCase):
         self.assertNotIn('<option value="bar" selected>', html)
 
     def test_bar_is_prefilled_when_that_was_the_answer(self):
-        self.query.delivery_form = 'Bar'
-        self.query.save(update_fields=['delivery_form'])
+        self.query.items.update(delivery_form='Bar')
         self.assertIn('<option value="bar" selected>Bar</option>', self.client.get(self.url).content.decode())
 
     def test_submitting_unchanged_saves_the_prefilled_values_on_the_order(self):
@@ -637,7 +637,7 @@ class OrderFormPrefillFromQueryTests(TestCase):
 
     def test_the_no_quote_fallback_form_is_prefilled_too(self):
         other = Customer.objects.create(name='No Quote Co')
-        Query.objects.create(source='whatsapp', contact_phone='9000000001', customer=other,
+        create_query(source='whatsapp', contact_phone='9000000001', customer=other,
                              status='quote_sent', end_use='structural', delivery_form='Bar')
         html = self.client.get(reverse('quote_form', kwargs={'token': other.quote_token})).content.decode()
         self.assertIn('value="structural"', html)
@@ -1035,10 +1035,11 @@ class BarLengthAndCoilWeightTests(TestCase):
         self.assertIn('<noscript>', html)               # and visible if the browser has no JavaScript
 
     def test_a_form_opened_with_bar_chosen_shows_the_length_block(self):
-        Query.objects.create(source='whatsapp', contact_phone='919876500050', customer=self.customer, status='quote_sent', delivery_form='Bar')
+        create_query(source='whatsapp', contact_phone='919876500050', customer=self.customer, status='quote_sent', delivery_form='Bar')
         html = self.client.get(self.url).content.decode()
-        self.assertNotIn('data-for="bar" hidden', html)
-        self.assertIn('data-for="coil" hidden', html)
+        # the query's one product prefills the first quoted line (Bar): its length block is open, the second line's is not
+        self.assertEqual(html.count('data-for="bar" hidden'), 1)
+        self.assertEqual(html.count('data-for="coil" hidden'), 2)
 
     def test_a_bar_needs_its_length_and_keeps_the_length_tolerance(self):
         self.client.post(self.url, self._data(**{'item-0-delivery_form': 'bar', 'item-0-bar_length': '3000',

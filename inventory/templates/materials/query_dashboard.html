@@ -194,6 +194,7 @@
           <td>
             <a href="{% url 'query_detail' query.pk %}" style="font-weight:600; color:inherit; text-decoration:none;">{{ query.company_name|default:query.contact_phone }}</a>
             {% if query.company_name %}<div class="muted">{{ query.contact_phone }}</div>{% endif %}
+            {% with count=query.items.all|length %}{% if count > 1 %}<div class="muted" style="font-size:0.78em;">{{ count }} products</div>{% endif %}{% endwith %}
           </td>
           <td>
             <span class="badge badge-{{ query.status }}">{{ query.get_status_display }}</span>
