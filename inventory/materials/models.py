@@ -514,6 +514,15 @@ class Query(models.Model):
     last_asked_field = models.CharField(max_length=30, blank=True, editable=False)
     needs_review     = models.BooleanField(default=False)
     review_note      = models.CharField(max_length=255, blank=True)
+    # The end-of-conversation review: once every question is answered the bot sends a summary and asks
+    # the customer to confirm or change something (stage 'summary'); a change is held in `pending_value`
+    # (and `pending_drawing` for a file) until they confirm it. '' = still collecting answers (or an old
+    # query that finished before the review existed), 'done' = they confirmed.
+    bot_stage        = models.CharField(max_length=20, blank=True, editable=False)
+    edit_field       = models.CharField(max_length=30, blank=True, editable=False)
+    pending_value    = models.JSONField(default=dict, blank=True, editable=False)
+    pending_drawing  = models.FileField(upload_to='query_drawings/pending/%Y/%m/', blank=True, null=True, editable=False)
+    intake_confirmed_at = models.DateTimeField(null=True, blank=True, editable=False)
 
     # (field, label) for the free-text answers above, in the order the bot asks
     # them — the one list the dashboard, the edit form and the bot all read.
