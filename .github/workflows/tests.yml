@@ -36,12 +36,3 @@ jobs:
       - name: Run tests
         working-directory: inventory
         run: python manage.py test materials
-
-      - name: WhatsApp relay tests (Node)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Run relay tests
-        working-directory: relay
-        run: npm test

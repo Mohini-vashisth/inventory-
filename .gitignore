@@ -12,7 +12,3 @@ inventory/media/
 
 .env
 .envrc
-
-# WhatsApp relay
-relay/node_modules/
-relay/.wrangler/
