@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.core.mail import EmailMessage
+from django.utils import timezone
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.core.files.base import ContentFile
@@ -63,7 +64,9 @@ def _send_order_confirmation_email(order):
             from_email=settings.DEFAULT_FROM_EMAIL,
             to=[customer.email],
         )
-        email.attach("Order summary.pdf", generate_order_summary_pdf([order], customer, placed_at=order.created_at), "application/pdf")
+        email.attach("Order summary.pdf", generate_order_summary_pdf(
+            [order], customer, quotation=order.source_query.latest_sent_quotation() if order.source_query else None,
+            placed_at=order.created_at, confirmed_at=timezone.now()), "application/pdf")
         email.send()
         return 'sent'
     except Exception:

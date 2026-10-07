@@ -783,16 +783,49 @@ class OrderConfirmationEmailTests(TestCase):
             with self.subTest(expected=expected):
                 self.assertIn(expected, text)
 
-    def test_the_summary_pdf_leaves_out_order_numbers_and_empty_optional_rows(self):
+    def _text_of(self, order, **options):
         import re
         from unittest.mock import patch as _patch
         from ..order_pdf import generate_order_summary_pdf
-        order = self._order()
         with _patch('reportlab.rl_config.pageCompression', 0):
-            text = b' '.join(re.findall(rb'\((.*?)\)\s*Tj', generate_order_summary_pdf([order], self.customer))).decode('latin-1')
-        self.assertNotIn(f'ORD-{order.order_no:04d}', text)
-        for absent in ('Mechanical properties', 'Processes', 'Mill make', 'Tolerances', 'Frequency'):
-            self.assertNotIn(absent, text)
+            pdf = generate_order_summary_pdf([order], self.customer, **options)
+        return b' '.join(re.findall(rb'\((.*?)\)\s*Tj', pdf)).decode('latin-1')
+
+    def test_the_summary_pdf_is_the_complete_order_with_a_dash_where_nothing_was_entered(self):
+        order = self._order()
+        text = self._text_of(order, placed_at=order.created_at, confirmed_at=timezone.now())
+        self.assertIn(f'ORD-{order.order_no:04d}', text)
+        self.assertIn('Confirmed on', text)
+        for label in ('Order no.', 'Status', 'Product type', 'Product code', 'Grade', 'Width', 'Thickness', 'Quantity', 'Delivery form',
+                      'Expected delivery', 'Frequency', 'Tolerances', 'Mechanical properties', 'Processes', 'End usage', 'Mill make',
+                      'Notes', 'Drawing', 'Purchase order'):
+            with self.subTest(label=label):
+                self.assertIn(label, text)
+        self.assertNotIn('Dimensions (typed)', text)   # only older / staff-entered orders have it
+
+    def test_the_summary_pdf_shows_the_quotation_and_the_gst_details_when_known(self):
+        query = Query.objects.create(source='whatsapp', contact_phone='919876500070', company_name='Confirm Co',
+                                     gst_number='22AAAAA0000A1Z5', gst_address='12 Industrial Area, Faridabad')
+        quotation = Quotation.objects.create(customer=self.customer, source_query=query, status='sent')
+        order = self._order(source_query=query)
+        text = self._text_of(order, quotation=quotation)
+        for expected in (quotation.formatted_no(), 'GST number', '22AAAAA0000A1Z5', '12 Industrial Area, Faridabad'):
+            with self.subTest(expected=expected):
+                self.assertIn(expected, text)
+
+    def test_the_confirmation_email_pdf_is_stamped_and_quotes_the_source_quotation(self):
+        import re
+        from unittest.mock import patch as _patch
+        query = Query.objects.create(source='whatsapp', contact_phone='919876500071', company_name='Confirm Co')
+        quotation = Quotation.objects.create(customer=self.customer, source_query=query, status='sent')
+        order = self._order(source_query=query)
+        with _patch('reportlab.rl_config.pageCompression', 0):
+            self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}))
+        pdf = self.mail.outbox[0].attachments[0][1]
+        text = b' '.join(re.findall(rb'\((.*?)\)\s*Tj', pdf)).decode('latin-1')
+        self.assertIn('Confirmed on', text)
+        self.assertIn(quotation.formatted_no(), text)
+        self.assertIn('Confirmed', text)   # the status row
 
     def test_nothing_is_emailed_to_us_when_an_order_is_placed(self):
         customer = Customer.objects.create(name='Place Mail Co', email='place@example.com')
