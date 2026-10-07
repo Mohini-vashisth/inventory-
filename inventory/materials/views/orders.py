@@ -277,7 +277,6 @@ def quote_form(request, token):
             'customer': customer,
             'item_forms': list(zip(formset.forms, items)),
             'formset': formset,
-            'has_whatsapp_drawing': bool(query and query.drawing),
             'error': error,
         })
 
@@ -310,7 +309,6 @@ def quote_form(request, token):
     return render(request, 'materials/quote_form.html', {
         'customer': customer,
         'categories': ProductCategory.objects.all(),
-        'has_whatsapp_drawing': bool(query and query.drawing),
         'error': error,
         'post': request.POST if error else initial,
     })

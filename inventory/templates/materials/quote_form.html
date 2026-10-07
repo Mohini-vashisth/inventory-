@@ -72,8 +72,13 @@
     .tolerance-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; margin-bottom: 0.5rem; }
     .tolerance-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; margin-bottom: 0.55rem; }
     .tolerance-name { min-width: 9rem; font-size: 0.9rem; }
-    .tolerance-row label { display: flex; align-items: center; gap: 0.4rem; margin: 0; text-transform: none; letter-spacing: 0; font-size: 0.85rem; color: #555; }
-    .tolerance-row input { width: 7.5rem; }
+    .tolerance-row label { flex: 1 1 8rem; display: flex; align-items: center; gap: 0.4rem; margin: 0; text-transform: none; letter-spacing: 0; font-size: 0.85rem; color: #555; }
+    .tolerance-row label { min-width: 0; }
+    .tolerance-row input { flex: 1 1 0; min-width: 0; width: 100%; }
+    @media (max-width: 520px) { .tolerance-name { flex: 1 0 100%; } .tolerance-row { gap: 0.35rem 0.6rem; } .tolerance-row label { flex: 1 1 0; } }
+    /* A date box has a built-in minimum width (more so on phones), which pushed it out of its column. */
+    .form-row > .form-group { min-width: 0; }
+    input[type="date"] { min-width: 0; max-width: 100%; -webkit-appearance: none; appearance: none; min-height: 2.4rem; }
     .item-spec b {
       font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em;
       color: #888; margin-right: 0.3rem;
@@ -124,7 +129,7 @@
           <div class="form-group">
             <label>Attach Drawing</label>
             {{ item_form.drawing_file }}
-            {% if has_whatsapp_drawing %}<p class="muted">We already have the drawing you sent on WhatsApp — attach one here only to replace it.</p>{% endif %}
+            <p class="muted">Please attach the final dimension drawing.</p>
           </div>
           <div class="form-group"><label>Mechanical Properties</label>{{ item_form.mechanical_properties }}</div>
         </div>
@@ -195,7 +200,7 @@
         <div class="form-group">
           <label>Attach Drawing</label>
           <input type="file" name="drawing_file" accept=".pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,.step,.stp,.igs,.iges,.zip">
-          {% if has_whatsapp_drawing %}<p class="muted">We already have the drawing you sent on WhatsApp — attach one here only to replace it.</p>{% endif %}
+          <p class="muted">Please attach the final dimension drawing.</p>
         </div>
         <div class="form-group">
           <label>Mechanical Properties</label>
