@@ -40,6 +40,7 @@ urlpatterns = [
     path('webhooks/whatsapp/', whatsapp.whatsapp_webhook, name='whatsapp_webhook'),
     path('orders/', orders.order_dashboard, name='order_dashboard'),
     path('orders/customer-autocomplete/', orders.customer_autocomplete, name='customer_autocomplete'),
+    path('orders/<int:pk>/', orders.order_detail, name='order_detail'),
     path('orders/<int:pk>/confirm/', orders.order_confirm, name='order_confirm'),
     path('orders/<int:pk>/reject/', orders.order_reject, name='order_reject'),
     path('orders/<int:pk>/dispatch/', orders.order_dispatch, name='order_dispatch'),

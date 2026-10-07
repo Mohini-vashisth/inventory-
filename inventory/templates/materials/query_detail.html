@@ -113,7 +113,7 @@
         <dt>Where from</dt><dd>{{ query.source_detail|default:"—" }}</dd>
         {% endif %}
         <dt>Received</dt><dd>{{ query.created_at|date:"d M Y, H:i" }}</dd>
-        {% with orders=query.order_numbers %}{% if orders %}<dt>Order placed</dt><dd><b>{{ orders|join:", " }}</b></dd>{% endif %}{% endwith %}
+        {% with placed=query.orders.all %}{% if placed %}<dt>Order placed</dt><dd><b>{% for o in placed %}<a class="link" href="{% url 'order_detail' o.pk %}">ORD-{{ o.order_no|stringformat:"04d" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</b></dd>{% endif %}{% endwith %}
         {% if query.intake_confirmed_at %}<dt>Answers confirmed</dt><dd>By the customer on WhatsApp, {{ query.intake_confirmed_at|date:"d M Y, H:i" }}</dd>
         {% elif query.bot_stage %}<dt>WhatsApp review</dt><dd>Waiting for the customer to confirm their answers</dd>{% endif %}
       </dl>

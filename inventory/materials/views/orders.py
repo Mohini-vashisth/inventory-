@@ -3,6 +3,7 @@
 import logging
 import os
 import uuid
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.mail import EmailMessage
@@ -15,6 +16,7 @@ from django.http import JsonResponse
 
 from ..models import ProductCategory, ProductType, Customer, Query, Order
 from ..forms import CustomerOrderForm, OrderForm, OrderItemFormSet
+from ..order_pdf import generate_order_summary_pdf
 from ..decorators import redirect_to_admin_login, staff_required
 from .common import _first_form_error, _first_formset_error, _match_product_type
 from .quotations import _public_quote_base_url
@@ -48,22 +50,47 @@ def _send_order_confirmation_email(order):
         lines.append("  Drawing: received")
     contact = ' or '.join(part for part in (settings.COMPANY_PHONE, settings.COMPANY_EMAIL) if part)
     try:
-        EmailMessage(
+        email = EmailMessage(
             subject=f"Order confirmed — {settings.COMPANY_NAME}",
             body=(
                 f"Dear {customer.name},\n\n"
                 f"Your order has been confirmed. Production will start shortly.\n\n"
                 f"Order details:\n" + '\n'.join(lines) + "\n\n"
+                "A summary of your order is attached.\n\n"
                 + (f"If anything needs correcting, please contact us at {contact}.\n\n" if contact else '')
                 + f"Regards,\n{settings.COMPANY_NAME}"
             ),
             from_email=settings.DEFAULT_FROM_EMAIL,
             to=[customer.email],
-        ).send()
+        )
+        email.attach("Order summary.pdf", generate_order_summary_pdf([order], customer, placed_at=order.created_at), "application/pdf")
+        email.send()
         return 'sent'
     except Exception:
         logger.warning("Order confirmation email to %s failed", customer.email, exc_info=True)
         return 'failed'
+
+
+@staff_required(on_denied=redirect_to_admin_login)
+def order_detail(request, pk):
+    """Everything about one order on one page: who and what, the delivery and tolerances, the
+    requirements and attachments, the quote and query it came from, and the coils picked for it —
+    with the same Confirm / Reject / Dispatch actions as the Orders list."""
+    order = get_object_or_404(
+        Order.objects.select_related('customer', 'product_type__category', 'source_query'), pk=pk)
+    picks = list(order.coil_picks.select_related('coil').order_by('pk'))
+    weight_picked = sum((pick.weight_allocated for pick in picks), Decimal('0'))
+    low_stock = False
+    if order.status in ('confirmed', 'in_production'):
+        available = order.available_raw_material_output()
+        low_stock = available is not None and available < order.quantity
+    return render(request, 'materials/order_detail.html', {
+        'order': order,
+        'picks': picks,
+        'weight_picked': weight_picked,
+        'low_stock': low_stock,
+        'quotation': order.source_query.latest_sent_quotation() if order.source_query else None,
+    })
 
 
 @staff_required(on_denied=redirect_to_admin_login)

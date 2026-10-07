@@ -1,0 +1,189 @@
+{% extends "materials/base.html" %}
+
+{% block title %}ORD-{{ order.order_no|stringformat:"04d" }} – {{ order.customer.name }}{% endblock %}
+
+{% block css %}
+    body { font-family: Arial, Helvetica, sans-serif; background: #f4f6f9; color: #333; }
+
+    header {
+      background: #4e73df; color: white;
+      padding: 1rem 2rem;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    header h1 { font-size: 1.3rem; }
+    .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; margin-left: 1.25rem; }
+
+    .content { max-width: 760px; margin: 2rem auto; padding: 0 1.5rem; }
+
+    .card {
+      background: white; border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
+      overflow: hidden; margin-bottom: 1.25rem;
+    }
+    .card-header {
+      padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0;
+      font-size: 1rem; font-weight: 600;
+      display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
+    }
+    .card-body { padding: 1.25rem 1.5rem; }
+
+    .rows { display: grid; grid-template-columns: 12rem 1fr; gap: 0.7rem 1rem; font-size: 0.9rem; }
+    .rows dt {
+      font-size: 0.72rem; color: #888; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.04em; padding-top: 0.15rem;
+    }
+    .rows dd { word-break: break-word; }
+    .pre { white-space: pre-wrap; }
+    .rows .blank { color: #bbb; }
+
+    .badge {
+      display: inline-block; padding: 0.25rem 0.65rem;
+      border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap;
+    }
+    .badge-pending       { background: #fef3c7; color: #92400e; }
+    .badge-confirmed     { background: #dbeafe; color: #1e40af; }
+    .badge-in_production { background: #d1fae5; color: #065f46; }
+    .badge-completed     { background: #dcfce7; color: #166534; }
+    .badge-cancelled     { background: #fee2e2; color: #991b1b; }
+
+    .actions form { display: inline; }
+    .action-btn {
+      border: 1px solid #ddd; border-radius: 6px; padding: 0.3rem 0.8rem;
+      font-size: 0.8rem; cursor: pointer; background: #f3f4f6; color: #4e73df;
+    }
+    .btn-confirm { background: #dcfce7; border-color: #bbf7d0; color: #166534; }
+    .btn-reject  { background: #fee2e2; border-color: #fecaca; color: #991b1b; }
+    .btn-dispatch { background: #dbeafe; border-color: #bfdbfe; color: #1e40af; }
+    .warn { color: #b45309; font-weight: 600; font-size: 0.85rem; margin-top: 0.75rem; }
+    .muted { color: #888; }
+    .link { color: #4e73df; text-decoration: none; }
+    table.picks { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    table.picks th { text-align: left; font-size: 0.72rem; text-transform: uppercase; color: #888; padding: 0.4rem 0.5rem; }
+    table.picks td { padding: 0.5rem; border-top: 1px solid #f0f0f0; }
+
+    @media (max-width: 640px) {
+      header { padding: 1rem; flex-wrap: wrap; gap: 0.5rem; }
+      .content { padding: 0 0.85rem; margin: 1rem auto; }
+      .card-body { padding: 1.1rem; }
+      .rows { grid-template-columns: 1fr; gap: 0.15rem; }
+      .rows dd { margin-bottom: 0.6rem; }
+    }
+{% endblock %}
+
+{% block content %}
+<header>
+  <h1>Order Details</h1>
+  <div>
+    <a href="{% url 'order_dashboard' %}" class="back-link">← Back to Orders</a>
+  </div>
+</header>
+
+<div class="content">
+  {% for msg in messages %}
+  <div class="alert {% if msg.tags == 'success' %}alert-success{% elif msg.tags == 'warning' %}alert-warning{% else %}alert-error{% endif %}">{{ msg }}</div>
+  {% endfor %}
+
+  <div class="card">
+    <div class="card-header">
+      <span>ORD-{{ order.order_no|stringformat:"04d" }} · {{ order.customer.name }}</span>
+      <span class="badge badge-{{ order.status }}">{{ order.get_status_display }}</span>
+    </div>
+    <div class="card-body">
+      <div class="actions">
+        {% if order.status == 'pending' %}
+        <form method="post" action="{% url 'order_confirm' order.pk %}">{% csrf_token %}<button class="action-btn btn-confirm">✓ Confirm</button></form>
+        <form method="post" action="{% url 'order_reject' order.pk %}">{% csrf_token %}<button class="action-btn btn-reject">✗ Reject</button></form>
+        {% elif order.status == 'in_production' %}
+        <form method="post" action="{% url 'order_dispatch' order.pk %}">{% csrf_token %}<button class="action-btn btn-dispatch">🚚 Dispatch</button></form>
+        {% else %}
+        <span class="muted">No action needed.</span>
+        {% endif %}
+      </div>
+      {% if not order.product_type %}<p class="warn">⚠ No product code is set, so this order can't be confirmed yet. Set one in the admin (Orders → this order).</p>{% endif %}
+      {% if low_stock %}<p class="warn">⚠️ Low stock: the raw material in stock isn't enough to fulfil this order.</p>{% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Customer</div>
+    <div class="card-body">
+      <dl class="rows">
+        <dt>Company</dt><dd>{{ order.customer.name }}</dd>
+        <dt>Email</dt><dd>{{ order.customer.email|default:"—" }}</dd>
+        <dt>Phone</dt><dd>{{ order.customer.phone|default:"—" }}</dd>
+        <dt>Placed</dt><dd>{{ order.created_at|date:"d M Y, H:i" }}</dd>
+        {% if order.source_query %}
+        <dt>From query</dt><dd><a class="link" href="{% url 'query_detail' order.source_query.pk %}">{{ order.source_query.company_name|default:order.source_query.contact_phone }}</a></dd>
+        {% endif %}
+        {% if quotation %}
+        <dt>Quotation</dt><dd>{{ quotation.formatted_no }} · <a class="link" href="{% url 'quotation_pdf' quotation.pk %}">PDF</a></dd>
+        {% endif %}
+      </dl>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Product</div>
+    <div class="card-body">
+      <dl class="rows">
+        <dt>Product type</dt><dd>{{ order.product_type_name|default:"—" }}</dd>
+        <dt>Product code</dt><dd>{% if order.product_type %}{{ order.product_type.item_code }}{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Grade</dt><dd>{{ order.grade|default:"—" }}</dd>
+        <dt>Width</dt><dd>{% if order.width is not None %}{{ order.width_text }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Thickness</dt><dd>{% if order.thickness is not None %}{{ order.thickness_text }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Tolerances</dt><dd>{% for line in order.tolerance_lines %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% empty %}<span class="blank">—</span>{% endfor %}</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Quantity &amp; delivery</div>
+    <div class="card-body">
+      <dl class="rows">
+        <dt>Quantity</dt><dd>{{ order.quantity_text }} kg</dd>
+        <dt>Delivery form</dt><dd>{% if order.delivery_form %}{{ order.delivery_detail_text }}{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Expected delivery</dt><dd>{{ order.delivery_date|date:"d M Y"|default:"—" }}</dd>
+        <dt>Frequency</dt><dd>{{ order.get_frequency_display|default:"—" }}</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Requirements &amp; attachments</div>
+    <div class="card-body">
+      <dl class="rows">
+        <dt>Drawing</dt><dd>{% if order.drawing_file %}<a class="link" href="{{ order.drawing_file.url }}" target="_blank">Open the attached drawing</a>{% else %}<span class="blank">Not attached</span>{% endif %}</dd>
+        {% if order.drawing_dimensions %}<dt>Dimensions (typed)</dt><dd class="pre">{{ order.drawing_dimensions }}</dd>{% endif %}
+        <dt>Purchase order</dt><dd>{% if order.purchase_order %}<a class="link" href="{{ order.purchase_order.url }}" target="_blank">Open the purchase order</a>{% else %}<span class="blank">Not attached</span>{% endif %}</dd>
+        <dt>Mechanical properties</dt><dd class="pre">{{ order.mechanical_properties|default:"—" }}</dd>
+        <dt>Processes</dt><dd>{{ order.processes|default:"—" }}</dd>
+        <dt>End usage</dt><dd>{{ order.end_usage|default:"—" }}</dd>
+        <dt>Mill make</dt><dd>{{ order.mill_make|default:"—" }}</dd>
+        <dt>Notes</dt><dd class="pre">{{ order.notes|default:"—" }}</dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Production</div>
+    <div class="card-body">
+      {% if picks %}
+      <p style="margin-bottom:0.8rem; font-size:0.9rem;">
+        {{ weight_picked|floatformat:"-2" }} / {{ order.quantity|floatformat:"-2" }} kg picked
+        {% if weight_picked >= order.quantity %}<span style="color:#166534; font-weight:600;"> ✓ Fulfilled</span>{% endif %}
+      </p>
+      <table class="picks">
+        <thead><tr><th>Coil</th><th>Grade</th><th>Weight used</th></tr></thead>
+        <tbody>
+          {% for pick in picks %}
+          <tr><td>{{ pick.coil.formatted_coil }}</td><td>{{ pick.coil.grade|default:"—" }}</td><td>{{ pick.weight_allocated|floatformat:"-2" }} kg</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">No coils picked yet.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
