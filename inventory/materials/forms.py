@@ -90,22 +90,54 @@ class OrderForm(forms.ModelForm):
 
 
 _TOLERANCE_FIELDS = ['width_tol_from', 'width_tol_to', 'thickness_tol_from', 'thickness_tol_to']
+_DELIVERY_FIELDS = ['bar_length', 'length_tol_from', 'length_tol_to', 'coil_weight']
 _TOLERANCE_WIDGETS = {name: forms.NumberInput(attrs={'step': 'any', 'placeholder': 'from' if name.endswith('from') else 'to'})
-                      for name in _TOLERANCE_FIELDS}
+                      for name in _TOLERANCE_FIELDS + ['length_tol_from', 'length_tol_to']}
+_DELIVERY_WIDGETS = {
+    'bar_length': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': 'e.g. 3000'}),
+    'coil_weight': forms.NumberInput(attrs={'step': 'any', 'min': '0', 'placeholder': 'e.g. 2000'}),
+}
 
 
-class CustomerOrderForm(OrderForm):
+class DeliveryDetailsMixin:
+    """A bar is ordered with a length (and a tolerance on it), a coil with an approximate weight: ask for
+    the one that goes with the chosen delivery form, require it, and drop the other so a stale value from
+    switching the choice isn't kept."""
+
+    def clean(self):
+        cleaned = super().clean()
+        form = cleaned.get('delivery_form')
+        if form == 'bar':
+            if cleaned.get('bar_length') is None:
+                self.add_error('bar_length', "Please enter the bar length in mm.")
+            elif cleaned['bar_length'] <= 0:
+                self.add_error('bar_length', "The bar length must be more than zero.")
+            cleaned['coil_weight'] = None
+        elif form == 'coil':
+            if cleaned.get('coil_weight') is None:
+                self.add_error('coil_weight', "Please enter the approximate coil weight in kg.")
+            elif cleaned['coil_weight'] <= 0:
+                self.add_error('coil_weight', "The coil weight must be more than zero.")
+            for name in ('bar_length', 'length_tol_from', 'length_tol_to'):
+                cleaned[name] = None
+        else:
+            for name in _DELIVERY_FIELDS:
+                cleaned[name] = None
+        return cleaned
+
+
+class CustomerOrderForm(DeliveryDetailsMixin, OrderForm):
     """The customer's free-form order (an old link with no quotation): like OrderForm, but the drawing is
     attached as a file with tolerances beside it instead of typed as text."""
 
     class Meta(OrderForm.Meta):
         fields = [name for name in OrderForm.Meta.fields if name != 'drawing_dimensions'] + [
-            'drawing_file', *_TOLERANCE_FIELDS, 'other_tolerances']
-        widgets = {**_TOLERANCE_WIDGETS,
+            'drawing_file', *_TOLERANCE_FIELDS, 'other_tolerances', *_DELIVERY_FIELDS]
+        widgets = {**_TOLERANCE_WIDGETS, **_DELIVERY_WIDGETS,
                    'other_tolerances': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Any other tolerance, e.g. straightness, ovality, length'})}
 
 
-class OrderItemForm(forms.ModelForm):
+class OrderItemForm(DeliveryDetailsMixin, forms.ModelForm):
     """One quoted item on the customer's order form. Product code, grade,
     width and thickness are deliberately NOT fields here — the view takes them from the
     quotation line item (the one `line_item` points at), so the customer can
@@ -115,12 +147,12 @@ class OrderItemForm(forms.ModelForm):
     class Meta:
         model = Order
         fields = [
-            'drawing_file', *_TOLERANCE_FIELDS, 'other_tolerances',
+            'drawing_file', *_TOLERANCE_FIELDS, 'other_tolerances', *_DELIVERY_FIELDS,
             'mill_make', 'mechanical_properties', 'processes',
             'end_usage', 'delivery_form', 'quantity', 'frequency', 'delivery_date', 'notes',
         ]
         widgets = {
-            **_TOLERANCE_WIDGETS,
+            **_TOLERANCE_WIDGETS, **_DELIVERY_WIDGETS,
             'drawing_file': forms.ClearableFileInput(attrs={'accept': '.pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,.step,.stp,.igs,.iges,.zip'}),
             'other_tolerances': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Any other tolerance, e.g. straightness, ovality, length'}),
             'delivery_date': forms.DateInput(attrs={'type': 'date'}),

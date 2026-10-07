@@ -567,7 +567,7 @@ class OrderAdmin(admin.ModelAdmin):
             'fields': (('width_tol_from', 'width_tol_to'), ('thickness_tol_from', 'thickness_tol_to'), 'other_tolerances')
         }),
         ('Quantity & Delivery', {
-            'fields': ('quantity', 'delivery_form')
+            'fields': ('quantity', 'delivery_form', 'bar_length', ('length_tol_from', 'length_tol_to'), 'coil_weight')
         }),
         ('Customer Purchase Order', {
             'fields': ('purchase_order_link',)

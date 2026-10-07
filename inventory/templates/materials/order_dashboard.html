@@ -455,7 +455,7 @@
               <div class="detail-item"><strong>Mill Make</strong>{{ order.mill_make|default:"—" }}</div>
               <div class="detail-item"><strong>Processes</strong>{{ order.processes|default:"—" }}</div>
               <div class="detail-item"><strong>End Usage</strong>{{ order.end_usage|default:"—" }}</div>
-              <div class="detail-item"><strong>Delivery Form</strong>{{ order.get_delivery_form_display|default:"—" }}</div>
+              <div class="detail-item"><strong>Delivery Form</strong>{% if order.delivery_form %}{{ order.delivery_detail_text }}{% else %}—{% endif %}</div>
               <div class="detail-item"><strong>Frequency</strong>{{ order.get_frequency_display|default:"—" }}</div>
               <div class="detail-item">
                 <strong>Weight Reconciliation</strong>
