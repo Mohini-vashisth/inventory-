@@ -160,13 +160,13 @@ def _parse_draft_line_items(post_data):
     return items
 
 
-def _query_item_description(query):
-    """The first quote line's description when it starts from a query: the product code if
-    one is matched, else what the query knows — "Flat Bright Bar EN8D 50 x 6 mm". Never the old
-    free-text "requirements" answer (the bot no longer asks it)."""
-    if query.product_type:
-        return query.product_type.item_code
-    parts = [query.product_category.name if query.product_category else '', query.grade, query.dimensions_text()]
+def _query_item_description(item):
+    """A quote line's description when it starts from one of a query's products: the product code if
+    one is matched, else what is known — "Flat Bright Bar EN8D 50 x 6 mm". Never the old free-text
+    "requirements" answer (the bot no longer asks it)."""
+    if item.product_type:
+        return item.product_type.item_code
+    parts = [item.product_category.name if item.product_category else '', item.grade, item.dimensions_text()]
     return ' '.join(part for part in parts if part) or 'Item'
 
 
@@ -299,15 +299,17 @@ def quotation_form(request, pk=None):
         else:
             item_initial = [{}]
             if query:
+                # One quote line per product the customer asked about.
                 item_initial = [{
-                    'description': _query_item_description(query),
-                    'category': query.product_category_id,
-                    'product_type': getattr(query.effective_product_code(), 'pk', None),   # also pre-selected without JavaScript
-                    'grade': query.grade,
-                    'width': query.width,
-                    'thickness': query.thickness,
-                    'quantity': query.quantity or Decimal('1'),
-                }]
+                    'description': _query_item_description(item),
+                    'category': item.product_category_id,
+                    'product_type': getattr(item.effective_product_code(), 'pk', None),   # also pre-selected without JavaScript
+                    'grade': item.grade,
+                    'width': item.width,
+                    'thickness': item.thickness,
+                    'quantity': item.quantity or Decimal('1'),
+                } for item in query.items.select_related('product_category', 'product_type').order_by('position', 'pk')] or [
+                    {'description': 'Item', 'quantity': Decimal('1')}]
             elif not existing_customer:
                 # A brand-new company — "Send Form to Them" on the Orders
                 # dashboard carries over whatever was already typed into its
@@ -344,6 +346,7 @@ def quotation_form(request, pk=None):
         'formset': formset,
         'query': query,
         'existing_customer': existing_customer,
+        'query_items': list(query.items.select_related('product_category', 'product_type').order_by('position', 'pk')) if query else [],
         'new_customer_initial': new_customer_initial,
         'draft': draft,
         'error': error,

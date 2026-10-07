@@ -16,7 +16,8 @@ from django.test import TestCase, TransactionTestCase, override_settings
 from django.urls import reverse
 from unittest.mock import patch, MagicMock
 
-from ..models import ProductCategory, ProductType, Query, WhatsAppMessage
+from .helpers import create_query
+from ..models import ProductCategory, ProductType, Query, QueryItem, WhatsAppMessage
 from ..views import whatsapp
 from ..views.whatsapp import (
     WhatsAppSendError, WHATSAPP_CLOSING_MESSAGE, WHATSAPP_GST_INVALID_MESSAGE, _detect_product_category,
@@ -35,9 +36,9 @@ def _sign_whatsapp_payload(body_bytes, secret):
 ANSWERS = {
     'company_name': 'Ramesh Traders', 'contact_email': 'ramesh@example.com',
     'gst_number': '22AAAAA0000A1Z5', 'gst_address': '12 Industrial Area, Faridabad',
-    'product_category': 'Flat Bright Bar', 'drawing': 'no', 'grade': 'EN8D', 'width': '50', 'thickness': '6',
+    'item_count': '1', 'product_category': 'Flat Bright Bar', 'drawing': 'no', 'grade': 'EN8D', 'width': '50', 'thickness': '6',
     'technical_requirements': 'no', 'end_use': 'automotive shafts', 'delivery_form': 'Coil',
-    'quantity_text': '8000 kgs',
+    'quantity': '8000',
 }
 
 
@@ -45,21 +46,46 @@ def _answered_field(field):
     return 'drawing_notes' if field == 'drawing' else field
 
 
+ITEM_FIELDS = ('product_category', 'grade', 'width', 'thickness', 'delivery_form', 'quantity')
+
+
 def _answered_values(field):
-    """The model values for every question before `field` (all of them for None)."""
+    """The query-level model values for every question before `field` (all of them for None)."""
     values = {}
     for name in WHATSAPP_QUERY_FIELDS:
         if name == field:
             break
-        values[_answered_field(name)] = (
-            ProductCategory.objects.get_or_create(name=ANSWERS[name])[0] if name == 'product_category' else ANSWERS[name])
+        if name != 'item_count' and name not in ITEM_FIELDS:
+            values[_answered_field(name)] = ANSWERS[name]
     return values
 
 
-def _query_awaiting(field, phone='919876543210'):
-    """A Query that has answered every question before `field`, so `field`
-    is the one the bot is waiting on. Pass None for a fully answered one."""
-    return Query.objects.create(source='call', contact_phone=phone, **_answered_values(field))
+def _item_values(field):
+    """The per-product values for every per-product question before `field`."""
+    values = {}
+    for name in WHATSAPP_QUERY_FIELDS:
+        if name == field:
+            break
+        if name in ITEM_FIELDS:
+            values[name] = ProductCategory.objects.get_or_create(name=ANSWERS[name])[0] if name == 'product_category' else ANSWERS[name]
+    return values
+
+
+def _item_of(phone):
+    """The first product of the query with this phone number."""
+    return QueryItem.objects.filter(query__contact_phone=phone).order_by('position', 'pk').first()
+
+
+def _query_awaiting(field, phone='919876543210', items=1, **extra):
+    """A Query that has answered every question before `field`, so `field` is the one the bot is waiting
+    on (with `items` products if the number of products was already asked). Pass None for a fully
+    answered one."""
+    query = Query.objects.create(source='call', contact_phone=phone, **{**_answered_values(field), **extra})
+    asked_count = field is None or WHATSAPP_QUERY_FIELDS.index(field) > WHATSAPP_QUERY_FIELDS.index('item_count')
+    if asked_count:
+        for number in range(items):
+            QueryItem.objects.create(query=query, position=number + 1, **_item_values(field))
+    return query
 
 
 @override_settings(WHATSAPP_VERIFY_TOKEN='test-verify-token', WHATSAPP_APP_SECRET='test-app-secret')
@@ -147,9 +173,9 @@ class WhatsAppWebhookTests(TestCase):
 
     def test_intake_sequence_is_in_the_requested_order(self):
         self.assertEqual(WHATSAPP_QUERY_FIELDS, [
-            'company_name', 'contact_email', 'gst_number', 'gst_address', 'product_category',
+            'company_name', 'contact_email', 'gst_number', 'gst_address', 'item_count', 'product_category',
             'drawing', 'grade', 'width', 'thickness', 'technical_requirements', 'end_use', 'delivery_form',
-            'quantity_text',
+            'quantity',
         ])
 
     def test_every_question_after_company_name_has_wording(self):
@@ -161,8 +187,8 @@ class WhatsAppWebhookTests(TestCase):
     def test_each_answer_is_saved_and_the_next_question_asked(self, mock_send, mock_buttons):
         fields = WHATSAPP_QUERY_FIELDS
         for index, field in enumerate(fields[1:], start=1):
-            if field in ('gst_number', 'gst_address', 'width', 'thickness', 'product_category', 'quantity_text'):
-                continue  # GST is split in two, width/thickness/quantity are parsed as numbers and the type is a list; covered by their own tests
+            if field in ('gst_number', 'gst_address', 'item_count', 'width', 'thickness', 'product_category', 'quantity'):
+                continue  # GST is split in two, the count/width/thickness/quantity are numbers and the type is a list; covered by their own tests
             with self.subTest(field=field):
                 mock_send.reset_mock()
                 mock_buttons.reset_mock()
@@ -173,7 +199,8 @@ class WhatsAppWebhookTests(TestCase):
 
                 query = Query.objects.get(contact_phone=phone)
                 expected_saved = ''.join(ch for ch in reply if ch.isalnum()).upper() if field == 'grade' else reply
-                self.assertEqual(getattr(query, _answered_field(field)), expected_saved)
+                holder = _item_of(phone) if field in ITEM_FIELDS else query
+                self.assertEqual(getattr(holder, _answered_field(field)), expected_saved)
                 following = fields[index + 1] if index + 1 < len(fields) else None
                 if following in WHATSAPP_QUERY_CHOICES:
                     mock_buttons.assert_called_once_with(
@@ -212,23 +239,21 @@ class WhatsAppWebhookTests(TestCase):
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_the_catalogue_code_is_linked_once_type_and_grade_are_known(self, mock_send):
         ProductType.objects.create(item_code='FBB009', category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='EN8D')
-        query = _query_awaiting('grade')   # type (Flat Bright Bar) already chosen
+        _query_awaiting('grade')   # type (Flat Bright Bar) already chosen
         self._post_payload(self._message_payload('919876543210', 'en-8d'))
-        query.refresh_from_db()
-        self.assertEqual(query.grade, 'EN8D')
-        self.assertEqual(query.product_type.item_code, 'FBB009')
+        item = _item_of('919876543210')
+        self.assertEqual(item.grade, 'EN8D')
+        self.assertEqual(item.product_type.item_code, 'FBB009')
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_no_code_is_linked_when_the_catalogue_has_none(self, mock_send):
-        query = _query_awaiting('grade')
+        _query_awaiting('grade')
         self._post_payload(self._message_payload('919876543210', 'SS304'))
-        query.refresh_from_db()
-        self.assertIsNone(query.product_type)
+        self.assertIsNone(_item_of('919876543210').product_type)
 
     def test_a_product_type_staff_already_set_skips_the_question(self):
-        query = Query.objects.create(source='call', contact_phone='919876543299',
-                                     product_category=ProductCategory.objects.get(name='Chamfer Steel'),
-                                     **{k: v for k, v in _answered_values('product_category').items() if k != 'product_category'})
+        query = create_query(source='call', contact_phone='919876543299', **_answered_values('product_category'))
+        QueryItem.objects.create(query=query, position=1, product_category=ProductCategory.objects.get(name='Chamfer Steel'))
         self.assertEqual(whatsapp._next_expected_query_field(query), 'drawing')
 
     def test_choice_questions_fit_whatsapp_reply_button_limits(self):
@@ -265,8 +290,8 @@ class WhatsAppWebhookTests(TestCase):
                 phone = f'9198400000{index:02d}'
                 _query_awaiting('delivery_form', phone=phone)
                 self._post_payload(self._interactive_payload(phone, title))
-                self.assertEqual(Query.objects.get(contact_phone=phone).delivery_form, title)
-                mock_send.assert_called_once_with(phone, WHATSAPP_QUERY_QUESTIONS['quantity_text'])
+                self.assertEqual(_item_of(phone).delivery_form, title)
+                mock_send.assert_called_once_with(phone, WHATSAPP_QUERY_QUESTIONS['quantity'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_typed_delivery_form_answers_are_normalised(self, mock_send):
@@ -276,7 +301,7 @@ class WhatsAppWebhookTests(TestCase):
                 phone = f'9198500000{index:02d}'
                 _query_awaiting('delivery_form', phone=phone)
                 self._post_payload(self._message_payload(phone, reply))
-                self.assertEqual(Query.objects.get(contact_phone=phone).delivery_form, expected)
+                self.assertEqual(_item_of(phone).delivery_form, expected)
 
     @patch('materials.views.whatsapp._send_whatsapp_buttons_message_background')
     def test_unrecognised_delivery_form_reasks_with_the_buttons(self, mock_buttons):
@@ -286,7 +311,7 @@ class WhatsAppWebhookTests(TestCase):
                 phone = f'9198600000{index:02d}'
                 _query_awaiting('delivery_form', phone=phone)
                 self._post_payload(self._message_payload(phone, reply))
-                self.assertEqual(Query.objects.get(contact_phone=phone).delivery_form, '')
+                self.assertEqual(_item_of(phone).delivery_form, '')
                 mock_buttons.assert_called_once_with(
                     phone, WHATSAPP_QUERY_QUESTIONS['delivery_form'], WHATSAPP_QUERY_CHOICES['delivery_form'])
 
@@ -297,13 +322,13 @@ class WhatsAppWebhookTests(TestCase):
         payload = {'entry': [{'changes': [{'value': {'messages': [
             {'from': '919876543210', 'type': 'interactive', 'interactive': reply}]}}]}]}
         self._post_payload(payload)
-        self.assertEqual(Query.objects.get(contact_phone='919876543210').delivery_form, 'Bar')
+        self.assertEqual(_item_of('919876543210').delivery_form, 'Bar')
 
     @patch('materials.views.whatsapp._send_whatsapp_list_message_background')
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_the_product_type_question_is_a_tappable_list_of_the_types(self, mock_send, mock_list):
-        _query_awaiting('gst_number')
-        self._post_payload(self._message_payload('919876543210', '22AAAAA0000A1Z5 12 Industrial Area, Faridabad'))
+    def test_the_product_type_question_is_a_tappable_list_of_the_types_for_one_product(self, mock_send, mock_list):
+        _query_awaiting('item_count')
+        self._post_payload(self._message_payload('919876543210', '1'))
         mock_send.assert_not_called()
         phone, text, button, rows = mock_list.call_args[0]
         self.assertEqual((phone, text, button), ('919876543210', WHATSAPP_QUERY_QUESTIONS['product_category'], 'Choose type'))
@@ -341,15 +366,14 @@ class WhatsAppWebhookTests(TestCase):
         reply = {'type': 'list_reply', 'list_reply': {'id': f'category:{category.pk}', 'title': 'Profile/Shaped Bright B…'}}
         self._post_payload({'entry': [{'changes': [{'value': {'messages': [
             {'from': '919876543210', 'type': 'interactive', 'interactive': reply}]}}]}]})
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertEqual(query.product_category, category)
+        self.assertEqual(_item_of('919876543210').product_category, category)
         mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['drawing'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_typing_a_type_name_instead_of_tapping_works(self, mock_send):
         _query_awaiting('product_category')
         self._post_payload(self._message_payload('919876543210', 'cold rolled strip please'))
-        self.assertEqual(Query.objects.get(contact_phone='919876543210').product_category.name, 'Cold Rolled Strip')
+        self.assertEqual(_item_of('919876543210').product_category.name, 'Cold Rolled Strip')
 
     @patch('materials.views.whatsapp._send_whatsapp_list_message_background')
     def test_an_unrecognised_or_ambiguous_type_re_sends_the_list_without_advancing(self, mock_list):
@@ -359,7 +383,7 @@ class WhatsAppWebhookTests(TestCase):
                 phone = f'9198400000{index:02d}'
                 _query_awaiting('product_category', phone=phone)
                 self._post_payload(self._message_payload(phone, reply))
-                self.assertIsNone(Query.objects.get(contact_phone=phone).product_category)
+                self.assertIsNone(_item_of(phone).product_category)
                 self.assertEqual(mock_list.call_count, 1)
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
@@ -390,7 +414,7 @@ class WhatsAppWebhookTests(TestCase):
                 query = self._gst_reply(mock_send, reply, phone=f'9198300000{index:02d}')
                 self.assertEqual(query.gst_number, '22AAAAA0000A1Z5')
                 self.assertEqual(query.gst_address, address)
-                self.assertEqual(mock_list.call_args[0][:2], (query.contact_phone, WHATSAPP_QUERY_QUESTIONS['product_category']))
+                self.assertEqual(mock_list.call_args[0][:2], (query.contact_phone, WHATSAPP_QUERY_QUESTIONS['item_count']))
                 mock_list.reset_mock()
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
@@ -410,7 +434,7 @@ class WhatsAppWebhookTests(TestCase):
 
         query = Query.objects.get(contact_phone='919876543210')
         self.assertEqual(query.gst_address, '12 Industrial Area, Faridabad')
-        self.assertEqual(mock_list.call_args[0][:2], ('919876543210', WHATSAPP_QUERY_QUESTIONS['product_category']))
+        self.assertEqual(mock_list.call_args[0][:2], ('919876543210', WHATSAPP_QUERY_QUESTIONS['item_count']))
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_na_is_not_accepted_because_every_company_has_a_gst_number(self, mock_send):
@@ -452,9 +476,9 @@ class WhatsAppWebhookTests(TestCase):
         _query_awaiting('width')
         self._post_payload(self._message_payload('919876543210', '50 mm'))
         self._post_payload(self._message_payload('919876543210', '1,2 mm'))
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertEqual((query.width, query.thickness), (Decimal('50'), Decimal('1.2')))
-        self.assertEqual(query.notes, '')
+        item = _item_of('919876543210')
+        self.assertEqual((item.width, item.thickness), (Decimal('50'), Decimal('1.2')))
+        self.assertEqual(Query.objects.get(contact_phone='919876543210').notes, '')
         mock_send.assert_called_with('919876543210', WHATSAPP_QUERY_QUESTIONS['technical_requirements'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
@@ -464,19 +488,17 @@ class WhatsAppWebhookTests(TestCase):
                 with self.subTest(field=field, reply=reply):
                     mock_send.reset_mock()
                     phone = f'9198300{field[0]}{index:02d}'.replace('w', '1').replace('t', '2')
-                    query = Query.objects.create(source='call', contact_phone=phone, **_answered_values(field))
+                    _query_awaiting(field, phone=phone)
                     self._post_payload(self._message_payload(phone, reply))
-                    query.refresh_from_db()
-                    self.assertIsNone(getattr(query, field))
+                    self.assertIsNone(getattr(_item_of(phone), field))
                     mock_send.assert_called_once_with(phone, WHATSAPP_DIMENSION_INVALID_MESSAGES[field])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_several_numbers_in_one_reply_keep_the_first_and_show_staff_the_whole_reply(self, mock_send):
         _query_awaiting('thickness')
         self._post_payload(self._message_payload('919876543210', '10 and 12 mm'))
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertEqual(query.thickness, Decimal('10'))
-        self.assertIn('Thickness reply: 10 and 12 mm', query.notes)
+        self.assertEqual(_item_of('919876543210').thickness, Decimal('10'))
+        self.assertIn('Thickness reply: 10 and 12 mm', Query.objects.get(contact_phone='919876543210').notes)
 
     def test_dimension_parsing(self):
         cases = {'12': '12', '1.2': '1.2', '12 mm': '12', '12,5 mm round': '12.5', 'Dia 25.4mm': '25.4',
@@ -503,13 +525,11 @@ class WhatsAppWebhookTests(TestCase):
             with self.subTest(text=text):
                 self.assertEqual(_parse_whatsapp_quantity_kg(text), Decimal(expected) if expected else None)
 
-    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_a_kg_answer_also_fills_the_numeric_quantity(self, mock_send):
-        _query_awaiting('quantity_text')
-        self._post_payload(self._message_payload('919876543210', '8000 kgs monthly'))
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertEqual(query.quantity_text, '8000 kgs monthly')
-        self.assertEqual(query.quantity, Decimal('8000'))
+    @patch('materials.views.whatsapp._send_whatsapp_steps_background')
+    def test_a_kg_answer_is_saved_as_the_quantity(self, mock_steps):
+        _query_awaiting('quantity')
+        self._post_payload(self._message_payload('919876543210', '8000 kgs'))
+        self.assertEqual(_item_of('919876543210').quantity, Decimal('8000'))
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_a_quantity_not_in_kgs_is_asked_for_again_not_guessed(self, mock_send):
@@ -517,23 +537,13 @@ class WhatsAppWebhookTests(TestCase):
             with self.subTest(reply=reply):
                 mock_send.reset_mock()
                 phone = f'9198500000{index:02d}'
-                _query_awaiting('quantity_text', phone=phone)
+                _query_awaiting('quantity', phone=phone)
                 self._post_payload(self._message_payload(phone, reply))
-                query = Query.objects.get(contact_phone=phone)
-                self.assertEqual((query.quantity_text, query.quantity), ('', None))
+                self.assertIsNone(_item_of(phone).quantity)
                 mock_send.assert_called_once_with(phone, WHATSAPP_QUANTITY_INVALID_MESSAGE)
 
-    @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
-    def test_a_quantity_staff_already_set_is_not_overwritten(self, mock_send):
-        query = _query_awaiting('quantity_text')
-        query.quantity = Decimal('1234')
-        query.save()
-        self._post_payload(self._message_payload('919876543210', '8000 kgs monthly'))
-        query.refresh_from_db()
-        self.assertEqual(query.quantity, Decimal('1234'))
-
     def test_the_quantity_question_is_short_and_asks_for_kgs(self):
-        self.assertEqual(WHATSAPP_QUERY_QUESTIONS['quantity_text'], "Please enter the quantity in kgs.")
+        self.assertEqual(WHATSAPP_QUERY_QUESTIONS['quantity'], "Please enter the quantity in kgs.")
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_no_is_a_real_answer_that_advances_the_sequence(self, mock_send):
@@ -594,11 +604,11 @@ class WhatsAppWebhookTests(TestCase):
         see it. A catalogue code for the same grade is not linked behind
         their back."""
         ProductType.objects.create(item_code='Catalogue Bar', grade='EN8D')
-        query = _query_awaiting('quantity_text')
-        self._post_payload(self._message_payload('919876543210', '2 tons monthly'))
+        query = _query_awaiting('quantity')
+        with patch('materials.views.whatsapp._send_whatsapp_steps_background'):
+            self._post_payload(self._message_payload('919876543210', '2000'))
 
-        query.refresh_from_db()
-        self.assertIsNone(query.product_type)
+        self.assertIsNone(query.items.get().product_type)
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_message_after_sequence_complete_is_appended_to_notes(self, mock_send):
@@ -892,8 +902,8 @@ class WhatsAppResilienceTests(TestCase):
         now = self._now()
         # listed newest first, as a replayed backlog might be
         self._deliver(('6', 'wamid.T', now - 10), ('50', 'wamid.W', now - 20))
-        query = Query.objects.get(contact_phone=self.PHONE)
-        self.assertEqual((query.width, query.thickness), (Decimal('50'), Decimal('6')))   # not swapped
+        item = _item_of(self.PHONE)
+        self.assertEqual((item.width, item.thickness), (Decimal('50'), Decimal('6')))   # not swapped
         mock_send.assert_called_once_with(self.PHONE, WHATSAPP_QUERY_QUESTIONS['technical_requirements'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
@@ -904,8 +914,8 @@ class WhatsAppResilienceTests(TestCase):
         mock_send.reset_mock()
         self._deliver(('40', 'wamid.OLD', now - 60))   # sent earlier, but only delivered now
         query = Query.objects.get(contact_phone=self.PHONE)
-        self.assertEqual(query.width, Decimal('50'))
-        self.assertIsNone(query.thickness)
+        self.assertEqual(_item_of(self.PHONE).width, Decimal('50'))
+        self.assertIsNone(_item_of(self.PHONE).thickness)
         self.assertIn('[late reply', query.notes)
         self.assertIn('40', query.notes)
         self.assertTrue(query.needs_review)
@@ -918,7 +928,7 @@ class WhatsAppResilienceTests(TestCase):
         two_days_ago = self._now() - 2 * 86400
         self._deliver(('50', 'wamid.STALE', two_days_ago))
         query = Query.objects.get(contact_phone=self.PHONE)
-        self.assertEqual(query.width, Decimal('50'))   # the data is fine, keep it
+        self.assertEqual(_item_of(self.PHONE).width, Decimal('50'))   # the data is fine, keep it
         mock_send.assert_not_called()                  # Meta would refuse a free-form message now
         self.assertTrue(query.needs_review)
         self.assertIn('24-hour', query.review_note)
@@ -928,8 +938,7 @@ class WhatsAppResilienceTests(TestCase):
         _query_awaiting('width')
         self._deliver(('50', 'wamid.STALE', self._now() - 2 * 86400))
         self._deliver(('6', 'wamid.FRESH', self._now()))   # a new message re-opens the window
-        query = Query.objects.get(contact_phone=self.PHONE)
-        self.assertEqual(query.thickness, Decimal('6'))
+        self.assertEqual(_item_of(self.PHONE).thickness, Decimal('6'))
         mock_send.assert_called_once_with(self.PHONE, WHATSAPP_QUERY_QUESTIONS['technical_requirements'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
@@ -943,8 +952,8 @@ class WhatsAppResilienceTests(TestCase):
 
     @patch('materials.views.whatsapp._send_whatsapp_steps_background')
     def test_the_summary_is_sent_once(self, mock_steps):
-        _query_awaiting('quantity_text')
-        self._deliver(('8000 kgs', 'wamid.Q', self._now()))
+        _query_awaiting('quantity')
+        self._deliver(('8000', 'wamid.Q', self._now()))
         self.assertEqual(mock_steps.call_count, 1)
         whatsapp._advance_whatsapp_query(Query.objects.get(contact_phone=self.PHONE))
         self.assertEqual(mock_steps.call_count, 1)
@@ -1000,10 +1009,12 @@ class QueryReviewFlagTests(TestCase):
 
 
 @override_settings(WHATSAPP_VERIFY_TOKEN='test-verify-token', WHATSAPP_APP_SECRET='test-app-secret')
-class WhatsAppReviewTests(TestCase):
-    """The end of the conversation: a summary, Confirm / Change, and a confirmation before a change is stored."""
+class WhatsAppReviewBase(TestCase):
+    """Shared plumbing for the end-of-conversation tests: a query waiting at the summary, and ways to
+    send the bot taps and text and read back what it replied (the sends are captured, not made)."""
 
     PHONE = '919876543210'
+    PRODUCTS = 1
 
     def setUp(self):
         patcher = patch('materials.views.whatsapp._send_whatsapp_steps_background')
@@ -1012,11 +1023,10 @@ class WhatsAppReviewTests(TestCase):
         text_patcher = patch('materials.views.whatsapp._send_whatsapp_text_message_background')
         self.say = text_patcher.start()
         self.addCleanup(text_patcher.stop)
-        self.query = Query.objects.create(source='call', contact_phone=self.PHONE, bot_stage='summary',
-                                          company_name='Ramesh Traders', **{k: v for k, v in _answered_values(None).items()
-                                                                          if k != 'company_name'})
-        self.query.width, self.query.thickness, self.query.quantity = Decimal('50'), Decimal('6.5'), Decimal('8000')
-        self.query.save()
+        self.query = _query_awaiting(None, phone=self.PHONE, items=self.PRODUCTS, bot_stage='summary', company_name='Ramesh Traders')
+        for number, item in enumerate(self.query.item_list()):
+            item.width, item.thickness, item.quantity = Decimal('50') + number, Decimal('6.5'), Decimal('8000')
+            item.save()
         self.counter = 0
 
     def _send(self, body):
@@ -1039,32 +1049,49 @@ class WhatsAppReviewTests(TestCase):
         self.query.refresh_from_db()
         return self.query
 
+    def _items(self):
+        return list(self.query.items.order_by('position', 'pk'))
+
     def _last_steps(self):
         return self.steps.call_args[0][1]
+
+    def _start_editing(self, row_id, *then):
+        """Change something -> a row (a query answer, or a product and then one of its details)."""
+        self._tap_button('Change something')
+        self._tap_row(row_id)
+        for next_row in then:
+            self._tap_row(next_row)
+
+
+class WhatsAppReviewTests(WhatsAppReviewBase):
+    """The end of the conversation for one product: a summary, Confirm / Change, and a confirmation
+    before a change is stored."""
 
     # ── the summary ───────────────────────────────────────────────────────────
 
     def test_when_the_last_answer_arrives_the_summary_and_buttons_are_sent_instead_of_thanks(self):
-        query = _query_awaiting('quantity_text', phone='919876500001')
-        value = {'messages': [{'from': '919876500001', 'id': 'wamid.LAST', 'timestamp': str(int(time.time())),
-                               'type': 'text', 'text': {'body': '8000'}}]}
-        payload = json.dumps({'entry': [{'changes': [{'value': value}]}]}).encode('utf-8')
-        self.client.post(reverse('whatsapp_webhook'), data=payload, content_type='application/json',
-                         HTTP_X_HUB_SIGNATURE_256=_sign_whatsapp_payload(payload, 'test-app-secret'))
+        query = _query_awaiting('quantity', phone='919876500001')
+        self._send_to('919876500001', '8000', 'wamid.LAST')
         query.refresh_from_db()
         self.assertEqual(query.bot_stage, 'summary')
-        self.assertEqual(query.quantity, Decimal('8000'))
+        self.assertEqual(query.items.get().quantity, Decimal('8000'))
         phone, steps = self.steps.call_args[0]
         self.assertEqual(phone, '919876500001')
         self.assertEqual([step[0] for step in steps], ['text', 'buttons'])   # one thread, in this order
         self.assertEqual(steps[1], ('buttons', WHATSAPP_SUMMARY_QUESTION, WHATSAPP_SUMMARY_CHOICES))
         self.assertNotIn(WHATSAPP_CLOSING_MESSAGE, [step[1] for step in steps])   # thanks comes after Confirm
 
+    def _send_to(self, phone, text, message_id):
+        value = {'messages': [{'from': phone, 'id': message_id, 'timestamp': str(int(time.time())), 'type': 'text', 'text': {'body': text}}]}
+        payload = json.dumps({'entry': [{'changes': [{'value': value}]}]}).encode('utf-8')
+        return self.client.post(reverse('whatsapp_webhook'), data=payload, content_type='application/json',
+                                HTTP_X_HUB_SIGNATURE_256=_sign_whatsapp_payload(payload, 'test-app-secret'))
+
     def test_the_summary_lists_every_answer(self):
         summary = whatsapp._summary_text(self._refresh())
         for text in ('Company name: Ramesh Traders', 'Email: ramesh@example.com', 'GST number & address: 22AAAAA0000A1Z5, 12 Industrial Area',
-                     'Product type: Flat Bright Bar', 'Grade: EN8D', 'Width: 50 mm', 'Thickness: 6.5 mm', 'Quantity: 8000 kg',
-                     'Drawing / sample: no', 'Make/properties/process: no', 'End use: automotive shafts', 'Delivery form: Coil'):
+                     'Product: Flat Bright Bar · EN8D · 50 x 6.5 mm · 8000 kg · Coil',
+                     'Drawing / sample: no', 'Make/properties/process: no', 'End use: automotive shafts'):
             with self.subTest(text=text):
                 self.assertIn(text, summary)
 
@@ -1076,7 +1103,7 @@ class WhatsAppReviewTests(TestCase):
     # ── confirm ───────────────────────────────────────────────────────────────
 
     def test_confirm_stores_the_confirmation_and_only_then_says_thanks(self):
-        for index, reply in enumerate(['Confirm', 'yes', 'Yes it is correct']):
+        for reply in ['Confirm', 'yes', 'Yes it is correct']:
             with self.subTest(reply=reply):
                 Query.objects.filter(pk=self.query.pk).update(bot_stage='summary', intake_confirmed_at=None)
                 self.steps.reset_mock()
@@ -1110,15 +1137,21 @@ class WhatsAppReviewTests(TestCase):
         for row_id, title, description in rows:
             self.assertLessEqual(len(title), 24)
             self.assertLessEqual(len(description), 72)
-        self.assertEqual([r[0] for r in rows][-1], 'more')
-        self.assertIn('field:width', [r[0] for r in rows])
+        ids = [r[0] for r in rows]
+        self.assertEqual(ids[-1], 'more')
+        self.assertIn('item:0', ids)                  # the product, which opens its details
+        self.assertIn('field:company_name', ids)
 
-    def test_every_field_can_be_reached_from_one_of_the_two_lists(self):
+    def test_every_answer_can_be_reached_from_the_lists(self):
         first = whatsapp._change_list_step(self.query)[3]
         second = whatsapp._change_list_step(self.query, page_two=True)[3]
         reachable = {r[0].split(':', 1)[1] for r in first + second if r[0].startswith('field:')}
-        self.assertEqual(reachable, {key for key, _ in whatsapp.WHATSAPP_REVIEW_FIELDS})
-        self.assertLessEqual(len(second), 10)
+        self.assertEqual(reachable, {key for key, _ in whatsapp.WHATSAPP_QUERY_REVIEW_FIELDS})
+        details = whatsapp._item_field_list_step(self.query, 0)[3]
+        self.assertEqual({r[0].split(':', 1)[1] for r in details if r[0].startswith('field:')},
+                         {key for key, _ in whatsapp.WHATSAPP_ITEM_REVIEW_FIELDS})
+        for rows in (first, second, details):
+            self.assertLessEqual(len(rows), 10)
 
     def test_more_and_back_move_between_the_lists(self):
         self._tap_button('Change something')
@@ -1128,102 +1161,114 @@ class WhatsAppReviewTests(TestCase):
         self._tap_row('back')
         self.assertEqual(self._refresh().bot_stage, 'pick_field')
 
-    def test_choosing_a_field_asks_its_question_again(self):
-        self._tap_button('Change something')
+    def test_choosing_a_query_answer_asks_its_question_again(self):
+        self._start_editing('field:contact_email')
+        query = self._refresh()
+        self.assertEqual((query.bot_stage, query.edit_field), ('editing', 'contact_email'))
+        self.assertEqual(self._last_steps(), [('text', WHATSAPP_QUERY_QUESTIONS['contact_email'])])
+
+    def test_choosing_the_product_opens_its_details_and_a_detail_asks_its_question_again(self):
+        self._start_editing('item:0')
+        self.assertEqual(self._refresh().bot_stage, 'pick_item_field')
+        self.assertEqual({r[0] for r in self._last_steps()[0][3]}, {'field:product_category', 'field:grade', 'field:width',
+                                                                    'field:thickness', 'field:delivery_form', 'field:quantity', 'back'})
         self._tap_row('field:width')
         query = self._refresh()
-        self.assertEqual((query.bot_stage, query.edit_field), ('editing', 'width'))
-        self.assertEqual(self._last_steps(), [('text', WHATSAPP_QUERY_QUESTIONS['width'])])
+        self.assertEqual((query.bot_stage, query.edit_field), ('editing', 'item:0:width'))
+        self.assertEqual(self._last_steps(), [('text', WHATSAPP_QUERY_QUESTIONS['width'])])   # no "Product 1:" with one product
+
+    def test_back_from_a_products_details_returns_to_the_first_list(self):
+        self._start_editing('item:0', 'back')
+        self.assertEqual(self._refresh().bot_stage, 'pick_field')
 
     def test_typing_what_to_change_works_too(self):
         self._tap_button('Change something')
         self._text('the thickness please')
-        self.assertEqual(self._refresh().edit_field, 'thickness')
+        self.assertEqual(self._refresh().edit_field, 'item:0:thickness')   # one product: straight to the detail
+        Query.objects.filter(pk=self.query.pk).update(bot_stage='pick_field')
+        self._text('my email')
+        self.assertEqual(self._refresh().edit_field, 'contact_email')
 
     def test_the_tappable_questions_are_asked_as_lists_and_buttons_when_changing(self):
-        self._tap_button('Change something')
-        self._tap_row('field:product_category')
+        self._start_editing('item:0', 'field:product_category')
         self.assertEqual(self._last_steps()[0][0], 'list')
-        Query.objects.filter(pk=self.query.pk).update(bot_stage='pick_field')
+        Query.objects.filter(pk=self.query.pk).update(bot_stage='pick_item_field')
         self._tap_row('field:delivery_form')
         self.assertEqual(self._last_steps()[0][0], 'buttons')
 
     # ── the new answer is held until confirmed ────────────────────────────────
 
-    def _start_editing(self, key):
-        self._tap_button('Change something')
-        self._tap_row(f'field:{key}')
-
     def test_a_new_answer_is_not_stored_until_the_customer_confirms_it(self):
-        self._start_editing('width')
+        self._start_editing('item:0', 'field:width')
         self._text('75')
         query = self._refresh()
-        self.assertEqual(query.width, Decimal('50'))   # still the old value
-        self.assertEqual((query.bot_stage, query.pending_value), ('confirm_change', {'width': '75'}))
+        self.assertEqual(self._items()[0].width, Decimal('50'))   # still the old value
+        self.assertEqual(query.bot_stage, 'confirm_change')
+        self.assertEqual(query.pending_value, {'_items': {'width': ['75']}, '_item_only': 0})
         kind, text, choices = self._last_steps()[0]
         self.assertEqual(kind, 'buttons')
         self.assertIn('width to:\n75 mm', text)
         self.assertEqual(choices, whatsapp.WHATSAPP_CHANGE_CHOICES)
 
     def test_yes_saves_it_and_shows_the_updated_summary(self):
-        self._start_editing('width')
+        self._start_editing('item:0', 'field:width')
         self._text('75')
         self._tap_button('Yes, save it')
         query = self._refresh()
-        self.assertEqual(query.width, Decimal('75'))
+        self.assertEqual(self._items()[0].width, Decimal('75'))
         self.assertEqual((query.bot_stage, query.pending_value, query.edit_field), ('summary', {}, ''))
         steps = self._last_steps()
         self.assertEqual([s[0] for s in steps], ['text', 'buttons'])
         self.assertIn("Done, I've updated that.", steps[0][1])
-        self.assertIn('Width: 75 mm', steps[0][1])
+        self.assertIn('75 x 6.5 mm', steps[0][1])
 
     def test_no_keeps_the_old_value(self):
-        self._start_editing('width')
+        self._start_editing('item:0', 'field:width')
         self._text('75')
         self._tap_button('No, keep old')
         query = self._refresh()
-        self.assertEqual((query.width, query.bot_stage, query.pending_value), (Decimal('50'), 'summary', {}))
+        self.assertEqual((self._items()[0].width, query.bot_stage, query.pending_value), (Decimal('50'), 'summary', {}))
         self.assertIn('kept it as it was', self._last_steps()[0][1])
-        self.assertIn('Width: 50 mm', self._last_steps()[0][1])
+        self.assertIn('50 x 6.5 mm', self._last_steps()[0][1])
 
     def test_an_invalid_new_answer_is_asked_again_and_nothing_is_held(self):
-        self._start_editing('width')
+        self._start_editing('item:0', 'field:width')
         self.steps.reset_mock()
         self._text('as per drawing')
         query = self._refresh()
-        self.assertEqual((query.bot_stage, query.pending_value, query.width), ('editing', {}, Decimal('50')))
+        self.assertEqual((query.bot_stage, query.pending_value, self._items()[0].width), ('editing', {}, Decimal('50')))
         self.assertEqual(self._last_steps(), [('text', WHATSAPP_DIMENSION_INVALID_MESSAGES['width'])])
 
     def test_cancel_goes_back_to_the_summary(self):
-        self._start_editing('width')
+        self._start_editing('item:0', 'field:width')
         self._text('cancel')
         self.assertEqual(self._refresh().bot_stage, 'summary')
 
     def test_each_kind_of_answer_can_be_changed(self):
         cases = {
-            'company_name': ('New Traders', lambda q: q.company_name == 'New Traders'),
-            'contact_email': ('new@example.com', lambda q: q.contact_email == 'new@example.com'),
-            'gst_number': ('06AAAAA0000A1Z5, 9 New Road', lambda q: (q.gst_number, q.gst_address) == ('06AAAAA0000A1Z5', '9 New Road')),
-            'thickness': ('8', lambda q: q.thickness == Decimal('8')),
-            'quantity_text': ('12000', lambda q: (q.quantity, q.quantity_text) == (Decimal('12000'), '12000')),
-            'technical_requirements': ('Tata make', lambda q: q.technical_requirements == 'Tata make'),
-            'end_use': ('gear shafts', lambda q: q.end_use == 'gear shafts'),
-            'delivery_form': ('Bar', lambda q: q.delivery_form == 'Bar'),
-            'product_category': ('square bright bar', lambda q: q.product_category.name == 'Square Bright Bar'),
-            'grade': ('ss-304', lambda q: q.grade == 'SS304'),
-            'drawing': ('no drawing', lambda q: q.drawing_notes == 'no drawing'),
+            ('field:company_name',): ('New Traders', lambda q, i: q.company_name == 'New Traders'),
+            ('field:contact_email',): ('new@example.com', lambda q, i: q.contact_email == 'new@example.com'),
+            ('field:gst_number',): ('06AAAAA0000A1Z5, 9 New Road', lambda q, i: (q.gst_number, q.gst_address) == ('06AAAAA0000A1Z5', '9 New Road')),
+            ('field:technical_requirements',): ('Tata make', lambda q, i: q.technical_requirements == 'Tata make'),
+            ('field:end_use',): ('gear shafts', lambda q, i: q.end_use == 'gear shafts'),
+            ('field:drawing',): ('no drawing', lambda q, i: q.drawing_notes == 'no drawing'),
+            ('item:0', 'field:thickness'): ('8', lambda q, i: i.thickness == Decimal('8')),
+            ('item:0', 'field:quantity'): ('12000', lambda q, i: i.quantity == Decimal('12000')),
+            ('item:0', 'field:delivery_form'): ('Bar', lambda q, i: i.delivery_form == 'Bar'),
+            ('item:0', 'field:product_category'): ('square bright bar', lambda q, i: i.product_category.name == 'Square Bright Bar'),
+            ('item:0', 'field:grade'): ('ss-304', lambda q, i: i.grade == 'SS304'),
         }
-        for key, (answer, check) in cases.items():
-            with self.subTest(key=key):
-                Query.objects.filter(pk=self.query.pk).update(bot_stage='summary')
-                self._start_editing(key)
+        for route, (answer, check) in cases.items():
+            with self.subTest(route=route):
+                Query.objects.filter(pk=self.query.pk).update(bot_stage='summary', edit_field='')
+                self._start_editing(*route)
                 self._text(answer)
                 self.assertEqual(self._refresh().bot_stage, 'confirm_change')
                 self._tap_button('Yes, save it')
-                self.assertTrue(check(self._refresh()), key)
+                self.assertTrue(check(self._refresh(), self._items()[0]), route)
 
     def test_changing_the_gst_number_alone_keeps_the_address(self):
-        self._start_editing('gst_number')
+        self._start_editing('field:gst_number')
         self._text('06AAAAA0000A1Z5')
         self._tap_button('Yes, save it')
         query = self._refresh()
@@ -1233,22 +1278,22 @@ class WhatsAppReviewTests(TestCase):
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
         old = ProductType.objects.create(item_code='FBB001', category=flat, grade='EN8D')
         new = ProductType.objects.create(item_code='FBB002', category=flat, grade='SS304')
-        Query.objects.filter(pk=self.query.pk).update(product_type=old)
-        self._start_editing('grade')
+        QueryItem.objects.filter(query=self.query).update(product_type=old)
+        self._start_editing('item:0', 'field:grade')
         self._text('SS304')
         self._tap_button('Yes, save it')
-        self.assertEqual(self._refresh().product_type, new)
+        self.assertEqual(self._items()[0].product_type, new)
         Query.objects.filter(pk=self.query.pk).update(bot_stage='summary')
-        self._start_editing('grade')
+        self._start_editing('item:0', 'field:grade')
         self._text('EN9')   # no code for this one: the link is dropped, not left pointing at the wrong code
         self._tap_button('Yes, save it')
-        self.assertIsNone(self._refresh().product_type)
+        self.assertIsNone(self._items()[0].product_type)
 
     def test_a_text_answer_replaces_an_attached_drawing(self):
         self.query.drawing.save('old.pdf', ContentFile(b'%PDF old'), save=True)
         self.addCleanup(lambda: self.query.drawing and self.query.drawing.delete(save=False))
         self.assertIn('File attached', whatsapp._summary_text(self._refresh()))
-        self._start_editing('drawing')
+        self._start_editing('field:drawing')
         self._text('no')
         self._tap_button('Yes, save it')
         query = self._refresh()
@@ -1260,6 +1305,56 @@ class WhatsAppReviewTests(TestCase):
         self.query.save()
         self._tap_button('Change something')   # delivered late: its own timestamp is "now", so the window re-opens
         self.assertEqual(self._refresh().bot_stage, 'pick_field')
+
+
+class WhatsAppMultiProductReviewTests(WhatsAppReviewBase):
+    """With several products the summary lists each, and Change asks which product first."""
+
+    PRODUCTS = 3
+
+    def test_the_summary_lists_each_product(self):
+        summary = whatsapp._summary_text(self._refresh())
+        for number, width in enumerate(('50', '51', '52'), start=1):
+            self.assertIn(f'Product {number}: Flat Bright Bar · EN8D · {width} x 6.5 mm · 8000 kg · Coil', summary)
+
+    def test_the_first_list_has_a_row_per_product_and_stays_within_ten_rows(self):
+        for products in (1, 3, 5):
+            with self.subTest(products=products):
+                query = _query_awaiting(None, phone=f'91987650{products:04d}', items=products)
+                rows = whatsapp._change_list_step(query)[3]
+                self.assertLessEqual(len(rows), 10)
+                self.assertEqual([r[0] for r in rows if r[0].startswith('item:')], [f'item:{n}' for n in range(products)])
+
+    def test_choosing_a_product_names_it_when_there_are_several(self):
+        self._start_editing('item:1')
+        kind, heading, button, rows = self._last_steps()[0]
+        self.assertIn('Product 2', heading)
+        self._tap_row('field:grade')
+        self.assertEqual(self._refresh().edit_field, 'item:1:grade')
+        self.assertEqual(self._last_steps()[0][1], 'Product 2: ' + WHATSAPP_QUERY_QUESTIONS['grade'])
+
+    def test_a_change_touches_only_the_product_chosen(self):
+        self._start_editing('item:1', 'field:width')
+        self._text('99')
+        self.assertIn('product 2 width to:\n99 mm', self._last_steps()[0][1])
+        self._tap_button('Yes, save it')
+        self.assertEqual([item.width for item in self._items()], [Decimal('50'), Decimal('99'), Decimal('52')])
+        self.assertIn('Product 2: Flat Bright Bar · EN8D · 99 x 6.5 mm', self._last_steps()[0][1])
+
+    def test_typing_product_2_picks_it(self):
+        self._tap_button('Change something')
+        self._text('product 3')
+        query = self._refresh()
+        self.assertEqual((query.bot_stage, query.edit_field), ('pick_item_field', 'item:2'))
+
+    def test_the_grade_of_one_product_relinks_only_that_products_code(self):
+        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        codes = {grade: ProductType.objects.create(item_code=f'FBB-{grade}', category=flat, grade=grade) for grade in ('EN8D', 'SS304')}
+        QueryItem.objects.filter(query=self.query).update(product_type=codes['EN8D'])
+        self._start_editing('item:2', 'field:grade')
+        self._text('SS304')
+        self._tap_button('Yes, save it')
+        self.assertEqual([item.product_type for item in self._items()], [codes['EN8D'], codes['EN8D'], codes['SS304']])
 
 
 class QueryDetailShowsTheConfirmationTests(TestCase):
@@ -1282,3 +1377,70 @@ class QueryDetailShowsTheConfirmationTests(TestCase):
         html = self.client.get(reverse('query_detail', kwargs={'pk': query.pk})).content.decode()
         self.assertNotIn('Answers confirmed', html)
         self.assertNotIn('WhatsApp review', html)
+
+
+@override_settings(WHATSAPP_VERIFY_TOKEN='test-verify-token', WHATSAPP_APP_SECRET='test-app-secret')
+class WhatsAppMultiProductIntakeTests(WhatsAppReviewBase):
+    """Asking how many products, then one comma-separated list per question."""
+
+    PHONE = '919876599999'
+
+    def setUp(self):
+        super().setUp()
+        self.query.delete()
+        self.query = None
+
+    def _reply(self, text):
+        return self._text(text)
+
+    def _awaiting(self, field, items=3):
+        self.query = _query_awaiting(field, phone=self.PHONE, items=items)
+        return self.query
+
+    def test_the_count_comes_first_and_creates_that_many_products(self):
+        for text, expected in [('3', 3), ('three', 3), ('2 products', 2), ('5', 5)]:
+            with self.subTest(text=text):
+                Query.objects.filter(contact_phone=self.PHONE).delete()
+                _query_awaiting('item_count', phone=self.PHONE)
+                self._reply(text)
+                self.assertEqual(Query.objects.get(contact_phone=self.PHONE).items.count(), expected)
+
+    def test_a_bad_count_is_asked_again_and_creates_nothing(self):
+        for text in ('6', '0', 'lots'):
+            with self.subTest(text=text):
+                Query.objects.filter(contact_phone=self.PHONE).delete()
+                _query_awaiting('item_count', phone=self.PHONE)
+                self._reply(text)
+                self.assertEqual(Query.objects.get(contact_phone=self.PHONE).items.count(), 0)
+
+    def test_the_count_question_is_a_list_of_one_to_five(self):
+        rows = whatsapp._item_count_rows()
+        self.assertEqual([r[0] for r in rows], [f'count:{n}' for n in range(1, 6)])
+
+    def test_a_list_with_one_value_per_product_fills_them_in_order(self):
+        self._awaiting('width')
+        self._reply('50, 60.5 , 70')
+        self.assertEqual([i.width for i in self._items()], [Decimal('50'), Decimal('60.5'), Decimal('70')])
+
+    def test_the_wrong_number_of_values_is_refused_with_the_counts(self):
+        self._awaiting('width')
+        self._reply('50, 60')
+        self.assertEqual([i.width for i in self._items()], [None, None, None])
+        sent = ' '.join(str(c) for c in self.say.call_args_list)
+        self.assertIn('I received 2 values but need 3', sent)
+
+    def test_a_bad_value_names_the_product(self):
+        self._awaiting('width')
+        self._reply('50, abc, 70')
+        sent = ' '.join(str(c) for c in self.say.call_args_list)
+        self.assertIn('Product 2:', sent)
+
+    def test_product_types_and_delivery_forms_are_read_from_lists(self):
+        self._awaiting('product_category')
+        self._reply('Flat Bright Bar, Square Bright Bar, Flat Bright Bar')
+        self.assertEqual([i.product_category.name for i in self._items()],
+                         ['Flat Bright Bar', 'Square Bright Bar', 'Flat Bright Bar'])
+        Query.objects.filter(contact_phone=self.PHONE).delete()
+        self._awaiting('delivery_form')
+        self._reply('coil, bar, coil')
+        self.assertEqual([i.delivery_form for i in self._items()], ['Coil', 'Bar', 'Coil'])

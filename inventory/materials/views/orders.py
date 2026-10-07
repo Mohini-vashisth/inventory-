@@ -268,10 +268,14 @@ def quote_form(request, token):
 
     # What the customer already told us on WhatsApp, so they aren't asked twice. The
     # query keeps delivery form as "Coil"/"Bar"; the order's choices are lower-case.
-    from_query = {'end_usage': query.end_use, 'delivery_form': query.delivery_form.lower()} if query else {}
+    query_items = list(query.items.order_by('position', 'pk')) if query else []
+    from_query = {'end_usage': query.end_use} if query else {}
 
     if items:
-        initial = [{'line_item': item.pk, 'quantity': item.quantity, **from_query} for item in items]
+        # The delivery form was asked per product, so line k takes it from the query's product k (a prefill only).
+        initial = [{'line_item': item.pk, 'quantity': item.quantity, **from_query,
+                    'delivery_form': query_items[k].delivery_form.lower() if k < len(query_items) else ''}
+                   for k, item in enumerate(items)]
         formset = (OrderItemFormSet(request.POST, request.FILES, prefix='item') if request.method == 'POST'
                    else OrderItemFormSet(initial=initial, prefix='item'))
         if request.method == 'POST':
@@ -326,13 +330,15 @@ def quote_form(request, token):
 
     initial = {}
     if query and not error:
+        first = query_items[0] if query_items else None
         initial = {
             **from_query,
-            'product_category': str(query.product_category_id or ''),
-            'grade': query.grade,
-            'width': str(query.width) if query.width is not None else '',
-            'thickness': str(query.thickness) if query.thickness is not None else '',
-            'quantity': str(query.quantity) if query.quantity is not None else '',
+            'delivery_form': first.delivery_form.lower() if first else '',
+            'product_category': str(first.product_category_id or '') if first else '',
+            'grade': first.grade if first else '',
+            'width': str(first.width) if first and first.width is not None else '',
+            'thickness': str(first.thickness) if first and first.thickness is not None else '',
+            'quantity': str(first.quantity) if first and first.quantity is not None else '',
             'notes': query.notes,
         }
 

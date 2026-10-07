@@ -13,7 +13,7 @@ from django.urls import reverse
 
 from ..models import Customer, GradeOption, ProductCategory, ProductType, Quotation, QuotationLineItem
 from ..product_codes import canonical_grade, describe_product_code, grade_key, item_code_for, reserve_grade_number
-from .helpers import quotation_item_post_data
+from .helpers import create_query, quotation_item_post_data
 
 
 class ItemCodeForTests(TestCase):
@@ -383,10 +383,10 @@ class GradeSpellingTests(TestCase):
         self.assertEqual(canonical_grade('NEW-1'), 'NEW1')
 
     def test_every_grade_field_normalizes_on_save(self):
-        from ..models import Material, Query, normalize_grade
+        from ..models import Material, normalize_grade
         self.assertEqual(normalize_grade('SAE 1008'), 'SAE1008')
         self.assertEqual(Material.objects.create(grade='en-1a (pb)', quantity=1).grade, 'EN1APB')
-        self.assertEqual(Query.objects.create(source='call', grade='sae 6165').grade, 'SAE6165')
+        self.assertEqual(create_query(source='call', grade='sae 6165').items.get().grade, 'SAE6165')
         self.assertIsNone(Material.objects.create(grade=None, quantity=1).grade)
         self.assertEqual(GradeOption.objects.create(name='hc-1').name, 'HC1')
 
