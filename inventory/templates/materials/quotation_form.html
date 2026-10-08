@@ -1,39 +1,15 @@
 {% extends "materials/base.html" %}
 
+{% block body_attrs %} class="ds"{% endblock %}
 {% block title %}New Quotation{% endblock %}
 
 {% block css %}
-    
-    body { font-family: Arial, Helvetica, sans-serif; background: #f3f4f2; color: #333; }
-
-    header {
-      background: #2f7d5b; color: white;
-      padding: 1rem 2rem;
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    header h1 { font-size: 1.3rem; }
-    .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; }
-
     .content { max-width: 980px; margin: 2rem auto; padding: 0 1.5rem 4rem; }
-
-    .card {
-      background: white; border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-      margin-bottom: 1.5rem; overflow: hidden;
-    }
-    .card-header {
-      padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0;
-      font-size: 1rem; font-weight: 600;
-      display: flex; justify-content: space-between; align-items: center;
-      cursor: default;
-    }
     .card-header span { color: #aaa; font-size: 0.85rem; font-weight: 400; }
     .card-header.collapsible { cursor: pointer; }
     .card-header .chevron { transition: transform 0.15s; color: #aaa; }
     .card.collapsed .card-header .chevron { transform: rotate(-90deg); }
     .card.collapsed .card-body { display: none; }
-    .card-body { padding: 1.5rem; }
-
     
 
     
@@ -43,22 +19,10 @@
     .cols-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
     .cols-5 { grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr; }
     .cols-6 { grid-template-columns: 1.6fr 1fr 1fr 1fr 1fr 1fr; }
-
     .form-group { display: flex; flex-direction: column; }
     .form-group.checkbox { flex-direction: row; align-items: center; gap: 0.5rem; margin-top: 1.2rem; }
-    label {
-      font-size: 0.72rem; color: #888; margin-bottom: 0.3rem;
-      font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
-    }
-    input, select, textarea {
-      padding: 0.55rem 0.75rem; border: 1px solid #ddd;
-      border-radius: 8px; font-size: 0.9rem; width: 100%;
-    }
-    input:focus, select:focus, textarea:focus { outline: none; border-color: #2f7d5b; }
     textarea { resize: vertical; min-height: 56px; }
-
     .readonly-value { padding: 0.55rem 0; font-size: 0.95rem; font-weight: 600; }
-
     .item-row {
       border: 1px solid #eee; border-radius: 10px;
       padding: 1rem; margin-bottom: 1rem; background: #f9fbf9;
@@ -72,7 +36,6 @@
       border-radius: 6px; padding: 0.2rem 0.6rem; font-size: 0.72rem; cursor: pointer;
     }
     .btn-remove-item:hover { background: #fecaca; }
-
     .add-item-row { margin-bottom: 1.25rem; }
     .btn-add-item {
       background: #eef3ef; border: 1px dashed #2f7d5b; color: #2f7d5b;
@@ -80,12 +43,7 @@
       cursor: pointer; width: 100%; font-weight: 600;
     }
     .btn-add-item:hover { background: #dfe9e2; }
-
     .submit-row { display: flex; justify-content: flex-end; margin-top: 1.5rem; gap: 0.75rem; }
-    .btn-primary {
-      padding: 0.75rem 2.25rem; background: #2f7d5b; color: white;
-      border: none; border-radius: 8px; font-size: 1rem; cursor: pointer; font-weight: 600;
-    }
     
     .btn-secondary {
       padding: 0.75rem 1.5rem; background: white; color: #2f7d5b;
@@ -102,7 +60,6 @@
       border-radius: 8px; font-size: 0.88rem; margin-bottom: 1.25rem;
       display: flex; justify-content: space-between; align-items: center;
     }
-
     @media (max-width: 720px) {
       .cols-2, .cols-3, .cols-4, .cols-5, .cols-6 { grid-template-columns: 1fr; }
       .content { padding: 0 0.85rem 3rem; margin: 1rem auto; }
@@ -112,12 +69,11 @@
 {% endblock %}
 
 {% block content %}
-<header>
-  <h1>{% if draft %}Edit Draft Quotation{% else %}New Quotation{% endif %}</h1>
-  <a href="{% if query %}{% url 'query_dashboard' %}{% elif draft %}{% url 'quotation_drafts' %}{% else %}{% url 'order_dashboard' %}{% endif %}" class="back-link">← Cancel</a>
-</header>
-
 <div class="content">
+  <div class="ds-top">
+    <a href="{% if query %}{% url 'query_dashboard' %}{% elif draft %}{% url 'quotation_drafts' %}{% else %}{% url 'order_dashboard' %}{% endif %}" class="back-link">← Cancel</a>
+  </div>
+  <h1>{% if draft %}Edit Draft Quotation{% else %}New Quotation{% endif %}</h1>
   {% if draft %}
   <div class="draft-banner">
     <span>📝 Editing a saved draft — nothing was sent yet.</span>

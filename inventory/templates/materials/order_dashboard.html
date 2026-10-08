@@ -1,40 +1,16 @@
 {% extends "materials/base.html" %}
 
+{% block body_attrs %} class="ds"{% endblock %}
 {% block title %}Order Dashboard{% endblock %}
 
 {% block css %}
-    
-    body { font-family: Arial, Helvetica, sans-serif; background: #f3f4f2; color: #333; }
-
-    header {
-      background: #2f7d5b; color: white;
-      padding: 1rem 2rem;
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    header h1 { font-size: 1.3rem; }
-    .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; }
-
     .content { max-width: 1150px; margin: 2rem auto; padding: 0 1.5rem; }
-
-    .card {
-      background: white; border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-      margin-bottom: 2rem; overflow: hidden;
-    }
-    .card-header {
-      padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0;
-      font-size: 1rem; font-weight: 600;
-      display: flex; justify-content: space-between; align-items: center;
-      cursor: pointer; user-select: none;
-    }
     .card-header.static { cursor: default; }
     .card-header span { color: #aaa; font-size: 0.85rem; font-weight: 400; }
     .card-header .toggle-icon { color: #aaa; font-size: 0.85rem; transition: transform 0.2s; }
     .card-header.open .toggle-icon { transform: rotate(180deg); }
-    .card-body { padding: 1.75rem; }
     .collapsible { display: none; }
     .collapsible.open { display: block; }
-
     .section-label {
       font-size: 0.7rem; font-weight: 700;
       text-transform: uppercase; letter-spacing: 0.06em;
@@ -42,25 +18,11 @@
       padding-bottom: 0.3rem; border-bottom: 1px solid #e4ece6;
     }
     .section-label:first-child { margin-top: 0; }
-
     .cols-4 { grid-template-columns: 2fr 1fr 1fr 1fr; }
-
     .cols-pt { grid-template-columns: 2fr 1fr 1fr 1fr; }
-
     .table-scroll { overflow-x: auto; }
-
     .form-group { display: flex; flex-direction: column; }
-    label {
-      font-size: 0.72rem; color: #888; margin-bottom: 0.3rem;
-      font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
-    }
-    input, select, textarea {
-      padding: 0.55rem 0.75rem; border: 1px solid #ddd;
-      border-radius: 8px; font-size: 0.9rem; width: 100%;
-    }
-    input:focus, select:focus, textarea:focus { outline: none; border-color: #2f7d5b; }
     textarea { resize: vertical; min-height: 60px; }
-
     /* Quick send */
     .quick-send-card .card-body { background: #f7faf8; }
     .send-row { display: flex; gap: 0.75rem; align-items: flex-end; margin-top: 0.75rem; }
@@ -70,43 +32,17 @@
     }
     .btn-send:hover { background: #256349; }
     .btn-send:disabled { background: #b9d8c8; cursor: default; }
-
     /* Autocomplete */
 
     
 
     .submit-row { display: flex; justify-content: flex-end; margin-top: 1rem; }
-    .btn-primary {
-      padding: 0.65rem 2rem; background: #2f7d5b; color: white;
-      border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
-    }
-
-    
-
-    /* Alert banners */
-
-    
-
-    /* Table */
-    table { width: 100%; border-collapse: collapse; }
-    th {
-      background: #f7f7f5; padding: 0.65rem 1rem; text-align: left;
-      font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
-      color: #888; font-weight: 600; white-space: nowrap;
-    }
-    td { padding: 0.75rem 1rem; border-top: 1px solid #f0f0f0; font-size: 0.88rem; vertical-align: middle; }
     tr:hover td { background: #f9fbf9; }
-
-    .badge {
-      display: inline-block; padding: 0.25rem 0.65rem;
-      border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap;
-    }
     .badge-pending       { background: #fef3c7; color: #92400e; }
     .badge-confirmed     { background: #e5e7eb; color: #374151; }
     .badge-in_production { background: #d1fae5; color: #065f46; }
     .badge-completed     { background: #dcfce7; color: #166534; }
     .badge-cancelled     { background: #fee2e2; color: #991b1b; }
-
     .action-btn {
       border: none; border-radius: 6px; padding: 0.25rem 0.65rem;
       font-size: 0.75rem; font-weight: 600; cursor: pointer; white-space: nowrap;
@@ -115,13 +51,11 @@
     .btn-confirm:hover { background: #bbf7d0; }
     .btn-reject  { background: #fee2e2; color: #991b1b; margin-left: 4px; }
     .btn-reject:hover  { background: #fecaca; }
-
     .expand-btn {
       background: none; border: none; cursor: pointer;
       color: #2f7d5b; font-size: 0.82rem; padding: 0;
     }
     .expand-btn:hover { text-decoration: underline; }
-
     .detail-row { display: none; }
     .detail-row.open { display: table-row; }
     .detail-box {
@@ -133,7 +67,6 @@
       display: block; font-size: 0.7rem; color: #888;
       text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.2rem;
     }
-
     .icon-btn {
       background: #f3f4f6; border: 1px solid #ddd;
       border-radius: 6px; padding: 0.25rem 0.65rem;
@@ -143,7 +76,6 @@
     .icon-btn.green { background: #dcfce7; border-color: #bbf7d0; color: #166534; margin-left: 4px; }
     .icon-btn.green:hover { background: #bbf7d0; }
     .icon-btn:disabled { background: #f3f4f6; color: #bbb; border-color: #eee; cursor: default; }
-
     /* Unified new order card */
     .choice-row {
       display: flex; gap: 0.75rem; align-items: center;
@@ -161,10 +93,8 @@
     }
     .btn-manual:hover { background: #e5e7eb; }
     .btn-manual.active { background: #eef3ef; border-color: #c5d6cb; color: #2f7d5b; }
-
     .manual-fields { display: none; margin-top: 1.25rem; }
     .manual-fields.open { display: block; }
-
     @media (max-width: 640px) {
       header { padding: 1rem; flex-wrap: wrap; gap: 0.5rem; }
       .content { padding: 0 0.85rem; margin: 1rem auto; }
@@ -183,16 +113,13 @@
 {% endblock %}
 
 {% block content %}
-<header>
-  <h1>Order Dashboard</h1>
-  <div>
-    <a href="{% url 'quotation_drafts' %}" class="back-link" style="margin-right:1.25rem;">📝 Drafts</a>
-    <a href="{% url 'query_dashboard' %}" class="back-link" style="margin-right:1.25rem;">← Queries</a>
-    <a href="{% url 'home' %}" class="back-link">← Back to home</a>
-  </div>
-</header>
-
 <div class="content">
+  <div class="ds-top">
+    <a href="{% url 'home' %}" class="back-link">← Back to home</a>
+    <a href="{% url 'quotation_drafts' %}" class="back-link">📝 Drafts</a>
+    <a href="{% url 'query_dashboard' %}" class="back-link">← Queries</a>
+  </div>
+  <h1>Order Dashboard</h1>
 
   {% for msg in messages %}
   <div class="alert

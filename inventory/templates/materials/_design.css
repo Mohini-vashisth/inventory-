@@ -29,8 +29,40 @@
 }
 .ds input:focus, .ds select:focus, .ds textarea:focus { outline: none; border-color: var(--ds-accent); box-shadow: 0 0 0 3px rgba(47,125,91,0.15); }
 
-.ds .btn-submit, .ds .btn-primary {
+.ds .btn-submit {
   width: 100%; padding: 0.8rem; background: var(--ds-accent); color: #fff; border: none; border-radius: 8px;
   font-size: 1rem; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; display: block;
 }
+.ds .btn-primary {
+  display: inline-block; padding: 0.65rem 1.75rem; background: var(--ds-accent); color: #fff; border: none; border-radius: 8px;
+  font-size: 0.95rem; font-weight: 600; cursor: pointer; text-decoration: none;
+}
 .ds .btn-submit:hover, .ds .btn-primary:hover { background: var(--ds-accent-dark); }
+
+/* Top row of every page: back button(s) first, then the title underneath (replaces the old green header bar). */
+.ds .ds-top { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 1.1rem; }
+.ds .ds-top .back-link { margin: 0; }
+.ds .content { margin: 0 auto; padding: 0; }
+
+/* Cards made of a header strip and a body (the staff pages). */
+.ds .card:has(> .card-header), .ds .card:has(> .card-body) { padding: 0; overflow: hidden; margin-bottom: 1.25rem; }
+.ds .card-header {
+  padding: 1rem 1.5rem; border-bottom: 1px solid var(--ds-border); font-size: 1rem; font-weight: 600;
+  display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
+}
+.ds .card-body { padding: 1.25rem 1.5rem; }
+
+/* Tables and status pills */
+.ds table { width: 100%; border-collapse: collapse; }
+.ds th {
+  background: #f7f7f5; padding: 0.65rem 1rem; text-align: left; font-size: 0.72rem; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--ds-muted); font-weight: 600;
+}
+.ds td { padding: 0.75rem 1rem; border-top: 1px solid #eceee9; font-size: 0.88rem; vertical-align: middle; }
+.ds .badge { display: inline-block; padding: 0.25rem 0.65rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+
+@media (max-width: 700px) {
+  .ds { padding: 1rem 0.85rem; }
+  .ds .card-body { padding: 1.1rem; }
+  .ds .card-header { flex-wrap: wrap; }
+}
