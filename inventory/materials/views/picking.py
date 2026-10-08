@@ -34,10 +34,9 @@ def _coil_matches_order_specs(coil, order):
     filters by, reused here so a scanned coil gets the same check."""
     if not order.product_type:
         return True
-    specs = list(order.product_type.allowed_specs.all())
-    if not specs:
+    if not order.product_type.allowed_specs.exists():
         return True
-    for spec in specs:
+    for spec in order.applicable_specs():
         grade_matches = not spec.grade or (coil.grade or '').lower() == spec.grade.lower()
         size_matches = not spec.size or coil.size == spec.size
         if grade_matches and size_matches:
@@ -56,7 +55,7 @@ def _ratio_for_coil(order, coil, specs=None):
     the best-fit sort in select_coil_for_order) pass an already-fetched
     list instead of re-querying allowed_specs on every single coil."""
     if order.product_type:
-        for spec in (specs if specs is not None else order.product_type.allowed_specs.all()):
+        for spec in (specs if specs is not None else order.applicable_specs()):
             grade_matches = not spec.grade or spec.grade.lower() == (coil.grade or '').lower()
             size_matches = not spec.size or spec.size == coil.size
             if grade_matches and size_matches:
@@ -99,8 +98,8 @@ def select_coil_for_order(request, order_pk):
     # each coil in the loop re-querying allowed_specs for itself.
     specs = []
     if order.product_type:
-        specs = list(order.product_type.allowed_specs.all())
-        if specs:
+        specs = order.applicable_specs()
+        if order.product_type.allowed_specs.exists():
             from django.db.models import Q
             q = Q()
             for spec in specs:
@@ -111,7 +110,7 @@ def select_coil_for_order(request, order_pk):
                     spec_q &= Q(size=spec.size)
                 if spec_q:
                     q |= spec_q
-            coils_qs = coils_qs.filter(q)
+            coils_qs = coils_qs.filter(q) if specs else coils_qs.none()   # specs exist, but none is for this size
 
     picked_output = order.picked_output_weight()
     required_output = order.quantity or Decimal('0')

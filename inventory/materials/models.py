@@ -291,6 +291,23 @@ class AllowedCoilSpec(models.Model):
                   "material needs to be picked.",
     )
     notes = models.CharField(max_length=100, blank=True)
+    # Which ordered sizes this spec is for. Blank on both = any size (the original behaviour); set one or both
+    # to make it apply only to orders of exactly that width / thickness.
+    order_width = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="For ordered width (mm)",
+                                      help_text="Leave blank to apply whatever width is ordered.")
+    order_thickness = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="For ordered thickness (mm)",
+                                          help_text="Leave blank to apply whatever thickness is ordered.")
+
+    def is_generic(self):
+        return self.order_width is None and self.order_thickness is None
+
+    def applies_to(self, order):
+        """A size-specific spec applies to an order of exactly that width/thickness (a blank side matches any)."""
+        if self.order_width is not None and self.order_width != order.width:
+            return False
+        if self.order_thickness is not None and self.order_thickness != order.thickness:
+            return False
+        return True
 
     def __str__(self):
         parts = []
@@ -298,7 +315,11 @@ class AllowedCoilSpec(models.Model):
             parts.append(self.grade)
         if self.size:
             parts.append(f"{self.size} mm")
-        return f"{self.product_type.item_code} — {' / '.join(parts) or 'Any'}"
+        text = f"{self.product_type.item_code} — {' / '.join(parts) or 'Any'}"
+        if not self.is_generic():
+            sizes = ' x '.join(format(v.normalize(), 'f') for v in (self.order_width, self.order_thickness) if v is not None)
+            text += f" (for {sizes} mm orders)"
+        return text
 
 
 class ProcessStep(models.Model):
@@ -334,7 +355,7 @@ class OrderCoilPick(models.Model):
         spec matches (e.g. the product type has no specs configured)."""
         ratio = Decimal('1')
         if self.order.product_type:
-            for spec in self.order.product_type.allowed_specs.all():
+            for spec in self.order.applicable_specs():
                 grade_matches = not spec.grade or spec.grade.lower() == (self.coil.grade or '').lower()
                 size_matches = not spec.size or spec.size == self.coil.size
                 if grade_matches and size_matches:
@@ -977,6 +998,16 @@ class Order(models.Model):
     def is_fully_picked(self):
         return self.picked_output_weight() >= self.quantity
 
+    def applicable_specs(self):
+        """The allowed coil specs that govern this order: those made for its exact size (width/thickness) if any
+        apply, otherwise the size-less ones. Empty when none is configured, or when specs exist only for other
+        sizes (check `product_type.allowed_specs.exists()` to tell the two apart)."""
+        if not self.product_type_id:
+            return []
+        specs = list(self.product_type.allowed_specs.all())
+        specific = [spec for spec in specs if not spec.is_generic() and spec.applies_to(self)]
+        return specific or [spec for spec in specs if spec.is_generic()]
+
     def available_raw_material_output(self):
         """Total finished-product output that could be made right now from
         in-stock raw material matching this order's product type — summed
@@ -988,7 +1019,9 @@ class Order(models.Model):
         before production can actually happen."""
         if not self.product_type:
             return None
-        specs = list(self.product_type.allowed_specs.all())
+        specs = self.applicable_specs()
+        if not specs and self.product_type.allowed_specs.exists():
+            return Decimal('0')   # specs are configured but none is for this order's size: nothing qualifies
         total = Decimal('0')
         for spec in (specs or [None]):  # None = wildcard, matches any coil
             coils_qs = Material.objects.filter(archived_at__isnull=True)
