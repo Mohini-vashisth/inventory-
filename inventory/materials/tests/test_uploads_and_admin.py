@@ -7,6 +7,7 @@ from django.urls import reverse
 from pathlib import Path
 
 from ..models import (
+    QueryItem,
     AllowedCoilSpec,
     ProductCategory,
     Customer,
@@ -81,10 +82,11 @@ class ServeMediaTests(TestCase):
     def test_model_file_urls_point_at_the_served_route(self):
         from django.core.files.base import ContentFile
         query = Query.objects.create(source='whatsapp', contact_phone='9876543210')
-        query.drawing.save('d.pdf', ContentFile(b'%PDF-1.4'), save=True)
-        self.assertTrue(query.drawing.url.startswith('/media/query_drawings/'))
+        item = QueryItem.objects.create(query=query)
+        item.drawing.save('d.pdf', ContentFile(b'%PDF-1.4'), save=True)
+        self.assertTrue(item.drawing.url.startswith('/media/query_drawings/'))
         self.client.force_login(self.staff)
-        self.assertEqual(self.client.get(query.drawing.url).status_code, 200)
+        self.assertEqual(self.client.get(item.drawing.url).status_code, 200)
 
 
 class AdminSmokeTests(TestCase):
@@ -115,7 +117,7 @@ class AdminSmokeTests(TestCase):
             job = ProductionJob.objects.create(pick=pick, product_type=product, job_no='SMOKE-1', order=order)
             StepLog.objects.create(job=job, step=product.steps.first(), status='completed')
             query = Query.objects.create(source='whatsapp', contact_phone='919876543210', company_name='Smoke Co')
-            query.drawing.save('d.pdf', ContentFile(b'%PDF-1.4'), save=True)
+            QueryItem.objects.create(query=query).drawing.save('d.pdf', ContentFile(b'%PDF-1.4'), save=True)
             quotation = Quotation.objects.create(customer=customer, source_query=query, status='sent')
             QuotationLineItem.objects.create(quotation=quotation, order=1, description='Bar', quantity=10, rate_per_kg=90)
             Quotation.objects.create(customer=customer, status='draft')

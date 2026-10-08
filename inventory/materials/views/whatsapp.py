@@ -54,10 +54,15 @@ WHATSAPP_QUERY_FIELDS = [
     'drawing', 'grade', 'width', 'thickness', 'technical_requirements', 'end_use', 'delivery_form', 'quantity',
 ]
 
-# Asked once per product: with several products the customer answers each of these with a comma-separated
-# list, one value per product in the same order (the first question, item_count, says how many). Everything
-# else is asked once for the whole query.
-WHATSAPP_PER_ITEM_FIELDS = ('product_category', 'grade', 'width', 'thickness', 'delivery_form', 'quantity')
+# Only the company details (company name, email, GST number & address) are asked once for the whole query;
+# everything else is asked per product. With several products there are two shapes (the first question,
+# item_count, says how many): the short answers are one comma-separated list with a value per product, in
+# order; the product type (a tappable list) and the free-text answers (drawing, make/properties/process,
+# end use) are asked one product at a time, because a tap answers one product and the text can contain commas.
+WHATSAPP_LIST_ITEM_FIELDS = ('grade', 'width', 'thickness', 'delivery_form', 'quantity')
+WHATSAPP_SEQUENTIAL_ITEM_FIELDS = ('product_category', 'drawing', 'technical_requirements', 'end_use')
+WHATSAPP_PER_ITEM_FIELDS = tuple(f for f in ('product_category', 'drawing', 'grade', 'width', 'thickness',
+                                              'technical_requirements', 'end_use', 'delivery_form', 'quantity'))
 WHATSAPP_MAX_ITEMS = Query.MAX_ITEMS
 
 
@@ -81,7 +86,6 @@ WHATSAPP_QUERY_QUESTIONS = {
 # a made-up answer with that many values.
 _LIST_SUFFIX = " Send {n} values separated by commas, one for each product, in the same order."
 _LIST_QUESTIONS = {
-    'product_category': "Which product types do you need?" + _LIST_SUFFIX + " Choose from: {types}.",
     'grade': "Which grades of material do you require?" + _LIST_SUFFIX + " Example: {example}",
     'width': "What widths do you need, in mm?" + _LIST_SUFFIX + " Use a dot for decimals. Example: {example}",
     'thickness': "And the thicknesses, in mm?" + _LIST_SUFFIX + " Use a dot for decimals. Example: {example}",
@@ -317,18 +321,18 @@ def _item_count_rows():
     return [(f"count:{n}", f"{n} product" + ("s" if n > 1 else ''), '') for n in range(1, WHATSAPP_MAX_ITEMS + 1)]
 
 
-def _send_whatsapp_question(phone, field, count=1):
+def _send_whatsapp_question(phone, field, count=1, lead=''):
     """Send `field`'s question — as a tappable list for the number of products (and the product type
     when there is just one), as buttons if it has a few fixed answers, as plain text otherwise. With
     several products the per-product questions ask for a comma-separated list instead."""
-    text = _question_text(field, count)
+    text = lead + _question_text(field, count)
     if field == 'item_count':
         return _send_whatsapp_list_message_background(phone, text, "Choose number", _item_count_rows())
-    if field == 'product_category' and count <= 1:
+    if field == 'product_category':
         rows = _product_category_rows()
         if rows:
             return _send_whatsapp_list_message_background(phone, text, "Choose type", rows)
-        return _send_whatsapp_text_message_background(phone, "Which product type do you need? Please type its name.")
+        return _send_whatsapp_text_message_background(phone, lead + "Which product type do you need? Please type its name.")
     choices = WHATSAPP_QUERY_CHOICES.get(field)
     if choices and count <= 1:
         return _send_whatsapp_buttons_message_background(phone, text, choices)
@@ -340,29 +344,41 @@ def _item_value_missing(item, field):
         return not item.product_category_id
     if field in ('width', 'thickness', 'quantity'):
         return getattr(item, field) is None
+    if field == 'drawing':   # a FileField alone can't tell "not asked yet" from "asked, none": drawing_notes does
+        return not item.drawing and not item.drawing_notes
     return not getattr(item, field)
 
 
-def _next_expected_query_field(query):
-    """The next unanswered field in the fixed intake order, or None once every field is filled. The
-    per-product fields are unanswered while any of the query's products still lacks the value;
-    'item_count' is unanswered until the products exist. 'drawing' is special: a FileField alone can't
-    tell "not asked yet" apart from "asked, customer had none" — drawing_notes (set either way) is what
-    actually marks that question answered, whether or not a file came with it."""
+def _next_target(query):
+    """(field, item_index) for the next unanswered question in the fixed intake order, or (None, None) once
+    every field is filled. A list question is unanswered while any product lacks the value (index None: one
+    comma-separated answer fills them all); a free-text question is asked about the first product that still
+    lacks it. 'item_count' is unanswered until the products exist."""
     items = query.item_list()
     for field in WHATSAPP_QUERY_FIELDS:
         if field == 'item_count':
             if not items:
-                return field
-        elif field == 'drawing':
-            if not query.drawing and not query.drawing_notes:
-                return field
+                return field, None
+        elif field in WHATSAPP_SEQUENTIAL_ITEM_FIELDS:
+            for index, item in enumerate(items):
+                if _item_value_missing(item, field):
+                    return field, index
         elif field in WHATSAPP_PER_ITEM_FIELDS:
             if any(_item_value_missing(item, field) for item in items):
-                return field
+                return field, None
         elif not getattr(query, field):
-            return field
-    return None
+            return field, None
+    return None, None
+
+
+def _next_expected_query_field(query):
+    """The next unanswered field (see _next_target), or None once every field is filled."""
+    return _next_target(query)[0]
+
+
+def _question_lead(field, index, count):
+    """"Product 2 of 3: " in front of a one-product-at-a-time question when there are several products."""
+    return f"Product {index + 1} of {count}: " if index is not None and count > 1 else ''
 
 
 def _normalize_phone(phone):
@@ -693,8 +709,8 @@ def _route_whatsapp_media(phone, media_id, mime_type, sent_at=None):
     if not query.last_inbound_at or newest > query.last_inbound_at:
         query.last_inbound_at = newest
         query.save(update_fields=['last_inbound_at'])
-    editing_drawing = query.bot_stage == 'editing' and query.edit_field == 'drawing'
-    if not editing_drawing and (query.bot_stage not in ('', ) or _next_expected_query_field(query) != 'drawing'):
+    editing_drawing = query.bot_stage == 'editing' and _edit_target(query)[2] == 'drawing'
+    if not editing_drawing and (query.bot_stage not in ('', ) or _next_target(query)[0] != 'drawing'):
         return
     _process_whatsapp_drawing_media_background(query.pk, media_id, mime_type)
 
@@ -768,20 +784,24 @@ def _process_whatsapp_drawing_media_background(query_pk, media_id, mime_type):
                 except Query.DoesNotExist:
                     return
                 filename = f"drawing{_extension_for_mime_type(resolved_mime or mime_type)}"
-                if query.bot_stage == 'editing' and query.edit_field == 'drawing':
-                    # A replacement file: hold it until the customer confirms the change.
+                if query.bot_stage == 'editing' and _edit_target(query)[2] == 'drawing':
+                    # A replacement file for one product: hold it until the customer confirms the change.
+                    index = _edit_target(query)[1] or 0
                     query.pending_drawing.save(filename, ContentFile(content), save=False)
-                    query.pending_value = {'drawing_notes': "Drawing attached via WhatsApp", '_pending_file': True}
+                    query.pending_value = {'_items': {'drawing_notes': ["Drawing attached via WhatsApp"]},
+                                           '_item_only': index, '_pending_file': True}
                     query.bot_stage = 'confirm_change'
                     query.save(update_fields=['pending_drawing', 'pending_value', 'bot_stage'])
                     if _whatsapp_window_open(query):
                         _send_whatsapp_steps_background(query.contact_phone, _confirm_change_steps(query))
                     return
-                if query.bot_stage != '' or _next_expected_query_field(query) != 'drawing':
+                field, index = _next_target(query)
+                if query.bot_stage != '' or field != 'drawing':
                     return  # already answered some other way (e.g. a race with a text reply)
-                query.drawing.save(filename, ContentFile(content), save=False)
-                query.drawing_notes = "Drawing attached via WhatsApp"
-                query.save(update_fields=['drawing', 'drawing_notes'])
+                item = query.item_list()[index]
+                item.drawing.save(filename, ContentFile(content), save=False)
+                item.drawing_notes = "Drawing attached via WhatsApp"
+                item.save(update_fields=['drawing', 'drawing_notes'])
                 _advance_whatsapp_query(query)
         finally:
             connections.close_all()
@@ -862,13 +882,15 @@ def _process_whatsapp_answer(query_pk, text, sent_at=None, send_next=True):
 
         def ask(field_name):
             if window_open:
-                _send_whatsapp_question(query.contact_phone, field_name, query.items.count())
+                count = query.items.count()
+                _send_whatsapp_question(query.contact_phone, field_name, count,
+                                        lead=_question_lead(field_name, index if field_name == field else None, count))
 
         if query.bot_stage in WHATSAPP_REVIEW_STAGES:
             _review_reply(query, text, window_open)
             return
 
-        field = _next_expected_query_field(query)
+        field, index = _next_target(query)
         if field is None:
             stamp = timezone.now().strftime('%d %b %H:%M')
             query.notes = f"{query.notes}\n[{stamp}] {text}".strip()
@@ -876,7 +898,7 @@ def _process_whatsapp_answer(query_pk, text, sent_at=None, send_next=True):
             return
 
         try:
-            updates = _parse_answer(field, text.strip(), query.items.count())
+            updates = _parse_answer(field, text.strip(), query.items.count(), index)
         except _InvalidAnswer as invalid:
             if invalid.say:
                 say(invalid.say)
@@ -899,18 +921,20 @@ def _advance_whatsapp_query(query):
     if not _whatsapp_window_open(query):
         _flag_for_review(query, WHATSAPP_WINDOW_CLOSED_NOTE)
         return
-    next_field = _next_expected_query_field(query)
+    next_field, index = _next_target(query)
     if next_field is None:
         if query.bot_stage == '':   # answers are complete: show them back to the customer once
             query.bot_stage = 'summary'
             query.save(update_fields=['bot_stage'])
             _send_whatsapp_steps_background(query.contact_phone, _summary_steps(query))
         return
-    if query.last_asked_field == next_field:
+    asked = next_field if index is None else f"{next_field}@{index}"   # which product, for the one-at-a-time ones
+    if query.last_asked_field == asked:
         return
-    query.last_asked_field = next_field
+    query.last_asked_field = asked
     query.save(update_fields=['last_asked_field'])
-    _send_whatsapp_question(query.contact_phone, next_field, query.items.count())
+    count = query.items.count()
+    _send_whatsapp_question(query.contact_phone, next_field, count, lead=_question_lead(next_field, index, count))
 
 
 # ── Answer parsing ────────────────────────────────────────────────────────────
@@ -923,23 +947,23 @@ class _InvalidAnswer(Exception):
         self.say, self.ask = say, ask
 
 
-WHATSAPP_ITEM_COUNT_WORDS = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5}
+WHATSAPP_ITEM_COUNT_WORDS = {'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5, 'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10}
 
 
 def _parse_item_count(text):
-    """How many products (1 to 5) from "3", "three", "3 products" — or None."""
+    """How many products (1 up to the limit) from "3", "three", "3 products" — or None."""
+    number = _spoken_number(text)
+    return number if number is not None and 1 <= number <= WHATSAPP_MAX_ITEMS else None
+
+
+def _spoken_number(text):
+    """The number in "3", "three", "3 products", whatever it is (or None) — to tell "too many" from "no number"."""
     lowered = text.lower()
     for word, number in WHATSAPP_ITEM_COUNT_WORDS.items():
         if re.search(rf'\b{word}\b', lowered):
             return number
     found = re.search(r'\d+', lowered)
-    if found and 1 <= int(found.group()) <= WHATSAPP_MAX_ITEMS:
-        return int(found.group())
-    return None
-
-
-def _product_type_names():
-    return ', '.join(ProductCategory.objects.values_list('name', flat=True))
+    return int(found.group()) if found else None
 
 
 def _parse_single_value(field, part, position, count):
@@ -961,13 +985,6 @@ def _parse_single_value(field, part, position, count):
         if parsed is None:
             raise _InvalidAnswer(say=f"{where}please say Coil or Bar." if count > 1 else None, ask=None if count > 1 else 'delivery_form')
         return parsed
-    if field == 'product_category':
-        detected = _detect_product_category(part)
-        if detected is None:
-            if count > 1:
-                raise _InvalidAnswer(say=f"{where}I couldn't match '{part}' to a product type. Choose from: {_product_type_names()}.")
-            raise _InvalidAnswer(ask='product_category')
-        return detected.pk
     if not part.strip():   # grade
         raise _InvalidAnswer(say=f"{where}please give the grade.")
     return part.strip()
@@ -987,7 +1004,7 @@ def _parse_item_values(field, text, count):
     return [_parse_single_value(field, part, position, count) for position, part in enumerate(parts)]
 
 
-def _parse_answer(field, text, count=1):
+def _parse_answer(field, text, count=1, index=None):
     """The model updates a reply to `field`'s question stands for, as JSON-safe values (so a change
     can be held as pending until the customer confirms it). `count` is the number of products: the
     per-product questions take a comma-separated list when it is more than one. Raises _InvalidAnswer
@@ -995,6 +1012,10 @@ def _parse_answer(field, text, count=1):
     if field == 'item_count':
         number = _parse_item_count(text)
         if number is None:
+            spoken = _spoken_number(text)
+            if spoken is not None and spoken > WHATSAPP_MAX_ITEMS:
+                raise _InvalidAnswer(say=f"I can take up to {WHATSAPP_MAX_ITEMS} products at a time. Please choose "
+                                         f"1 to {WHATSAPP_MAX_ITEMS} now, and send another request for the rest.", ask='item_count')
             raise _InvalidAnswer(ask='item_count')
         return {'item_count': number}
     if field == 'gst_number':
@@ -1003,7 +1024,17 @@ def _parse_answer(field, text, count=1):
             raise _InvalidAnswer(say=WHATSAPP_GST_INVALID_MESSAGE)
         number, address = parsed
         return {'gst_number': number, **({'gst_address': address} if address else {})}
-    if field in WHATSAPP_PER_ITEM_FIELDS:
+    if field == 'product_category':
+        detected = _detect_product_category(text)
+        if detected is None:
+            raise _InvalidAnswer(ask='product_category')
+        return {'_items': {'product_category': [detected.pk]}, '_item_only': index if index is not None else 0}
+    if field in WHATSAPP_SEQUENTIAL_ITEM_FIELDS:
+        # Free text about one product. A text reply to the drawing question means no attachment came with
+        # it ("no", or a short description); an actual image/PDF is handled by the media path instead.
+        key = 'drawing_notes' if field == 'drawing' else field
+        return {'_items': {key: [text]}, '_item_only': index if index is not None else 0}
+    if field in WHATSAPP_LIST_ITEM_FIELDS:
         updates = {'_items': {field: _parse_item_values(field, text, count)}}
         if count <= 1 and field in WHATSAPP_DIMENSION_INVALID_MESSAGES and len(_DIMENSION_NUMBER.findall(text)) > 1:
             updates['_note'] = f"{field.capitalize()} reply: {text}"   # e.g. "10 and 12 mm": keep the first, show staff the rest
@@ -1012,11 +1043,6 @@ def _parse_answer(field, text, count=1):
         if not _is_valid_whatsapp_email(text):
             raise _InvalidAnswer(say=WHATSAPP_QUERY_QUESTIONS['contact_email'])
         return {'contact_email': text}
-    if field == 'drawing':
-        # A text reply here means no attachment came with it — "no", or a short description instead of a
-        # photo/PDF. An actual image/document reply is handled separately, in the background, by
-        # _process_whatsapp_drawing_media_background.
-        return {'drawing_notes': text}
     return {field: text}
 
 
@@ -1040,6 +1066,9 @@ def _apply_item_updates(query, values_by_field, only=None, editing=False):
             else:
                 setattr(item, field, value)
             touched.append(field)
+        if editing and 'drawing_notes' in touched and item.drawing:
+            item.drawing = ''   # replaced by a text answer: the old file no longer stands
+            touched.append('drawing')
         if 'grade' in touched or 'product_category' in touched:
             code = item.matching_product_code()   # link the catalogue code as soon as type + grade are known
             if editing or (code and not item.product_type_id):
@@ -1068,14 +1097,17 @@ def _apply_updates(query, updates, editing=False):
     if '_items' in updates:
         _apply_item_updates(query, updates['_items'], updates.get('_item_only'), editing)
     if updates.get('_pending_file') and query.pending_drawing:
-        content = query.pending_drawing.read()
-        query.drawing.save(os.path.basename(query.pending_drawing.name), ContentFile(content), save=False)
+        items = query.item_list()
+        index = updates.get('_item_only', 0)
+        if index < len(items):
+            item = items[index]
+            content = query.pending_drawing.read()
+            item.drawing.save(os.path.basename(query.pending_drawing.name), ContentFile(content), save=False)
+            item.drawing_notes = "Drawing attached via WhatsApp"
+            item.save(update_fields=['drawing', 'drawing_notes'])
         query.pending_drawing.delete(save=False)
         query.pending_drawing = None
-        changed += ['drawing', 'pending_drawing']
-    elif editing and 'drawing_notes' in updates and query.drawing:
-        query.drawing = ''   # replaced by a text answer: the old file no longer stands
-        changed.append('drawing')
+        changed.append('pending_drawing')
     return list(dict.fromkeys(changed))
 
 
@@ -1085,7 +1117,7 @@ def _apply_updates(query, updates, editing=False):
 # second list of its details) → the question again → "Change X to Y? Save it / Keep old" → back to
 # the summary. Nothing a customer changes is stored until they confirm it. Stages (Query.bot_stage):
 #   ''  collecting answers          'summary'  waiting for Confirm / Change
-#   'pick_field' / 'pick_more'  choosing what to change (two lists: Meta allows 10 rows per list)
+#   'pick_field'  choosing what to change ('pick_more' is only left over from when it was two lists)
 #   'pick_item_field'  choosing which detail of the product picked (edit_field = 'item:<index>')
 #   'editing'  waiting for the new answer (edit_field = 'gst_number', or 'item:<index>:<field>')
 #   'confirm_change'  waiting for Save / Keep old          'done'  confirmed
@@ -1096,20 +1128,21 @@ WHATSAPP_ITEM_ROW_PREFIX = 'item:'
 # Answers about the whole query, and the details of one product, with the labels used on screen.
 WHATSAPP_QUERY_REVIEW_FIELDS = [
     ('company_name', 'Company name'), ('contact_email', 'Email'), ('gst_number', 'GST number & address'),
-    ('drawing', 'Drawing / sample'), ('technical_requirements', 'Make/properties/process'), ('end_use', 'End use'),
 ]
 WHATSAPP_ITEM_REVIEW_FIELDS = [
-    ('product_category', 'Product type'), ('grade', 'Grade'), ('width', 'Width'), ('thickness', 'Thickness'),
+    ('product_category', 'Product type'), ('drawing', 'Drawing / sample'), ('grade', 'Grade'), ('width', 'Width'),
+    ('thickness', 'Thickness'), ('technical_requirements', 'Make/properties/process'), ('end_use', 'End use'),
     ('delivery_form', 'Delivery form'), ('quantity', 'Quantity'),
 ]
 _QUERY_LABELS = dict(WHATSAPP_QUERY_REVIEW_FIELDS)
 _ITEM_LABELS = dict(WHATSAPP_ITEM_REVIEW_FIELDS)
 _REVIEW_ALIASES = {
     'company_name': ('company', 'name'), 'contact_email': ('email', 'mail'), 'gst_number': ('gst', 'address'),
-    'drawing': ('drawing', 'sample'), 'technical_requirements': ('make', 'propert', 'process'), 'end_use': ('end use', 'use'),
 }
 _ITEM_ALIASES = {
-    'product_category': ('type', 'category'), 'grade': ('grade',), 'width': ('width',), 'thickness': ('thickness',),
+    'product_category': ('type', 'category'), 'drawing': ('drawing', 'sample'), 'grade': ('grade',),
+    'width': ('width',), 'thickness': ('thickness',),
+    'technical_requirements': ('make', 'propert', 'process'), 'end_use': ('end use', 'use'),
     'delivery_form': ('delivery', 'coil', 'bar'), 'quantity': ('quantity', 'kg'),
 }
 WHATSAPP_SUMMARY_INTRO = "Here is what we have noted from you:"
@@ -1126,8 +1159,6 @@ def _review_value(query, key):
     """What the summary shows for a query-level answer ('—' when empty)."""
     if key == 'gst_number':
         value = ', '.join(part for part in (query.gst_number, query.gst_address) if part)
-    elif key == 'drawing':
-        value = "File attached" if query.drawing else query.drawing_notes
     else:
         value = getattr(query, key)
     return str(value).strip() or '—'
@@ -1142,6 +1173,8 @@ def _item_field_value(item, field):
         value = f"{_trim_number(number)} mm" if number is not None else ''
     elif field == 'quantity':
         value = f"{_trim_number(item.quantity)} kg" if item.quantity is not None else ''
+    elif field == 'drawing':
+        value = "File attached" if item.drawing else item.drawing_notes
     else:
         value = getattr(item, field)
     return str(value).strip() or '—'
@@ -1156,7 +1189,8 @@ def _summary_text(query):
     lines = [f"• {_QUERY_LABELS[key]}: {_review_value(query, key)}" for key in ('company_name', 'contact_email', 'gst_number')]
     for position, item in enumerate(items):
         lines.append(f"• {_product_label(position, len(items))}: {item.summary_text() or '—'}")
-    lines += [f"• {_QUERY_LABELS[key]}: {_review_value(query, key)}" for key in ('drawing', 'technical_requirements', 'end_use')]
+        lines += [f"    {_ITEM_LABELS[field]}: {_item_field_value(item, field)}"
+                  for field in ('drawing', 'technical_requirements', 'end_use')]
     return WHATSAPP_SUMMARY_INTRO + "\n" + "\n".join(lines)
 
 
@@ -1167,20 +1201,14 @@ def _summary_steps(query, lead=''):
             ('buttons', WHATSAPP_SUMMARY_QUESTION, WHATSAPP_SUMMARY_CHOICES)]
 
 
-def _change_list_step(query, page_two=False):
-    """What to change: the first list has company, email, GST and each product (+ More…), the second the
-    drawing, make/process and end use (+ Back). Meta allows 10 rows per list; 3 + 5 products + More = 9."""
+def _change_list_step(query):
+    """What to change: company, email, GST and each product (a product opens a second list of its
+    details). Meta allows 10 rows per list; 3 + up to 5 products fits."""
     items = query.item_list()
-    if page_two:
-        rows = [(f"{WHATSAPP_FIELD_ROW_PREFIX}{key}", _QUERY_LABELS[key][:24], _review_value(query, key)[:72])
-                for key in ('drawing', 'technical_requirements', 'end_use')]
-        rows.append(('back', "← Back", "The first options"))
-    else:
-        rows = [(f"{WHATSAPP_FIELD_ROW_PREFIX}{key}", _QUERY_LABELS[key][:24], _review_value(query, key)[:72])
-                for key in ('company_name', 'contact_email', 'gst_number')]
-        rows += [(f"{WHATSAPP_ITEM_ROW_PREFIX}{position}", _product_label(position, len(items)) if len(items) > 1 else "Product details",
-                  (item.summary_text() or '—')[:72]) for position, item in enumerate(items)]
-        rows.append(('more', "More…", "Drawing, make/process, end use"))
+    rows = [(f"{WHATSAPP_FIELD_ROW_PREFIX}{key}", _QUERY_LABELS[key][:24], _review_value(query, key)[:72])
+            for key in ('company_name', 'contact_email', 'gst_number')]
+    rows += [(f"{WHATSAPP_ITEM_ROW_PREFIX}{position}", _product_label(position, len(items)) if len(items) > 1 else "Product details",
+              (item.summary_text() or '—')[:72]) for position, item in enumerate(items)]
     return ('list', "What would you like to change?", "Choose", rows)
 
 
@@ -1313,7 +1341,7 @@ def _review_reply(query, text, window_open):
         if field == 'company_name':
             return [('text', lead + "What is your company name?")]
         step = _question_step(field, count)
-        return [(step[0], lead + step[1], *step[2:])] if lead and step[0] == 'text' else [step]
+        return [(step[0], lead + step[1], *step[2:])] if lead else [step]
 
     stage, lowered = query.bot_stage, text.lower().strip()
     items = query.item_list()
@@ -1333,11 +1361,6 @@ def _review_reply(query, text, window_open):
         return
 
     if stage in ('pick_field', 'pick_more'):
-        if lowered == '@more':
-            query.bot_stage = 'pick_more'
-            save('bot_stage')
-            send([_change_list_step(query, page_two=True)])
-            return
         if lowered == '@back':
             query.bot_stage = 'pick_field'
             save('bot_stage')
@@ -1367,7 +1390,7 @@ def _review_reply(query, text, window_open):
                 send(ask_for(item_key))
                 return
         if key is None:
-            send([_change_list_step(query, page_two=(stage == 'pick_more'))])
+            send([_change_list_step(query)])
             return
         query.bot_stage, query.edit_field = 'editing', key
         save('bot_stage', 'edit_field')
@@ -1431,7 +1454,7 @@ def _question_step(field, count=1):
     text = _question_text(field, count)
     if field == 'item_count':
         return ('list', text, "Choose number", _item_count_rows())
-    if field == 'product_category' and count <= 1:
+    if field == 'product_category':
         rows = _product_category_rows()
         if rows:
             return ('list', text, "Choose type", rows)

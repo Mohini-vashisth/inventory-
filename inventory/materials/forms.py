@@ -110,8 +110,11 @@ class QueryItemForm(forms.ModelForm):
 
     class Meta:
         model = QueryItem
-        fields = ['product_category', 'product_type', 'grade', 'width', 'thickness', 'quantity', 'delivery_form']
+        fields = ['product_category', 'product_type', 'grade', 'width', 'thickness', 'quantity', 'delivery_form',
+                  'drawing_notes', 'technical_requirements', 'end_use']
         widgets = {
+            'technical_requirements': forms.Textarea(attrs={'rows': 2}),
+            'end_use': forms.Textarea(attrs={'rows': 2}),
             'width': forms.NumberInput(attrs={'step': '0.001', 'min': '0'}),
             'thickness': forms.NumberInput(attrs={'step': '0.001', 'min': '0'}),
             'quantity': forms.NumberInput(attrs={'step': '0.001', 'min': '0'}),

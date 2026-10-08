@@ -46,7 +46,8 @@ def _answered_field(field):
     return 'drawing_notes' if field == 'drawing' else field
 
 
-ITEM_FIELDS = ('product_category', 'grade', 'width', 'thickness', 'delivery_form', 'quantity')
+ITEM_FIELDS = ('product_category', 'drawing', 'grade', 'width', 'thickness', 'technical_requirements', 'end_use',
+               'delivery_form', 'quantity')
 
 
 def _answered_values(field):
@@ -56,7 +57,7 @@ def _answered_values(field):
         if name == field:
             break
         if name != 'item_count' and name not in ITEM_FIELDS:
-            values[_answered_field(name)] = ANSWERS[name]
+            values[name] = ANSWERS[name]
     return values
 
 
@@ -67,7 +68,8 @@ def _item_values(field):
         if name == field:
             break
         if name in ITEM_FIELDS:
-            values[name] = ProductCategory.objects.get_or_create(name=ANSWERS[name])[0] if name == 'product_category' else ANSWERS[name]
+            values[_answered_field(name)] = (ProductCategory.objects.get_or_create(name=ANSWERS[name])[0]
+                                             if name == 'product_category' else ANSWERS[name])
     return values
 
 
@@ -550,8 +552,7 @@ class WhatsAppWebhookTests(TestCase):
         _query_awaiting('technical_requirements')
         self._post_payload(self._message_payload('919876543210', 'no'))
 
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertEqual(query.technical_requirements, 'no')
+        self.assertEqual(_item_of('919876543210').technical_requirements, 'no')
         mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['end_use'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
@@ -559,9 +560,9 @@ class WhatsAppWebhookTests(TestCase):
         _query_awaiting('drawing')
         self._post_payload(self._message_payload('919876543210', 'no'))
 
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertEqual(query.drawing_notes, 'no')
-        self.assertFalse(query.drawing)
+        item = _item_of('919876543210')
+        self.assertEqual(item.drawing_notes, 'no')
+        self.assertFalse(item.drawing)
         mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['grade'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
@@ -577,8 +578,7 @@ class WhatsAppWebhookTests(TestCase):
             args = mock_bg.call_args[0]
             self.assertEqual(args[1], 'media-id-123')
             self.assertEqual(args[2], 'image/jpeg')
-        query = Query.objects.get(contact_phone='919876543210')
-        self.assertEqual(query.drawing_notes, '')
+        self.assertEqual(_item_of('919876543210').drawing_notes, '')
         mock_send.assert_not_called()
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
@@ -732,13 +732,13 @@ class WhatsAppDrawingMediaTests(TransactionTestCase):
 
         self._run_and_wait(query.pk, 'media-id-1', 'application/pdf')
 
-        query.refresh_from_db()
-        self.assertTrue(query.drawing)
-        self.assertTrue(query.drawing.name.endswith('.pdf'))
-        self.assertEqual(query.drawing.read()[:4], b'%PDF')
-        self.assertEqual(query.drawing_notes, 'Drawing attached via WhatsApp')
+        item = _item_of('919876543210')
+        self.assertTrue(item.drawing)
+        self.assertTrue(item.drawing.name.endswith('.pdf'))
+        self.assertEqual(item.drawing.read()[:4], b'%PDF')
+        self.assertEqual(item.drawing_notes, 'Drawing attached via WhatsApp')
         mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['grade'])
-        query.drawing.delete(save=False)
+        item.drawing.delete(save=False)
 
     @override_settings(WHATSAPP_ACCESS_TOKEN='test-token', WHATSAPP_PHONE_NUMBER_ID='123')
     @patch('materials.views.whatsapp._send_whatsapp_buttons_message')
@@ -746,16 +746,17 @@ class WhatsAppDrawingMediaTests(TransactionTestCase):
     @patch('materials.views.whatsapp._download_whatsapp_media')
     def test_a_replacement_drawing_is_held_until_the_customer_confirms_it(self, mock_download, mock_text, mock_buttons):
         mock_download.return_value = (b'%PDF-1.4 the new drawing', 'application/pdf')
-        query = Query.objects.create(source='call', contact_phone='919876543210', bot_stage='editing', edit_field='drawing',
-                                     drawing_notes='no', **{k: v for k, v in _answered_values(None).items() if k != 'drawing_notes'})
+        query = Query.objects.create(source='call', contact_phone='919876543210', bot_stage='editing', edit_field='item:0:drawing',
+                                     **_answered_values(None))
+        QueryItem.objects.create(query=query, position=1, **_item_values(None))   # its drawing answer is "no"
 
         self._run_and_wait(query.pk, 'media-id-new', 'application/pdf')
 
         query.refresh_from_db()
         self.assertEqual(query.bot_stage, 'confirm_change')
         self.assertTrue(query.pending_drawing)
-        self.assertFalse(query.drawing)   # not stored yet
-        self.assertEqual(query.drawing_notes, 'no')
+        self.assertFalse(_item_of('919876543210').drawing)   # not stored yet
+        self.assertEqual(_item_of('919876543210').drawing_notes, 'no')
 
         whatsapp._review_reply(query, 'Yes, save it', True)   # the customer confirms
         for thread in threading.enumerate():
@@ -763,11 +764,12 @@ class WhatsAppDrawingMediaTests(TransactionTestCase):
                 thread.join(timeout=2)
 
         query.refresh_from_db()
-        self.assertTrue(query.drawing)
-        self.assertEqual(query.drawing.read()[:4], b'%PDF')
+        item = _item_of('919876543210')
+        self.assertTrue(item.drawing)
+        self.assertEqual(item.drawing.read()[:4], b'%PDF')
         self.assertFalse(query.pending_drawing)
-        self.assertEqual((query.bot_stage, query.drawing_notes), ('summary', 'Drawing attached via WhatsApp'))
-        query.drawing.delete(save=False)
+        self.assertEqual((query.bot_stage, item.drawing_notes), ('summary', 'Drawing attached via WhatsApp'))
+        item.drawing.delete(save=False)
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message')
     @patch('materials.views.whatsapp._download_whatsapp_media')
@@ -777,9 +779,9 @@ class WhatsAppDrawingMediaTests(TransactionTestCase):
 
         self._run_and_wait(query.pk, 'media-id-2', 'application/pdf')
 
-        query.refresh_from_db()
-        self.assertFalse(query.drawing)
-        self.assertEqual(query.drawing_notes, '')
+        item = _item_of('919876543210')
+        self.assertFalse(item.drawing)
+        self.assertEqual(item.drawing_notes, '')
         mock_send.assert_not_called()
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message')
@@ -794,9 +796,9 @@ class WhatsAppDrawingMediaTests(TransactionTestCase):
 
         self._run_and_wait(query.pk, 'media-id-3', 'image/jpeg')
 
-        query.refresh_from_db()
-        self.assertFalse(query.drawing)
-        self.assertEqual(query.drawing_notes, 'no')
+        item = _item_of('919876543210')
+        self.assertFalse(item.drawing)
+        self.assertEqual(item.drawing_notes, 'no')
         mock_send.assert_not_called()
 
 
@@ -1137,29 +1139,19 @@ class WhatsAppReviewTests(WhatsAppReviewBase):
         for row_id, title, description in rows:
             self.assertLessEqual(len(title), 24)
             self.assertLessEqual(len(description), 72)
-        ids = [r[0] for r in rows]
-        self.assertEqual(ids[-1], 'more')
-        self.assertIn('item:0', ids)                  # the product, which opens its details
-        self.assertIn('field:company_name', ids)
+        self.assertEqual([r[0] for r in rows], ['field:company_name', 'field:contact_email', 'field:gst_number', 'item:0'])
 
     def test_every_answer_can_be_reached_from_the_lists(self):
-        first = whatsapp._change_list_step(self.query)[3]
-        second = whatsapp._change_list_step(self.query, page_two=True)[3]
-        reachable = {r[0].split(':', 1)[1] for r in first + second if r[0].startswith('field:')}
+        rows = whatsapp._change_list_step(self.query)[3]
+        reachable = {r[0].split(':', 1)[1] for r in rows if r[0].startswith('field:')}
         self.assertEqual(reachable, {key for key, _ in whatsapp.WHATSAPP_QUERY_REVIEW_FIELDS})
         details = whatsapp._item_field_list_step(self.query, 0)[3]
         self.assertEqual({r[0].split(':', 1)[1] for r in details if r[0].startswith('field:')},
                          {key for key, _ in whatsapp.WHATSAPP_ITEM_REVIEW_FIELDS})
-        for rows in (first, second, details):
-            self.assertLessEqual(len(rows), 10)
-
-    def test_more_and_back_move_between_the_lists(self):
-        self._tap_button('Change something')
-        self._tap_row('more')
-        self.assertEqual(self._refresh().bot_stage, 'pick_more')
-        self.assertIn('field:end_use', [r[0] for r in self._last_steps()[0][3]])
-        self._tap_row('back')
-        self.assertEqual(self._refresh().bot_stage, 'pick_field')
+        self.assertLessEqual(len(rows), 10)
+        self.assertLessEqual(len(details), 10)   # Meta's limit: nine details and "← Back"
+        # the company details are the only things asked once for the whole query
+        self.assertEqual({key for key, _ in whatsapp.WHATSAPP_QUERY_REVIEW_FIELDS}, {'company_name', 'contact_email', 'gst_number'})
 
     def test_choosing_a_query_answer_asks_its_question_again(self):
         self._start_editing('field:contact_email')
@@ -1170,8 +1162,9 @@ class WhatsAppReviewTests(WhatsAppReviewBase):
     def test_choosing_the_product_opens_its_details_and_a_detail_asks_its_question_again(self):
         self._start_editing('item:0')
         self.assertEqual(self._refresh().bot_stage, 'pick_item_field')
-        self.assertEqual({r[0] for r in self._last_steps()[0][3]}, {'field:product_category', 'field:grade', 'field:width',
-                                                                    'field:thickness', 'field:delivery_form', 'field:quantity', 'back'})
+        self.assertEqual({r[0] for r in self._last_steps()[0][3]},
+                         {'field:product_category', 'field:drawing', 'field:grade', 'field:width', 'field:thickness',
+                          'field:technical_requirements', 'field:end_use', 'field:delivery_form', 'field:quantity', 'back'})
         self._tap_row('field:width')
         query = self._refresh()
         self.assertEqual((query.bot_stage, query.edit_field), ('editing', 'item:0:width'))
@@ -1249,9 +1242,9 @@ class WhatsAppReviewTests(WhatsAppReviewBase):
             ('field:company_name',): ('New Traders', lambda q, i: q.company_name == 'New Traders'),
             ('field:contact_email',): ('new@example.com', lambda q, i: q.contact_email == 'new@example.com'),
             ('field:gst_number',): ('06AAAAA0000A1Z5, 9 New Road', lambda q, i: (q.gst_number, q.gst_address) == ('06AAAAA0000A1Z5', '9 New Road')),
-            ('field:technical_requirements',): ('Tata make', lambda q, i: q.technical_requirements == 'Tata make'),
-            ('field:end_use',): ('gear shafts', lambda q, i: q.end_use == 'gear shafts'),
-            ('field:drawing',): ('no drawing', lambda q, i: q.drawing_notes == 'no drawing'),
+            ('item:0', 'field:technical_requirements'): ('Tata make', lambda q, i: i.technical_requirements == 'Tata make'),
+            ('item:0', 'field:end_use'): ('gear shafts', lambda q, i: i.end_use == 'gear shafts'),
+            ('item:0', 'field:drawing'): ('no drawing', lambda q, i: i.drawing_notes == 'no drawing'),
             ('item:0', 'field:thickness'): ('8', lambda q, i: i.thickness == Decimal('8')),
             ('item:0', 'field:quantity'): ('12000', lambda q, i: i.quantity == Decimal('12000')),
             ('item:0', 'field:delivery_form'): ('Bar', lambda q, i: i.delivery_form == 'Bar'),
@@ -1290,15 +1283,16 @@ class WhatsAppReviewTests(WhatsAppReviewBase):
         self.assertIsNone(self._items()[0].product_type)
 
     def test_a_text_answer_replaces_an_attached_drawing(self):
-        self.query.drawing.save('old.pdf', ContentFile(b'%PDF old'), save=True)
-        self.addCleanup(lambda: self.query.drawing and self.query.drawing.delete(save=False))
+        item = self._items()[0]
+        item.drawing.save('old.pdf', ContentFile(b'%PDF old'), save=True)
+        self.addCleanup(lambda: item.drawing and item.drawing.delete(save=False))
         self.assertIn('File attached', whatsapp._summary_text(self._refresh()))
-        self._start_editing('field:drawing')
+        self._start_editing('item:0', 'field:drawing')
         self._text('no')
         self._tap_button('Yes, save it')
-        query = self._refresh()
-        self.assertFalse(query.drawing)
-        self.assertEqual(query.drawing_notes, 'no')
+        item = self._items()[0]
+        self.assertFalse(item.drawing)
+        self.assertEqual(item.drawing_notes, 'no')
 
     def test_a_window_that_has_closed_sends_nothing_but_the_change_still_works(self):
         self.query.last_inbound_at = timezone.now() - timedelta(days=2)
@@ -1398,24 +1392,35 @@ class WhatsAppMultiProductIntakeTests(WhatsAppReviewBase):
         return self.query
 
     def test_the_count_comes_first_and_creates_that_many_products(self):
-        for text, expected in [('3', 3), ('three', 3), ('2 products', 2), ('5', 5)]:
+        for text, expected in [('3', 3), ('three', 3), ('2 products', 2), ('1', 1)]:
             with self.subTest(text=text):
                 Query.objects.filter(contact_phone=self.PHONE).delete()
                 _query_awaiting('item_count', phone=self.PHONE)
                 self._reply(text)
                 self.assertEqual(Query.objects.get(contact_phone=self.PHONE).items.count(), expected)
 
+    def test_more_than_the_limit_is_refused_with_the_limit_explained(self):
+        for text in ('4', 'five', '10'):
+            with self.subTest(text=text):
+                Query.objects.filter(contact_phone=self.PHONE).delete()
+                _query_awaiting('item_count', phone=self.PHONE)
+                with patch('materials.views.whatsapp._send_whatsapp_list_message_background') as asked:
+                    self._reply(text)
+                self.assertEqual(Query.objects.get(contact_phone=self.PHONE).items.count(), 0)
+                self.assertIn('up to 3 products', ' '.join(str(c) for c in self.say.call_args_list))
+                asked.assert_called_once()   # the 1-3 list again
+
     def test_a_bad_count_is_asked_again_and_creates_nothing(self):
-        for text in ('6', '0', 'lots'):
+        for text in ('0', 'lots'):
             with self.subTest(text=text):
                 Query.objects.filter(contact_phone=self.PHONE).delete()
                 _query_awaiting('item_count', phone=self.PHONE)
                 self._reply(text)
                 self.assertEqual(Query.objects.get(contact_phone=self.PHONE).items.count(), 0)
 
-    def test_the_count_question_is_a_list_of_one_to_five(self):
+    def test_the_count_question_is_a_list_of_one_to_three(self):
         rows = whatsapp._item_count_rows()
-        self.assertEqual([r[0] for r in rows], [f'count:{n}' for n in range(1, 6)])
+        self.assertEqual([r[0] for r in rows], ['count:1', 'count:2', 'count:3'])
 
     def test_a_list_with_one_value_per_product_fills_them_in_order(self):
         self._awaiting('width')
@@ -1435,12 +1440,46 @@ class WhatsAppMultiProductIntakeTests(WhatsAppReviewBase):
         sent = ' '.join(str(c) for c in self.say.call_args_list)
         self.assertIn('Product 2:', sent)
 
-    def test_product_types_and_delivery_forms_are_read_from_lists(self):
+    def test_the_product_type_is_asked_once_per_product_as_a_tap_list(self):
         self._awaiting('product_category')
-        self._reply('Flat Bright Bar, Square Bright Bar, Flat Bright Bar')
+        with patch('materials.views.whatsapp._send_whatsapp_list_message_background') as asked:
+            self._reply('Flat Bright Bar')
+            first = asked.call_args[0]
+            self._reply('Square Bright Bar')
+            second = asked.call_args[0]
+            self._reply('Flat Bright Bar')
         self.assertEqual([i.product_category.name for i in self._items()],
                          ['Flat Bright Bar', 'Square Bright Bar', 'Flat Bright Bar'])
-        Query.objects.filter(contact_phone=self.PHONE).delete()
+        self.assertEqual(asked.call_count, 2)   # a list for product 2 and for product 3; product 1's was asked before
+        self.assertTrue(first[1].startswith('Product 2 of 3: '))
+        self.assertTrue(second[1].startswith('Product 3 of 3: '))
+        self.assertEqual(first[3][0][0].split(':')[0], 'category')   # tappable rows
+
+    def test_an_unrecognised_product_type_asks_the_same_product_again(self):
+        self._awaiting('product_category')
+        with patch('materials.views.whatsapp._send_whatsapp_list_message_background') as asked:
+            self._reply('something odd')
+        self.assertEqual([i.product_category_id for i in self._items()], [None, None, None])
+        self.assertTrue(asked.call_args[0][1].startswith('Product 1 of 3: '))
+
+    def test_delivery_forms_are_read_from_a_list(self):
         self._awaiting('delivery_form')
         self._reply('coil, bar, coil')
         self.assertEqual([i.delivery_form for i in self._items()], ['Coil', 'Bar', 'Coil'])
+
+    def test_end_use_is_asked_one_product_at_a_time_and_may_contain_commas(self):
+        self._awaiting('end_use')
+        self._reply('automotive shafts, gears and pins')
+        self.assertEqual([i.end_use for i in self._items()], ['automotive shafts, gears and pins', '', ''])
+        self.assertIn('Product 2 of 3: ' + WHATSAPP_QUERY_QUESTIONS['end_use'], ' '.join(str(c) for c in self.say.call_args_list))
+        self._reply('machine parts')
+        self.assertEqual([i.end_use for i in self._items()][:2], ['automotive shafts, gears and pins', 'machine parts'])
+
+    def test_the_drawing_is_asked_for_each_product_in_turn(self):
+        self._awaiting('drawing')
+        self._reply('no')
+        self.assertEqual([i.drawing_notes for i in self._items()], ['no', '', ''])
+        self.assertIn('Product 2 of 3: ', ' '.join(str(c) for c in self.say.call_args_list))
+        self._reply('sample coming by post')
+        self._reply('no')
+        self.assertEqual([i.drawing_notes for i in self._items()], ['no', 'sample coming by post', 'no'])

@@ -9,7 +9,7 @@ from django.urls import reverse
 from django.utils import timezone
 from unittest.mock import patch
 
-from ..models import Customer, Order, ProductCategory, ProductType, Query, Quotation
+from ..models import Customer, Order, ProductCategory, ProductType, Query, QueryItem, Quotation
 from ..views.whatsapp import (
     WhatsAppSendError,
     WHATSAPP_QUERY_INTAKE_TEMPLATE,
@@ -375,10 +375,8 @@ class QueryIntakeDetailsTests(TestCase):
             ('GST number', '22AAAAA0000A1Z5'),
             ('GST address', '12 Industrial Area, Faridabad'),
         ])
-        self.assertEqual(self.query.requirement_rows(), [
-            ('Make / properties / process', 'Tata make'),
-            ('End use', ''),  # blank rows are kept so the detail page can show a dash
-        ])
+        item = self.query.items.get()   # make / properties / process and end use belong to the product now
+        self.assertEqual((item.technical_requirements, item.end_use), ('Tata make', ''))
 
     def test_dashboard_shows_only_name_and_number(self):
         html = self.client.get(reverse('query_dashboard')).content.decode()
@@ -405,6 +403,7 @@ class QueryIntakeDetailsTests(TestCase):
 
     def test_detail_page_shows_a_dash_for_unanswered_fields(self):
         bare = Query.objects.create(source='call', contact_phone='9000000000')
+        QueryItem.objects.create(query=bare)
         response = self.client.get(reverse('query_detail', kwargs={'pk': bare.pk}))
         self.assertContains(response, 'GST number')
         self.assertContains(response, 'Make / properties / process')
@@ -442,28 +441,31 @@ class QueryIntakeDetailsTests(TestCase):
         return self.client.post(reverse('query_edit', kwargs={'pk': self.query.pk}), query_edit_data(self.query, rows=rows, **overrides))
 
     def test_edit_saves_intake_fields_and_normalises_the_gst_number(self):
-        response = self._edit(gst_number=' 27 bbbbb 1111 b 1z6 ', end_use='shafts', technical_requirements='polishing')
+        item = self.query.items.get()
+        response = self._edit(rows=[{**item_row(item), 'end_use': 'shafts', 'technical_requirements': 'polishing'}],
+                              gst_number=' 27 bbbbb 1111 b 1z6 ')
         self.assertRedirects(response, reverse('query_dashboard'))
         self.query.refresh_from_db()
         self.assertEqual(self.query.gst_number, '27BBBBB1111B1Z6')
-        self.assertEqual(self.query.end_use, 'shafts')
-        self.assertEqual(self.query.technical_requirements, 'polishing')
+        item.refresh_from_db()
+        self.assertEqual(item.end_use, 'shafts')
+        self.assertEqual(item.technical_requirements, 'polishing')
 
     def test_edit_rejects_a_malformed_gst_number_and_saves_nothing(self):
         for bad in ('X' * 20, 'NA', '22AAAAA0000A1Z', 'not a gstin'):
             with self.subTest(gst_number=bad):
-                response = self._edit(gst_number=bad, end_use='should not be saved')
+                item = self.query.items.get()
+                response = self._edit(rows=[{**item_row(item), 'end_use': 'should not be saved'}], gst_number=bad)
                 self.assertContains(response, 'error-msg')
                 self.query.refresh_from_db()
                 self.assertEqual(self.query.gst_number, '22AAAAA0000A1Z5')
-                self.assertEqual(self.query.end_use, '')
+                self.assertEqual(self.query.items.get().end_use, '')
 
     def test_edit_rejects_a_delivery_form_that_is_not_coil_or_bar(self):
         item = self.query.items.get()
-        response = self._edit(rows=[{**item_row(item), 'delivery_form': 'Sheet'}], end_use='should not be saved')
+        response = self._edit(rows=[{**item_row(item), 'delivery_form': 'Sheet', 'end_use': 'should not be saved'}])
         self.assertContains(response, 'error-msg')
-        self.query.refresh_from_db()
-        self.assertEqual(self.query.end_use, '')
+        self.assertEqual(self.query.items.get().end_use, '')
         self.assertEqual(self.query.items.get().delivery_form, '')
 
     def test_edit_form_offers_delivery_form_as_a_coil_or_bar_dropdown_per_product(self):

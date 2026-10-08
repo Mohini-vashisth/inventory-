@@ -269,12 +269,13 @@ def quote_form(request, token):
     # What the customer already told us on WhatsApp, so they aren't asked twice. The
     # query keeps delivery form as "Coil"/"Bar"; the order's choices are lower-case.
     query_items = list(query.items.order_by('position', 'pk')) if query else []
-    from_query = {'end_usage': query.end_use} if query else {}
+    from_query = {}   # per-product answers (end use, drawing) are read from each query item below
 
     if items:
         # The delivery form was asked per product, so line k takes it from the query's product k (a prefill only).
         initial = [{'line_item': item.pk, 'quantity': item.quantity, **from_query,
-                    'delivery_form': query_items[k].delivery_form.lower() if k < len(query_items) else ''}
+                    'delivery_form': query_items[k].delivery_form.lower() if k < len(query_items) else '',
+                    'end_usage': query_items[k].end_use if k < len(query_items) else ''}
                    for k, item in enumerate(items)]
         formset = (OrderItemFormSet(request.POST, request.FILES, prefix='item') if request.method == 'POST'
                    else OrderItemFormSet(initial=initial, prefix='item'))
@@ -286,13 +287,19 @@ def quote_form(request, token):
             else:
                 po = request.FILES.get('purchase_order')
                 po_bytes = po.read() if po else None
-                # A drawing the customer already sent on WhatsApp is used for any item they attach none to.
-                query_drawing = None
-                if query and query.drawing:
-                    with query.drawing.open('rb') as handle:
-                        query_drawing = (os.path.basename(query.drawing.name), handle.read())
+                # A drawing the customer already sent on WhatsApp for that product is used for any item
+                # they attach none to.
+                query_drawings = []
+                for k in range(len(items)):
+                    drawing = query_items[k].drawing if k < len(query_items) else None
+                    if drawing:
+                        with drawing.open('rb') as handle:
+                            query_drawings.append((os.path.basename(drawing.name), handle.read()))
+                    else:
+                        query_drawings.append(None)
                 with transaction.atomic():
-                    for item_form, item in zip(formset.forms, items):
+                    for k, (item_form, item) in enumerate(zip(formset.forms, items)):
+                        query_drawing = query_drawings[k]
                         order = item_form.save(commit=False)
                         order.customer = customer
                         order.source_query = query
@@ -336,6 +343,7 @@ def quote_form(request, token):
             'delivery_form': first.delivery_form.lower() if first else '',
             'product_category': str(first.product_category_id or '') if first else '',
             'grade': first.grade if first else '',
+            'end_usage': first.end_use if first else '',
             'width': str(first.width) if first and first.width is not None else '',
             'thickness': str(first.thickness) if first and first.thickness is not None else '',
             'quantity': str(first.quantity) if first and first.quantity is not None else '',
