@@ -1018,6 +1018,10 @@ class Order(models.Model):
     def width_text(self):
         return format(self.width.normalize(), 'f') if self.width is not None else ''
 
+    def size_text(self):
+        """"16 x 8": width x thickness in mm, whichever are known (the short form the picking pages show)."""
+        return ' x '.join(part for part in (self.width_text(), self.thickness_text()) if part)
+
     def thickness_text(self):
         return format(self.thickness.normalize(), 'f') if self.thickness is not None else ''
 
