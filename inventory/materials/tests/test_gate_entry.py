@@ -543,3 +543,12 @@ class GateEntryUppercaseTests(TestCase):
         session.save()
         for name in ('gate_entry_form',):
             self.assertContains(self.client.get(reverse(name)), "autocapitalize', 'characters'")
+
+
+    def test_heat_no_is_stored_in_capitals(self):
+        from ..forms import MaterialForm
+        GradeOption.objects.get_or_create(name='EN8D')
+        SizeOption.objects.get_or_create(value='1.200')
+        form = MaterialForm({'grade': 'EN8D', 'size': '1.2', 'vendor': 'ABC', 'company': 'TATA', 'quantity': '500', 'heat_no': ' 21e02404 '})
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data['heat_no'], '21E02404')
