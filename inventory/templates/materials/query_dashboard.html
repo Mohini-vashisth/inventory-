@@ -4,10 +4,10 @@
 
 {% block css %}
     
-    body { font-family: Arial, Helvetica, sans-serif; background: #f4f6f9; color: #333; }
+    body { font-family: Arial, Helvetica, sans-serif; background: #f3f4f2; color: #333; }
 
     header {
-      background: #4e73df; color: white;
+      background: #2f7d5b; color: white;
       padding: 1rem 2rem;
       display: flex; justify-content: space-between; align-items: center;
     }
@@ -42,11 +42,11 @@
       padding: 0.55rem 0.75rem; border: 1px solid #ddd;
       border-radius: 8px; font-size: 0.9rem; width: 100%;
     }
-    input:focus, select:focus, textarea:focus { outline: none; border-color: #4e73df; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #2f7d5b; }
 
     .submit-row { display: flex; justify-content: flex-end; margin-top: 1rem; }
     .btn-primary {
-      padding: 0.65rem 2rem; background: #4e73df; color: white;
+      padding: 0.65rem 2rem; background: #2f7d5b; color: white;
       border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
     }
 
@@ -56,18 +56,18 @@
 
     table { width: 100%; border-collapse: collapse; }
     th {
-      background: #f8f9fb; padding: 0.65rem 1rem; text-align: left;
+      background: #f7f7f5; padding: 0.65rem 1rem; text-align: left;
       font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
       color: #888; font-weight: 600; white-space: nowrap;
     }
     td { padding: 0.75rem 1rem; border-top: 1px solid #f0f0f0; font-size: 0.88rem; vertical-align: middle; }
-    tr:hover td { background: #fafbff; }
+    tr:hover td { background: #f9fbf9; }
 
     .badge {
       display: inline-block; padding: 0.25rem 0.65rem;
       border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap;
     }
-    .badge-new             { background: #dbeafe; color: #1e40af; }
+    .badge-new             { background: #e5e7eb; color: #374151; }
     .badge-quote_sent      { background: #fef3c7; color: #92400e; }
     .badge-converted       { background: #dcfce7; color: #166534; }
     .badge-not_interested  { background: #f3f4f6; color: #6b7280; }
@@ -75,7 +75,7 @@
     .icon-btn {
       background: #f3f4f6; border: 1px solid #ddd;
       border-radius: 6px; padding: 0.25rem 0.65rem;
-      font-size: 0.75rem; cursor: pointer; color: #4e73df;
+      font-size: 0.75rem; cursor: pointer; color: #2f7d5b;
       display: inline-block; text-decoration: none;
     }
     
@@ -204,7 +204,7 @@
             {% if latest %}
             <div class="muted" style="font-size:0.78em; margin-top:0.3rem;">
               <span style="white-space:nowrap;">Quote sent {{ latest.sent_at|date:"d M Y" }}</span>{% if query.quote_revision %} · <span style="white-space:nowrap;">Rev {{ query.quote_revision }}</span>{% endif %}
-              {% if query.quote_revision %}<br><a href="{% url 'query_detail' query.pk %}#quotations" style="color:#4e73df; text-decoration:none;">View all {{ query.quote_revision|add:1 }} quotes</a>{% endif %}
+              {% if query.quote_revision %}<br><a href="{% url 'query_detail' query.pk %}#quotations" style="color:#2f7d5b; text-decoration:none;">View all {{ query.quote_revision|add:1 }} quotes</a>{% endif %}
             </div>
             {% endif %}
             {% endwith %}

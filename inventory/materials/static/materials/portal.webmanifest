@@ -5,8 +5,8 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#1a56a0",
-  "theme_color": "#1a56a0",
+  "background_color": "#2f3a35",
+  "theme_color": "#2f3a35",
   "icons": [
     {
       "src": "/static/materials/portal-icon-192.png",
