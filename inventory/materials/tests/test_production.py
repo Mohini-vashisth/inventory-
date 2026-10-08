@@ -247,3 +247,20 @@ class SelectJobForCoilTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, job1.job_no)
         self.assertContains(response, job2.job_no)
+
+
+class ProductionBoardScanLinkTests(TestCase):
+    def test_scan_to_update_is_a_link_to_the_scan_page(self):
+        from ..models import Order, ProcessStep, ProductionJob, StepLog
+        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        customer = Customer.objects.create(name='Board Co')
+        code = ProductType.objects.create(item_code='BOARD1', grade='EN8D')
+        ProcessStep.objects.create(product_type=code, name='Drawing', order=1)
+        order = Order.objects.create(customer=customer, product_type=code, grade='EN8D', quantity=100, status='in_production')
+        coil = Material.objects.create(grade='EN8D', quantity=500)
+        pick = OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=100)
+        job = ProductionJob.objects.create(pick=pick, order=order, product_type=code)
+        step = ProcessStep.objects.get(product_type=code)
+        StepLog.objects.create(job=job, step=step, status='pending')
+        page = self.client.get(reverse('production_board')).content.decode()
+        self.assertIn(f'<a href="{reverse("select_job_for_coil")}" class="btn-update">', page)

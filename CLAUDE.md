@@ -232,7 +232,7 @@ Checked once, at `order_confirm` (`materials/views/orders.py`) — not at quote 
 3. Update Progress — gated behind scanning/typing the coil's own number, the same way coil picking is gated behind scanning the coil being picked:
    - Scan gate → `/scan-job/` (`materials/views/production.py::select_job_for_coil`) — scan or type a coil number; looks up every `ProductionJob` linked to that coil via `ProductionJob.objects.filter(pick__coil=coil)`. Exactly one job → redirects straight into it. Zero jobs → error ("hasn't been picked for any order yet"). More than one (a coil split across multiple orders, so multiple `OrderCoilPick`s/jobs) → shows a small picker to choose which job.
    - `/job/<pk>/` to tick steps, one job per picked coil.
-   - `/production-board/` is now **read-only** — an overview of every in-production order's jobs and current step, with a "📷 Scan to update" badge instead of a link (reachable from the scan gate's "View all jobs →", and vice versa) — this and the scan gate deliberately don't cross-link into `job_detail` directly, so updating progress always goes through the scan step.
+   - `/production-board/` is now **read-only** — an overview of every in-production order's jobs and current step, with a "📷 Scan to update" button that opens the scan gate (it used to be an unclickable label that looked like a button; it is reachable from the scan gate's "View all jobs →", and vice versa) — the board deliberately never links into `job_detail` directly, so updating progress always goes through the scan step.
 
 ### Camera QR scanning (`materials/static/materials/coil_scan.js`)
 
