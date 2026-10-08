@@ -156,6 +156,7 @@
     <div class="label">Order ORD-{{ order.order_no|stringformat:"04d" }}</div>
     <div class="company">{{ order.customer.name }}</div>
     <div class="meta">
+      {% if order.product_type_name %}<span>🏷️ {{ order.product_type_name }}</span>{% endif %}
       {% if order.grade %}<span>📐 Grade: {{ order.grade }}</span>{% endif %}
       {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
       {% if order.product_type %}<span>🔧 {{ order.product_type.item_code }}</span>{% endif %}
