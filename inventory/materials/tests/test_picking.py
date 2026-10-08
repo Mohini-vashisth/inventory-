@@ -329,5 +329,5 @@ class PickingPagesShowSizeTests(TestCase):
     def test_the_pages_show_the_size_and_not_the_product_code(self):
         for url in (reverse('select_order'), reverse('select_coil_for_order', args=[self.order.pk])):
             page = self.client.get(url).content.decode()
-            self.assertIn('16 x 8', page, url)
+            self.assertIn('16 x 8 mm', page, url)
             self.assertNotIn('ZZCODE9', page, url)
