@@ -165,3 +165,46 @@ class PortalManifestTests(TestCase):
         self.assertEqual((manifest['display'], manifest['start_url']), ('standalone', '/welcome/'))
         for icon in manifest['icons']:
             self.assertTrue(finders.find(icon['src'].replace('/static/', '')), icon['src'])
+
+
+class ScreenOffReturnsToWelcomeTests(TestCase):
+    """On the installed tablet app, coming back after the screen was off goes to the Welcome page (PIN
+    again). The script lives in one partial that only the employee portal pages include."""
+
+    PORTAL_PAGES = ['select_gate_entry', 'gate_entry_form', 'gate_entry_lot_form', 'gate_entry_detail', 'gate_entry_edit',
+                    'select_order', 'select_coil_for_order', 'pick_coil_for_order', 'select_job_for_coil', 'job_detail',
+                    'production_board', 'material_form', 'employee_landing']
+
+    @staticmethod
+    def _source(name):
+        return (Path(settings.BASE_DIR) / 'templates' / 'materials' / f'{name}.html').read_text()
+
+    def test_every_portal_page_includes_it(self):
+        for name in self.PORTAL_PAGES:
+            with self.subTest(page=name):
+                self.assertIn('{% include "materials/_screen_off_welcome.html" %}', self._source(name))
+
+    def test_it_is_in_no_other_page(self):
+        folder = Path(settings.BASE_DIR) / 'templates'
+        for path in folder.rglob('*.html'):
+            if path.name.startswith('_') or path.stem in self.PORTAL_PAGES:
+                continue
+            with self.subTest(page=path.name):
+                self.assertNotIn('_screen_off_welcome', path.read_text())   # welcome, login, customer and staff pages
+
+    def test_the_script_only_acts_in_the_installed_app_and_ignores_short_spells(self):
+        script = self._source('_screen_off_welcome')
+        self.assertIn("(display-mode: standalone)", script)
+        self.assertIn('visibilitychange', script)
+        self.assertIn('MIN_AWAY_MS = 2000', script)
+        self.assertIn('event.persisted', script)
+        self.assertIn("window.location.replace", script)
+
+    def test_the_rendered_portal_home_carries_it_with_the_welcome_url(self):
+        session = self.client.session
+        session['employee_auth'] = True
+        session.save()
+        page = self.client.get(reverse('employee')).content.decode()
+        self.assertIn('window.location.replace("/welcome/")', page)
+        self.assertNotIn('window.location.replace', self.client.get(reverse('welcome')).content.decode())
+        self.assertNotIn('window.location.replace', self.client.get(reverse('employee_login')).content.decode())

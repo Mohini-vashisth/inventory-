@@ -1,0 +1,23 @@
+<script>
+  // The installed tablet app only: when the screen is turned off (or the app is put away) and comes back,
+  // go to the Welcome page so the PIN is asked again. A hidden spell under about two seconds is ignored,
+  // so a camera permission prompt or a file picker doesn't bounce someone mid-task. No inactivity timer.
+  // Ordinary browser tabs (PCs) are not touched: this does nothing outside the standalone display mode.
+  (function () {
+    if (!window.matchMedia || !window.matchMedia('(display-mode: standalone)').matches) return;
+    var MIN_AWAY_MS = 2000;
+    var hiddenAt = null;
+    function goToWelcome() { window.location.replace("{% url 'welcome' %}"); }
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now();
+      } else if (hiddenAt !== null) {
+        var away = Date.now() - hiddenAt;
+        hiddenAt = null;
+        if (away >= MIN_AWAY_MS) goToWelcome();
+      }
+    });
+    // A page restored from the back/forward cache didn't reload, so treat it the same way.
+    window.addEventListener('pageshow', function (event) { if (event.persisted) goToWelcome(); });
+  })();
+</script>
