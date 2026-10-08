@@ -1,50 +1,14 @@
 {% extends "materials/base.html" %}
 
+{% block body_attrs %} class="ds"{% endblock %}
 {% block title %}Edit Query{% endblock %}
 
 {% block css %}
-    
-    body { font-family: Arial, Helvetica, sans-serif; background: #f3f4f2; color: #333; }
-
-    header {
-      background: #2f7d5b; color: white;
-      padding: 1rem 2rem;
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    header h1 { font-size: 1.3rem; }
-    .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; margin-left: 1.25rem; }
-
     .content { max-width: 700px; margin: 2rem auto; padding: 0 1.5rem; }
-
-    .card {
-      background: white; border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-      overflow: hidden;
-    }
-    .card-header {
-      padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0;
-      font-size: 1rem; font-weight: 600;
-    }
-    .card-body { padding: 1.75rem; }
-
     
 
     .form-group { display: flex; flex-direction: column; }
-    label {
-      font-size: 0.72rem; color: #888; margin-bottom: 0.3rem;
-      font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
-    }
-    input, select, textarea {
-      padding: 0.55rem 0.75rem; border: 1px solid #ddd;
-      border-radius: 8px; font-size: 0.9rem; width: 100%;
-    }
-    input:focus, select:focus, textarea:focus { outline: none; border-color: #2f7d5b; }
-
     .submit-row { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 1rem; }
-    .btn-primary {
-      padding: 0.65rem 2rem; background: #2f7d5b; color: white;
-      border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
-    }
     
     .btn-secondary {
       padding: 0.65rem 1.5rem; background: white; color: #666;
@@ -52,13 +16,11 @@
       cursor: pointer; text-decoration: none; display: inline-flex; align-items: center;
     }
     .btn-secondary:hover { background: #f7f7f5; }
-
     .section-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #2f7d5b; margin: 1.1rem 0 0.6rem; padding-bottom: 0.3rem; border-bottom: 1px solid #e4ece6; }
     .item-row { border: 1px solid #e4ece6; border-radius: 10px; padding: 0.9rem 1rem 0.3rem; margin-bottom: 0.9rem; background: #f9fbf9; }
     .item-row[hidden] { display: none; }
     .item-row-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.7rem; font-size: 0.9rem; }
     .item-row .code-hint { font-size: 0.75rem; }
-
     @media (max-width: 640px) {
       header { padding: 1rem; flex-wrap: wrap; gap: 0.5rem; }
       .content { padding: 0 0.85rem; margin: 1rem auto; }
@@ -69,14 +31,11 @@
 {% endblock %}
 
 {% block content %}
-<header>
-  <h1>Edit Query</h1>
-  <div>
+<div class="content">
+  <div class="ds-top">
     <a href="{% url 'query_dashboard' %}" class="back-link">← Back to Query Dashboard</a>
   </div>
-</header>
-
-<div class="content">
+  <h1>Edit Query</h1>
   <div class="card">
     <div class="card-header">{{ query.company_name|default:query.contact_phone }}</div>
     <div class="card-body">

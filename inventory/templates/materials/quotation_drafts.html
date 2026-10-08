@@ -1,42 +1,12 @@
 {% extends "materials/base.html" %}
 
+{% block body_attrs %} class="ds"{% endblock %}
 {% block title %}Draft Quotations{% endblock %}
 
 {% block css %}
-    
-    body { font-family: Arial, Helvetica, sans-serif; background: #f3f4f2; color: #333; }
-
-    header {
-      background: #2f7d5b; color: white;
-      padding: 1rem 2rem;
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    header h1 { font-size: 1.3rem; }
-    .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; }
-
     .content { max-width: 900px; margin: 2rem auto; padding: 0 1.5rem; }
-
-    .card {
-      background: white; border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-      overflow: hidden;
-    }
-    .card-header {
-      padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0;
-      font-size: 1rem; font-weight: 600;
-      display: flex; justify-content: space-between; align-items: center;
-    }
     .card-header span { color: #aaa; font-size: 0.85rem; font-weight: 400; }
-
-    table { width: 100%; border-collapse: collapse; }
-    th {
-      background: #f7f7f5; padding: 0.65rem 1rem; text-align: left;
-      font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
-      color: #888; font-weight: 600;
-    }
-    td { padding: 0.75rem 1rem; border-top: 1px solid #f0f0f0; font-size: 0.88rem; vertical-align: middle; }
     tr:hover td { background: #f9fbf9; }
-
     .icon-btn {
       background: #f3f4f6; border: 1px solid #ddd;
       border-radius: 6px; padding: 0.3rem 0.7rem;
@@ -46,7 +16,6 @@
     
     .icon-btn.red { background: #fee2e2; border-color: #fecaca; color: #991b1b; margin-left: 6px; }
     .icon-btn.red:hover { background: #fecaca; }
-
     
 
     
@@ -59,12 +28,11 @@
 {% endblock %}
 
 {% block content %}
-<header>
-  <h1>Draft Quotations</h1>
-  <a href="{% url 'order_dashboard' %}" class="back-link">← Back to Orders</a>
-</header>
-
 <div class="content">
+  <div class="ds-top">
+    <a href="{% url 'order_dashboard' %}" class="back-link">← Back to Orders</a>
+  </div>
+  <h1>Draft Quotations</h1>
   {% for msg in messages %}
   <div class="alert
     {% if msg.tags == 'success' %}alert-success

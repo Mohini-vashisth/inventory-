@@ -1,32 +1,10 @@
 {% extends "materials/base.html" %}
 
+{% block body_attrs %} class="ds"{% endblock %}
 {% block title %}ORD-{{ order.order_no|stringformat:"04d" }} – {{ order.customer.name }}{% endblock %}
 
 {% block css %}
-    body { font-family: Arial, Helvetica, sans-serif; background: #f3f4f2; color: #333; }
-
-    header {
-      background: #2f7d5b; color: white;
-      padding: 1rem 2rem;
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    header h1 { font-size: 1.3rem; }
-    .back-link { color: rgba(255,255,255,0.8); text-decoration: none; font-size: 0.9rem; margin-left: 1.25rem; }
-
     .content { max-width: 760px; margin: 2rem auto; padding: 0 1.5rem; }
-
-    .card {
-      background: white; border-radius: 12px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.07);
-      overflow: hidden; margin-bottom: 1.25rem;
-    }
-    .card-header {
-      padding: 1rem 1.5rem; border-bottom: 1px solid #f0f0f0;
-      font-size: 1rem; font-weight: 600;
-      display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
-    }
-    .card-body { padding: 1.25rem 1.5rem; }
-
     .rows { display: grid; grid-template-columns: 12rem 1fr; gap: 0.7rem 1rem; font-size: 0.9rem; }
     .rows dt {
       font-size: 0.72rem; color: #888; font-weight: 600;
@@ -35,17 +13,11 @@
     .rows dd { word-break: break-word; }
     .pre { white-space: pre-wrap; }
     .rows .blank { color: #bbb; }
-
-    .badge {
-      display: inline-block; padding: 0.25rem 0.65rem;
-      border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap;
-    }
     .badge-pending       { background: #fef3c7; color: #92400e; }
     .badge-confirmed     { background: #e5e7eb; color: #374151; }
     .badge-in_production { background: #d1fae5; color: #065f46; }
     .badge-completed     { background: #dcfce7; color: #166534; }
     .badge-cancelled     { background: #fee2e2; color: #991b1b; }
-
     .actions form { display: inline; }
     .action-btn {
       border: 1px solid #ddd; border-radius: 6px; padding: 0.3rem 0.8rem;
@@ -60,7 +32,6 @@
     table.picks { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
     table.picks th { text-align: left; font-size: 0.72rem; text-transform: uppercase; color: #888; padding: 0.4rem 0.5rem; }
     table.picks td { padding: 0.5rem; border-top: 1px solid #f0f0f0; }
-
     @media (max-width: 640px) {
       header { padding: 1rem; flex-wrap: wrap; gap: 0.5rem; }
       .content { padding: 0 0.85rem; margin: 1rem auto; }
@@ -68,17 +39,15 @@
       .rows { grid-template-columns: 1fr; gap: 0.15rem; }
       .rows dd { margin-bottom: 0.6rem; }
     }
+
 {% endblock %}
 
 {% block content %}
-<header>
-  <h1>Order Details</h1>
-  <div>
+<div class="content">
+  <div class="ds-top">
     <a href="{% url 'order_dashboard' %}" class="back-link">← Back to Orders</a>
   </div>
-</header>
-
-<div class="content">
+  <h1>Order Details</h1>
   {% for msg in messages %}
   <div class="alert {% if msg.tags == 'success' %}alert-success{% elif msg.tags == 'warning' %}alert-warning{% else %}alert-error{% endif %}">{{ msg }}</div>
   {% endfor %}
