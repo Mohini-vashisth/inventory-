@@ -285,18 +285,12 @@ class AllowedCoilSpec(models.Model):
     raw_material_ratio = models.DecimalField(
         max_digits=6, decimal_places=3, default=Decimal('1.000'),
         verbose_name="Raw material ratio",
-        help_text="kg of this raw material needed to produce 1 kg of finished "
-                  "product (e.g. 1.100 = 10% wastage). Used to convert an "
-                  "order's required quantity into how much of this raw "
-                  "material needs to be picked.",
     )
     notes = models.CharField(max_length=100, blank=True)
     # Which ordered sizes this spec is for. Blank on both = any size (the original behaviour); set one or both
     # to make it apply only to orders of exactly that width / thickness.
-    order_width = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="For ordered width (mm)",
-                                      help_text="Leave blank to apply whatever width is ordered.")
-    order_thickness = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="For ordered thickness (mm)",
-                                          help_text="Leave blank to apply whatever thickness is ordered.")
+    order_width = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="For ordered width (mm)")
+    order_thickness = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="For ordered thickness (mm)")
 
     def is_generic(self):
         return self.order_width is None and self.order_thickness is None
