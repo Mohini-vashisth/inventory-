@@ -278,9 +278,9 @@ class ProductType(models.Model):
 
 
 class AllowedCoilSpec(models.Model):
-    """Coil grades/sizes the admin approves for a given product type."""
+    """Raw coil sizes (and the wastage ratio) the admin approves for a product code. The coil's grade is not
+    part of the spec: it must always be the order's own grade."""
     product_type = models.ForeignKey(ProductType, on_delete=models.CASCADE, related_name='allowed_specs')
-    grade = GradeField(max_length=10, blank=True, verbose_name="Grade")
     size  = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Size (mm)")
     raw_material_ratio = models.DecimalField(
         max_digits=6, decimal_places=3, default=Decimal('1.000'),
@@ -304,12 +304,7 @@ class AllowedCoilSpec(models.Model):
         return True
 
     def __str__(self):
-        parts = []
-        if self.grade:
-            parts.append(self.grade)
-        if self.size:
-            parts.append(f"{self.size} mm")
-        text = f"{self.product_type.item_code} — {' / '.join(parts) or 'Any'}"
+        text = f"{self.product_type.item_code} — {f'{self.size} mm' if self.size else 'Any size'}"
         if not self.is_generic():
             sizes = ' x '.join(format(v.normalize(), 'f') for v in (self.order_width, self.order_thickness) if v is not None)
             text += f" (for {sizes} mm orders)"
@@ -350,9 +345,7 @@ class OrderCoilPick(models.Model):
         ratio = Decimal('1')
         if self.order.product_type:
             for spec in self.order.applicable_specs():
-                grade_matches = not spec.grade or spec.grade.lower() == (self.coil.grade or '').lower()
-                size_matches = not spec.size or spec.size == self.coil.size
-                if grade_matches and size_matches:
+                if not spec.size or spec.size == self.coil.size:
                     ratio = spec.raw_material_ratio
                     break
         return self.weight_allocated / ratio
@@ -992,6 +985,10 @@ class Order(models.Model):
     def is_fully_picked(self):
         return self.picked_output_weight() >= self.quantity
 
+    def required_grade(self):
+        """The grade a raw coil must have for this order: the order's own, else its product code's."""
+        return self.grade or (self.product_type.grade if self.product_type_id else '') or ''
+
     def applicable_specs(self):
         """The allowed coil specs that govern this order: those made for its exact size (width/thickness) if any
         apply, otherwise the size-less ones. Empty when none is configured, or when specs exist only for other
@@ -1019,10 +1016,10 @@ class Order(models.Model):
         total = Decimal('0')
         for spec in (specs or [None]):  # None = wildcard, matches any coil
             coils_qs = Material.objects.filter(archived_at__isnull=True)
+            if self.required_grade():
+                coils_qs = coils_qs.filter(grade__iexact=self.required_grade())
             ratio = Decimal('1')
             if spec is not None:
-                if spec.grade:
-                    coils_qs = coils_qs.filter(grade__iexact=spec.grade)
                 if spec.size:
                     coils_qs = coils_qs.filter(size=spec.size)
                 ratio = spec.raw_material_ratio

@@ -89,7 +89,7 @@ class RawMaterialAvailabilityTests(TestCase):
 
     def setUp(self):
         self.customer = Customer.objects.create(name='Stock Check Co')
-        self.product_type = ProductType.objects.create(item_code='Stock Bar', grade='X')
+        self.product_type = ProductType.objects.create(item_code='Stock Bar', grade='EN8D')
 
     def test_none_without_a_product_type(self):
         order = Order.objects.create(customer=self.customer, quantity=100)
@@ -97,7 +97,7 @@ class RawMaterialAvailabilityTests(TestCase):
         self.assertIsNone(order.has_sufficient_raw_material())
 
     def test_sums_matching_coils_only(self):
-        AllowedCoilSpec.objects.create(product_type=self.product_type, grade='EN8D', size='1.200')
+        AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
         Material.objects.create(quantity=300, grade='EN8D', size='1.200')
         Material.objects.create(quantity=200, grade='EN8D', size='1.200')
         Material.objects.create(quantity=500, grade='SAE1008', size='6.000')  # doesn't match, excluded
@@ -107,7 +107,7 @@ class RawMaterialAvailabilityTests(TestCase):
         self.assertTrue(order.has_sufficient_raw_material())
 
     def test_insufficient_when_stock_falls_short(self):
-        AllowedCoilSpec.objects.create(product_type=self.product_type, grade='EN8D', size='1.200')
+        AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
         Material.objects.create(quantity=100, grade='EN8D', size='1.200')
         order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=400)
 
@@ -117,7 +117,7 @@ class RawMaterialAvailabilityTests(TestCase):
     def test_ratio_reduces_available_output(self):
         """1.1 ratio means 110kg of raw material only yields 100kg of output."""
         AllowedCoilSpec.objects.create(
-            product_type=self.product_type, grade='EN8D', size='1.200',
+            product_type=self.product_type, size='1.200',
             raw_material_ratio=Decimal('1.100'),
         )
         Material.objects.create(quantity=110, grade='EN8D', size='1.200')
@@ -129,13 +129,13 @@ class RawMaterialAvailabilityTests(TestCase):
     def test_no_specs_configured_counts_any_coil(self):
         """Matches the wildcard fallback the picking flow already uses when
         a product type has no AllowedCoilSpecs configured."""
-        Material.objects.create(quantity=250, grade='ANYTHING', size='3.000')
+        Material.objects.create(quantity=250, grade='EN8D', size='3.000')
         order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
 
         self.assertEqual(order.available_raw_material_output(), Decimal('250'))
 
     def test_archived_coils_excluded(self):
-        AllowedCoilSpec.objects.create(product_type=self.product_type, grade='EN8D', size='1.200')
+        AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
         Material.objects.create(quantity=300, grade='EN8D', size='1.200', archived_at=timezone.now())
         order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
 
@@ -143,7 +143,7 @@ class RawMaterialAvailabilityTests(TestCase):
         self.assertFalse(order.has_sufficient_raw_material())
 
     def test_already_picked_weight_reduces_available_stock(self):
-        AllowedCoilSpec.objects.create(product_type=self.product_type, grade='EN8D', size='1.200')
+        AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
         coil = Material.objects.create(quantity=300, grade='EN8D', size='1.200')
         order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
         OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=250)
@@ -158,8 +158,8 @@ class OrderConfirmStockWarningTests(TestCase):
     def setUp(self):
         self.staff = User.objects.create_user('stock_staff', password='pw', is_staff=True)
         self.customer = Customer.objects.create(name='Confirm Stock Co')
-        self.product_type = ProductType.objects.create(item_code='Confirm Bar', grade='X')
-        AllowedCoilSpec.objects.create(product_type=self.product_type, grade='EN8D', size='1.200')
+        self.product_type = ProductType.objects.create(item_code='Confirm Bar', grade='EN8D')
+        AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
 
     def test_confirming_with_insufficient_stock_shows_warning(self):
         Material.objects.create(quantity=50, grade='EN8D', size='1.200')
