@@ -33,8 +33,7 @@ class OrderCoilPickCreationTests(TestCase):
         ProcessStep.objects.create(product_type=self.product_type, name='Heat treat', order=2)
         self.customer = Customer.objects.create(name='Pick Test Co')
         self.order = Order.objects.create(
-            customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed',
-        )
+            customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed', grade='EN8D')
 
     def test_order_without_product_type_creates_nothing(self):
         order = Order.objects.create(customer=self.customer, quantity=100, status='confirmed')
@@ -105,8 +104,7 @@ class SelectCoilForOrderSpecFilterTests(TestCase):
         self.product_type = ProductType.objects.create(item_code='Spec Bar', grade='EN8D')
         AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
         self.order = Order.objects.create(
-            customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed',
-        )
+            customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed', grade='EN8D')
 
     def test_only_matching_spec_coils_are_offered(self):
         matching = Material.objects.create(quantity=500, grade='EN8D', size='1.200')
@@ -139,8 +137,7 @@ class SelectCoilForOrderBestFitSortTests(TestCase):
         )
         # Order needs 100kg of output — with a 1:1 ratio, closest coil to 100kg wins.
         self.order = Order.objects.create(
-            customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed',
-        )
+            customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed', grade='EN8D')
 
     def test_closest_remaining_weight_listed_first(self):
         far = Material.objects.create(quantity=500, grade='EN8D', size='1.200')       # 500 remaining, diff 400
@@ -197,13 +194,13 @@ class OrderCoilPickRatioTests(TestCase):
             product_type=self.product_type, size='1.200',
             raw_material_ratio=Decimal('1.100'),
         )
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
+        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100, grade='EN8D')
         coil = self._coil(quantity=500, grade='EN8D', size='1.200')
         pick = OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=Decimal('110'))
         self.assertEqual(pick.output_equivalent(), Decimal('100'))
 
     def test_output_equivalent_falls_back_to_1to1_with_no_matching_spec(self):
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
+        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100, grade='EN8D')
         coil = self._coil(quantity=500, grade='UNLISTED', size='9.000')
         pick = OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=Decimal('50'))
         self.assertEqual(pick.output_equivalent(), Decimal('50'))
@@ -217,7 +214,7 @@ class OrderCoilPickRatioTests(TestCase):
             product_type=self.product_type, size='6.000',
             raw_material_ratio=Decimal('1.000'),
         )
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=150)
+        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=150, grade='EN8D')
         coil_a = self._coil(quantity=500, grade='EN8D', size='1.200')
         coil_b = self._coil(quantity=500, grade='SAE1008', size='6.000')
         OrderCoilPick.objects.create(order=order, coil=coil_a, weight_allocated=Decimal('110'))  # → 100 output
@@ -230,7 +227,7 @@ class OrderCoilPickRatioTests(TestCase):
             product_type=self.product_type, size='1.200',
             raw_material_ratio=Decimal('1.000'),
         )
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
+        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100, grade='EN8D')
         coil = self._coil(quantity=500, grade='EN8D', size='1.200')
         OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=Decimal('40'))
         self.assertFalse(order.is_fully_picked())
@@ -247,8 +244,7 @@ class ScanCoilForOrderTests(TestCase):
         self.product_type = ProductType.objects.create(item_code='Scan Bar', grade='EN8D')
         AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
         self.order = Order.objects.create(
-            customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed',
-        )
+            customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed', grade='EN8D')
 
     def test_scanning_formatted_tag_text_redirects_to_pick_screen(self):
         coil = Material.objects.create(quantity=500, grade='EN8D', size='1.200')
@@ -411,8 +407,17 @@ class CoilGradeMustMatchOrderTests(TestCase):
     def test_stock_count_ignores_other_grades(self):
         self.assertEqual(self.order.available_raw_material_output(), Decimal('500'))
 
-    def test_the_order_grade_wins_over_the_codes_grade(self):
-        self.order.grade = 'SS304'
-        self.assertEqual(self.order.required_grade(), 'SS304')
+    def test_an_order_without_a_grade_cannot_have_coils_picked(self):
+        from ..views.picking import _coil_matches_order_specs
         self.order.grade = ''
-        self.assertEqual(self.order.required_grade(), 'EN8D')   # falls back to the product code's grade
+        self.order.save()
+        self.assertFalse(_coil_matches_order_specs(self.same, self.order))   # even a coil of the code's own grade
+        page = self.client.get(reverse('select_coil_for_order', args=[self.order.pk]))
+        self.assertEqual(page.context['coils'], [])
+        self.assertContains(page, 'no grade set')
+        scan = self.client.post(reverse('select_coil_for_order', args=[self.order.pk]), {'coil_no': self.same.formatted_coil()})
+        self.assertContains(scan, 'no grade set')
+        confirm = self.client.get(reverse('pick_coil_for_order', args=[self.order.pk, self.same.pk]))
+        self.assertTrue(confirm.context['blocked'])
+        self.assertContains(confirm, 'no grade set')
+        self.assertIsNone(self.order.available_raw_material_output())

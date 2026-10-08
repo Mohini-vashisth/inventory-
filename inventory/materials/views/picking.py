@@ -33,8 +33,8 @@ def _coil_matches_order_specs(coil, order):
     one the order's allowed specs list (any size if none is configured). Same rule select_coil_for_order's
     browse list filters by, reused here so a scanned coil gets the same check."""
     required = order.required_grade()
-    if required and (coil.grade or '').lower() != required.lower():
-        return False
+    if not required or (coil.grade or '').lower() != required.lower():
+        return False   # no grade on the order = nothing can be picked until admin sets one
     if not order.product_type:
         return True
     if not order.product_type.allowed_specs.exists():
@@ -73,10 +73,13 @@ def select_coil_for_order(request, order_pk):
     )
 
     scan_error = None
+    no_grade = not order.required_grade()
     if request.method == 'POST':
         coil_no = _parse_coil_no(request.POST.get('coil_no'))
         coil = _safe_get(Material.objects, coil_no) if coil_no is not None else None
-        if coil is None:
+        if no_grade:
+            scan_error = "This order has no grade set — ask admin to set it before picking coils."
+        elif coil is None:
             scan_error = "Coil not found. Check the number and try again."
         elif coil.is_archived():
             scan_error = f"{coil.formatted_coil()} is archived and can't be picked."
@@ -95,8 +98,7 @@ def select_coil_for_order(request, order_pk):
     # The coil's grade is always the order's grade; the allowed specs then narrow the sizes. The specs are
     # fetched once here and reused below for the best-fit ratio, instead of each coil re-querying them.
     required_grade = order.required_grade()
-    if required_grade:
-        coils_qs = coils_qs.filter(grade__iexact=required_grade)
+    coils_qs = coils_qs.filter(grade__iexact=required_grade) if required_grade else coils_qs.none()
     specs = []
     if order.product_type:
         specs = order.applicable_specs()
@@ -140,6 +142,7 @@ def select_coil_for_order(request, order_pk):
         'pct_fulfilled': int(min(picked_output / required_output * 100, 100)) if required_output > 0 else 0,
         'fully_picked': order.is_fully_picked(),
         'scan_error': scan_error,
+        'no_grade': no_grade,
     })
 
 
@@ -157,7 +160,8 @@ def pick_coil_for_order(request, order_pk, coil_pk):
     archived = coil.is_archived()
     matches_specs = _coil_matches_order_specs(coil, order)
     fully_picked = order.is_fully_picked()
-    blocked = exhausted or archived or not matches_specs or fully_picked or order.product_type is None
+    no_grade = not order.required_grade()
+    blocked = exhausted or archived or not matches_specs or fully_picked or order.product_type is None or no_grade
 
     # Suggest a weight capped at both what's left on the coil and what the
     # order still needs (in this coil's raw-material terms), so an employee
@@ -232,5 +236,5 @@ def pick_coil_for_order(request, order_pk, coil_pk):
         'suggested_weight': suggested_weight,
         'exhausted': exhausted, 'archived': archived,
         'matches_specs': matches_specs, 'fully_picked': fully_picked,
-        'blocked': blocked, 'error': error,
+        'blocked': blocked, 'no_grade': no_grade, 'error': error,
     })
