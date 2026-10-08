@@ -60,7 +60,7 @@
   <form method="post">
     {% csrf_token %}
     <input type="hidden" name="next" value="{{ next }}">
-    <input type="password" name="pin" placeholder="••••" autofocus autocomplete="off">
+    <input type="password" name="pin" inputmode="numeric" placeholder="••••" autofocus autocomplete="off">
     <button type="submit">Enter</button>
   </form>
 

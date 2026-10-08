@@ -80,7 +80,7 @@
 
   <form method="POST" class="scan-form" id="coil-scan-form">
     {% csrf_token %}
-    <input type="text" name="coil_no" id="coil-no-input" placeholder="Scan or type coil number (e.g. COIL0007)" autofocus>
+    <input type="text" name="coil_no" id="coil-no-input" placeholder="Scan or type coil number (e.g. COIL0007)">
     <button type="button" class="scan-camera-btn" id="camera-scan-btn" title="Scan QR with camera">📷</button>
     <button type="submit">Go →</button>
   </form>
@@ -107,4 +107,11 @@
 
 <script src="{% static 'materials/jsQR.min.js' %}"></script>
 <script src="{% static 'materials/coil_scan.js' %}"></script>
+<script>
+  // Touch devices (the plant tablet) scan with the camera, so don't pop the keyboard up on load;
+  // a mouse/keyboard PC with a hardware scanner still gets the box focused.
+  if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
+    document.getElementById('coil-no-input').focus();
+  }
+</script>
 {% endblock %}
