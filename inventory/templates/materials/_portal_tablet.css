@@ -1,3 +1,14 @@
+/* Back / navigation link on every employee page: one look, always the first thing in the top-left
+   corner. Pages used to define their own (different margins, sizes and colours), so this wins with
+   !important, including over the inline style one page put on it. */
+.back-link {
+  display: block !important; width: fit-content; margin: 0 auto 1.1rem 0 !important; padding: 0.6rem 1.1rem !important;
+  min-height: 44px; line-height: 1.5;
+  background: rgba(255,255,255,0.14); color: #fff !important; border-radius: 10px;
+  font-size: 0.95rem !important; font-weight: 600; text-decoration: none !important; text-align: left;
+}
+.back-link:hover { background: rgba(255,255,255,0.24); color: #fff !important; }
+
 /* Employee portal pages on a tablet held upright (about 700px wide and up): the pages were laid out
    for a phone-width column, which leaves wide empty margins and small text. Everything sized in rem
    scales with the root size; the px-sized form fields and the column width are set here. Included
