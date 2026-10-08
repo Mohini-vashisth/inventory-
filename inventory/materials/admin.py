@@ -1,10 +1,11 @@
 from django.contrib import admin
 from django.utils import timezone
-from django.utils.html import format_html, format_html_join
-from django.utils.safestring import mark_safe
+from django.contrib.admin.widgets import RelatedFieldWidgetWrapper
+from django.utils.html import format_html
 from django.urls import reverse
 from decimal import Decimal
 
+from django.db import models
 from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django import forms
@@ -106,16 +107,6 @@ class ProductCategoryAdmin(admin.ModelAdmin):
         return obj.product_codes.count()
 
 
-class GradeInput(forms.TextInput):
-    """A text box that suggests the grades already in the list as you type (a browser
-    datalist), so a grade isn't spelled several ways. Anything can still be typed."""
-
-    def render(self, name, value, attrs=None, renderer=None):
-        attrs = {**(attrs or {}), 'list': 'grade-options', 'autocomplete': 'off'}
-        options = format_html_join('', '<option value="{}">', ((n,) for n in GradeOption.objects.values_list('name', flat=True)))
-        return mark_safe(super().render(name, value, attrs, renderer) + format_html('<datalist id="grade-options">{}</datalist>', options))
-
-
 class ProductTypeAdminForm(forms.ModelForm):
     """Leave Item Code blank and it's generated from the product type and grade
     in the agreed format (see product_codes.py); type one yourself to override it."""
@@ -123,11 +114,17 @@ class ProductTypeAdminForm(forms.ModelForm):
     class Meta:
         model = ProductType
         fields = ['item_code', 'category', 'grade', 'description']
-        widgets = {'grade': GradeInput}
+
+    # The grade is picked from the grade list (add a new one with the + beside it), like the product type.
+    grade = forms.ModelChoiceField(queryset=GradeOption.objects.order_by('name'), label='Grade')
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.generated_code = False
+        self.fields['grade'].label_from_instance = lambda option: option.name
+        if self.instance.pk and self.instance.grade and not self.is_bound:
+            option = GradeOption.objects.filter(name=self.instance.grade).first()
+            self.initial['grade'] = option.pk if option else None
         for name in ('category', 'grade'):   # optional on the model only for older codes
             self.fields[name].required = True
         item_code = self.fields['item_code']
@@ -137,7 +134,8 @@ class ProductTypeAdminForm(forms.ModelForm):
         item_code.widget.attrs['data-lookup-url'] = reverse('product_code_lookup')
 
     def clean_grade(self):
-        return canonical_grade(self.cleaned_data.get('grade'))
+        option = self.cleaned_data.get('grade')
+        return canonical_grade(option.name) if option else ''
 
     def clean(self):
         cleaned = super().clean()
@@ -161,6 +159,26 @@ class ProductTypeAdmin(admin.ModelAdmin):
 
     class Media:
         js = ('materials/admin_product_code.js',)
+
+    def get_form(self, request, obj=None, change=False, **kwargs):
+        form = super().get_form(request, obj, change=change, **kwargs)
+        # Show the grade box the way Django shows a foreign key (the product type above it): a dropdown
+        # with the add / edit / delete / view icons beside it, managing the grade list.
+        rel = models.ForeignKey(GradeOption, on_delete=models.PROTECT).remote_field
+        field = form.base_fields['grade']
+        field.widget = RelatedFieldWidgetWrapper(
+            field.widget, rel, self.admin_site,
+            can_add_related=True, can_change_related=True, can_delete_related=True, can_view_related=True,
+        )
+        return form
+
+    def get_changeform_initial_data(self, request):
+        initial = super().get_changeform_initial_data(request)
+        name = initial.get('grade')   # ?grade=EN8D on the add page (the quote form's link) names a grade
+        if name:
+            option = GradeOption.objects.filter(name=canonical_grade(name)).first()
+            initial['grade'] = option.pk if option else None
+        return initial
 
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)

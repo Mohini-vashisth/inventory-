@@ -164,8 +164,13 @@ class AdminGeneratesTheCodeTests(TestCase):
         self.square_bar = ProductCategory.objects.get(name='Square Bright Bar')
         self.add_url = reverse('admin:materials_producttype_add')
 
+    def _grade(self, name):
+        """The id of the grade-list entry the form's dropdown posts (created if the test hasn't yet)."""
+        return str(GradeOption.objects.get_or_create(name=name)[0].pk) if name else ''
+
     def _data(self, **fields):
-        data = {'category': str(self.flat_bar.pk), 'item_code': '', 'grade': 'EN8D', 'description': '',
+        fields['grade'] = self._grade(fields.get('grade', 'EN8D'))
+        data = {'category': str(self.flat_bar.pk), 'item_code': '', 'grade': '', 'description': '',
                 'steps-TOTAL_FORMS': '0', 'steps-INITIAL_FORMS': '0', 'steps-MIN_NUM_FORMS': '0', 'steps-MAX_NUM_FORMS': '1000',
                 'allowed_specs-TOTAL_FORMS': '0', 'allowed_specs-INITIAL_FORMS': '0',
                 'allowed_specs-MIN_NUM_FORMS': '0', 'allowed_specs-MAX_NUM_FORMS': '1000'}
@@ -191,17 +196,10 @@ class AdminGeneratesTheCodeTests(TestCase):
         self._add(grade='SS304')
         self.assertEqual(ProductType.objects.get(grade='SS304').item_code, 'FBB002')
 
-    def test_the_grade_is_saved_as_capitals_and_digits_only(self):
-        GradeOption.objects.create(name='EN-8D', number=9)   # listed in the one spelling, EN8D
-        self._add(grade='en-8d')
-        code = ProductType.objects.get()
-        self.assertEqual((code.grade, code.item_code), ('EN8D', 'FBB009'))
-        self.assertEqual(GradeOption.objects.count(), 1)
-
     def test_a_code_typed_by_hand_is_kept_and_takes_no_grade_number(self):
         self._add(item_code='MY-OWN-CODE')
         self.assertEqual(ProductType.objects.get().item_code, 'MY-OWN-CODE')
-        self.assertEqual(GradeOption.objects.count(), 0)
+        self.assertIsNone(GradeOption.objects.get(name='EN8D').number)   # a hand-typed code uses no grade number
 
     def test_type_and_grade_are_required_even_with_a_hand_typed_code(self):
         for field in ('category', 'grade'):
@@ -225,12 +223,6 @@ class AdminGeneratesTheCodeTests(TestCase):
         self.assertContains(response, 'already exists: FBB001')
         self.assertEqual(ProductType.objects.count(), 1)
 
-    def test_a_differently_spelled_duplicate_is_refused_too(self):
-        self._add(grade='EN-8D')
-        response = self._add(grade='EN8D')
-        self.assertContains(response, 'already exists')
-        self.assertEqual(ProductType.objects.count(), 1)
-
     def test_the_same_grade_under_another_type_is_fine(self):
         self._add()
         self._add(category=str(self.square_bar.pk))
@@ -250,15 +242,19 @@ class AdminGeneratesTheCodeTests(TestCase):
         html = self.client.get(self.add_url).content.decode()
         self.assertIn('materials/admin_product_code.js', html)
         self.assertIn(f'data-lookup-url="{reverse("product_code_lookup")}"', html)
-        self.assertIn('<datalist id="grade-options"><option value="EN8D"></datalist>', html)
-        self.assertIn('list="grade-options"', html)
+        self.assertIn('>EN8D</option>', html)
+        self.assertIn('related-widget-wrapper', html)   # the dropdown comes with the add/edit/delete/view icons
+        self.assertIn('id="add_id_grade"', html)
+        self.assertIn('id="change_id_grade"', html)
+        self.assertIn('id="view_id_grade"', html)
         self.assertIn('Leave blank', html)
 
     def test_the_add_page_can_be_prefilled_from_a_link(self):
         """The quote form's "add it in the admin" link opens the form with the values in."""
+        grade = GradeOption.objects.create(name='EN8D')
         html = self.client.get(f"{self.add_url}?category={self.square_bar.pk}&grade=EN8D").content.decode()
         self.assertRegex(html, rf'<option value="{self.square_bar.pk}"\s+selected>')
-        self.assertIn('value="EN8D"', html)
+        self.assertRegex(html, rf'<option value="{grade.pk}"\s+selected>EN8D</option>')
 
     def test_the_live_fill_script_parses(self):
         script = Path(__file__).resolve().parents[1] / 'static' / 'materials' / 'admin_product_code.js'
