@@ -48,7 +48,10 @@ def employee_logout(request):
 
 
 def welcome(request):
-    """The first screen of the installed tablet app (the manifest's start_url): a welcome, then on to the PIN page."""
+    """The first screen of the installed tablet app (the manifest's start_url): a welcome, then on to the PIN page.
+    Opening it signs the employee session out, so the PIN is asked every time the app is opened (only the
+    employee PIN flag goes; a staff admin login in the same browser is untouched)."""
+    request.session.pop('employee_auth', None)
     return render(request, 'materials/welcome.html')
 
 
