@@ -5,7 +5,7 @@
 {% block css %}
 body{
     font-family:Arial;
-    background:#2f7d5b;
+    background:#f3f4f2;
     display:flex;
     justify-content:center;
     align-items:center;
@@ -16,7 +16,9 @@ body{
 .login-box{
     background:white;
     padding:40px;
-    border-radius:10px;
+    border-radius:12px;
+    border:1px solid #dfe3dd;
+    box-shadow:0 1px 3px rgba(31,41,51,0.10);
     width:300px;
     text-align:center;
 }
@@ -25,6 +27,8 @@ input{
     width:100%;
     padding:10px;
     margin:10px 0;
+    border:1px solid #cfd4cc;
+    border-radius:8px;
 }
 
 button{
@@ -33,6 +37,9 @@ button{
     background:#2f7d5b;
     color:white;
     border:none;
+    border-radius:8px;
+    font-weight:600;
+    cursor:pointer;
 }
 {% endblock %}
 
