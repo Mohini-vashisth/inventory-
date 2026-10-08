@@ -88,7 +88,7 @@ class ProcessStepInline(admin.TabularInline):
 class AllowedCoilSpecInline(admin.TabularInline):
     model = AllowedCoilSpec
     extra = 2
-    fields = ['order_width', 'order_thickness', 'grade', 'size', 'raw_material_ratio', 'notes']
+    fields = ['order_width', 'order_thickness', 'size', 'raw_material_ratio', 'notes']
     verbose_name = "Allowed Coil Spec"
     verbose_name_plural = "Allowed Coil Specs"
 

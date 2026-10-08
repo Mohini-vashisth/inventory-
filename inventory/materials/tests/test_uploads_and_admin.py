@@ -103,7 +103,7 @@ class AdminSmokeTests(TestCase):
             customer = Customer.objects.create(name='Admin Smoke Co', email='a@example.com')
             product = ProductType.objects.create(item_code='Smoke Bar', grade='EN8D')
             ProcessStep.objects.create(product_type=product, name='Cutting', order=1)
-            AllowedCoilSpec.objects.create(product_type=product, grade='EN8D', size='1.200')
+            AllowedCoilSpec.objects.create(product_type=product, size='1.200')
             GradeOption.objects.create(name='EN8D')
             SizeOption.objects.create(value='1.200')
             gate = GateEntry.objects.create(vendor='V', vehicle_no='HR26AB1234', total_weight=1000)

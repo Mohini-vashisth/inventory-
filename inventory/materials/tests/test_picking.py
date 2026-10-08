@@ -102,8 +102,8 @@ class SelectCoilForOrderSpecFilterTests(TestCase):
     def setUp(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         self.customer = Customer.objects.create(name='Spec Test Co')
-        self.product_type = ProductType.objects.create(item_code='Spec Bar', grade='X')
-        AllowedCoilSpec.objects.create(product_type=self.product_type, grade='EN8D', size='1.200')
+        self.product_type = ProductType.objects.create(item_code='Spec Bar', grade='EN8D')
+        AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
         self.order = Order.objects.create(
             customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed',
         )
@@ -132,9 +132,9 @@ class SelectCoilForOrderBestFitSortTests(TestCase):
     def setUp(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         self.customer = Customer.objects.create(name='Best Fit Co')
-        self.product_type = ProductType.objects.create(item_code='Fit Bar', grade='X')
+        self.product_type = ProductType.objects.create(item_code='Fit Bar', grade='EN8D')
         AllowedCoilSpec.objects.create(
-            product_type=self.product_type, grade='EN8D', size='1.200',
+            product_type=self.product_type, size='1.200',
             raw_material_ratio=Decimal('1.000'),
         )
         # Order needs 100kg of output — with a 1:1 ratio, closest coil to 100kg wins.
@@ -182,7 +182,7 @@ class OrderCoilPickRatioTests(TestCase):
 
     def setUp(self):
         self.customer = Customer.objects.create(name='Ratio Test Co')
-        self.product_type = ProductType.objects.create(item_code='Ratio Bar', grade='X')
+        self.product_type = ProductType.objects.create(item_code='Ratio Bar', grade='EN8D')
 
     def _coil(self, **kwargs):
         """Freshly re-fetched so DecimalField values (size) come back as
@@ -194,7 +194,7 @@ class OrderCoilPickRatioTests(TestCase):
     def test_output_equivalent_uses_matching_spec_ratio(self):
         """1.100 ratio = 10% wastage: 110kg of raw material yields 100kg of output."""
         AllowedCoilSpec.objects.create(
-            product_type=self.product_type, grade='EN8D', size='1.200',
+            product_type=self.product_type, size='1.200',
             raw_material_ratio=Decimal('1.100'),
         )
         order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
@@ -210,11 +210,11 @@ class OrderCoilPickRatioTests(TestCase):
 
     def test_picked_output_weight_sums_across_picks_and_specs(self):
         AllowedCoilSpec.objects.create(
-            product_type=self.product_type, grade='EN8D', size='1.200',
+            product_type=self.product_type, size='1.200',
             raw_material_ratio=Decimal('1.100'),
         )
         AllowedCoilSpec.objects.create(
-            product_type=self.product_type, grade='SAE1008', size='6.000',
+            product_type=self.product_type, size='6.000',
             raw_material_ratio=Decimal('1.000'),
         )
         order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=150)
@@ -227,7 +227,7 @@ class OrderCoilPickRatioTests(TestCase):
 
     def test_not_fully_picked_until_requirement_met(self):
         AllowedCoilSpec.objects.create(
-            product_type=self.product_type, grade='EN8D', size='1.200',
+            product_type=self.product_type, size='1.200',
             raw_material_ratio=Decimal('1.000'),
         )
         order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
@@ -244,8 +244,8 @@ class ScanCoilForOrderTests(TestCase):
     def setUp(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         self.customer = Customer.objects.create(name='Scan Test Co')
-        self.product_type = ProductType.objects.create(item_code='Scan Bar', grade='X')
-        AllowedCoilSpec.objects.create(product_type=self.product_type, grade='EN8D', size='1.200')
+        self.product_type = ProductType.objects.create(item_code='Scan Bar', grade='EN8D')
+        AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
         self.order = Order.objects.create(
             customer=self.customer, product_type=self.product_type, quantity=100, status='confirmed',
         )
@@ -345,9 +345,9 @@ class SizeSpecificCoilSpecTests(TestCase):
         self.code = ProductType.objects.create(item_code='SPEC1', grade='EN8D')
         self.coil_a = Material.objects.create(grade='EN8D', size=Decimal('12'), quantity=Decimal('1000'))
         self.coil_b = Material.objects.create(grade='EN8D', size=Decimal('14'), quantity=Decimal('1000'))
-        AllowedCoilSpec.objects.create(product_type=self.code, grade='EN8D', size=Decimal('12'), raw_material_ratio=Decimal('1.1'),
+        AllowedCoilSpec.objects.create(product_type=self.code, size=Decimal('12'), raw_material_ratio=Decimal('1.1'),
                                        order_width=Decimal('16'), order_thickness=Decimal('8'))
-        AllowedCoilSpec.objects.create(product_type=self.code, grade='EN8D', size=Decimal('14'), raw_material_ratio=Decimal('1.2'),
+        AllowedCoilSpec.objects.create(product_type=self.code, size=Decimal('14'), raw_material_ratio=Decimal('1.2'),
                                        order_width=Decimal('20'), order_thickness=Decimal('10'))
         self.customer = customer
 
@@ -375,8 +375,44 @@ class SizeSpecificCoilSpecTests(TestCase):
 
     def test_a_size_less_spec_is_the_fallback_for_other_sizes(self):
         from ..views.picking import _coil_matches_order_specs
-        AllowedCoilSpec.objects.create(product_type=self.code, grade='EN8D', size=Decimal('14'))
+        AllowedCoilSpec.objects.create(product_type=self.code, size=Decimal('14'))
         other = self._order('30', '5')
         self.assertTrue(_coil_matches_order_specs(self.coil_b, other))
         self.assertFalse(_coil_matches_order_specs(self.coil_a, other))
         self.assertTrue(_coil_matches_order_specs(self.coil_a, self._order('16', '8')))   # its own size-specific spec still wins
+
+
+class CoilGradeMustMatchOrderTests(TestCase):
+    """A raw coil's grade is always the order's grade; the specs only narrow the sizes."""
+
+    def setUp(self):
+        session = self.client.session
+        session['employee_auth'] = True
+        session.save()
+        customer = Customer.objects.create(name='Grade Co')
+        self.code = ProductType.objects.create(item_code='GRD1', grade='EN8D')
+        self.order = Order.objects.create(customer=customer, product_type=self.code, grade='EN8D', quantity=Decimal('100'), status='confirmed')
+        self.same = Material.objects.create(grade='EN8D', size=Decimal('12'), quantity=Decimal('500'))
+        self.other = Material.objects.create(grade='SS304', size=Decimal('12'), quantity=Decimal('500'))
+
+    def test_only_the_orders_grade_is_offered_with_no_specs_configured(self):
+        from ..views.picking import _coil_matches_order_specs
+        self.assertTrue(_coil_matches_order_specs(self.same, self.order))
+        self.assertFalse(_coil_matches_order_specs(self.other, self.order))
+        ids = [c['coil'].pk for c in self.client.get(reverse('select_coil_for_order', args=[self.order.pk])).context['coils']]
+        self.assertEqual(ids, [self.same.pk])
+
+    def test_the_grade_check_comes_from_the_order_even_when_a_spec_would_allow_the_size(self):
+        from ..views.picking import _coil_matches_order_specs
+        AllowedCoilSpec.objects.create(product_type=self.code, size=Decimal('12'))
+        self.assertTrue(_coil_matches_order_specs(self.same, self.order))
+        self.assertFalse(_coil_matches_order_specs(self.other, self.order))
+
+    def test_stock_count_ignores_other_grades(self):
+        self.assertEqual(self.order.available_raw_material_output(), Decimal('500'))
+
+    def test_the_order_grade_wins_over_the_codes_grade(self):
+        self.order.grade = 'SS304'
+        self.assertEqual(self.order.required_grade(), 'SS304')
+        self.order.grade = ''
+        self.assertEqual(self.order.required_grade(), 'EN8D')   # falls back to the product code's grade

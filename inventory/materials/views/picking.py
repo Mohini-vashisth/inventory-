@@ -29,17 +29,18 @@ def select_order(request):
 
 
 def _coil_matches_order_specs(coil, order):
-    """True if this coil's grade/size is allowed as raw material for the
-    order's product type — same rule select_coil_for_order's browse list
-    filters by, reused here so a scanned coil gets the same check."""
+    """True if this coil can be raw material for the order: its grade is the order's grade, and its size is
+    one the order's allowed specs list (any size if none is configured). Same rule select_coil_for_order's
+    browse list filters by, reused here so a scanned coil gets the same check."""
+    required = order.required_grade()
+    if required and (coil.grade or '').lower() != required.lower():
+        return False
     if not order.product_type:
         return True
     if not order.product_type.allowed_specs.exists():
         return True
     for spec in order.applicable_specs():
-        grade_matches = not spec.grade or (coil.grade or '').lower() == spec.grade.lower()
-        size_matches = not spec.size or coil.size == spec.size
-        if grade_matches and size_matches:
+        if not spec.size or coil.size == spec.size:
             return True
     return False
 
@@ -56,9 +57,7 @@ def _ratio_for_coil(order, coil, specs=None):
     list instead of re-querying allowed_specs on every single coil."""
     if order.product_type:
         for spec in (specs if specs is not None else order.applicable_specs()):
-            grade_matches = not spec.grade or spec.grade.lower() == (coil.grade or '').lower()
-            size_matches = not spec.size or spec.size == coil.size
-            if grade_matches and size_matches:
+            if not spec.size or spec.size == coil.size:
                 return spec.raw_material_ratio
     return Decimal('1')
 
@@ -93,24 +92,19 @@ def select_coil_for_order(request, order_pk):
                      + F('legacy_used_weight'),
     )
 
-    # Filter by allowed specs if the order has a product type configured.
-    # Fetched once here and reused below for the best-fit ratio, instead of
-    # each coil in the loop re-querying allowed_specs for itself.
+    # The coil's grade is always the order's grade; the allowed specs then narrow the sizes. The specs are
+    # fetched once here and reused below for the best-fit ratio, instead of each coil re-querying them.
+    required_grade = order.required_grade()
+    if required_grade:
+        coils_qs = coils_qs.filter(grade__iexact=required_grade)
     specs = []
     if order.product_type:
         specs = order.applicable_specs()
         if order.product_type.allowed_specs.exists():
-            from django.db.models import Q
-            q = Q()
-            for spec in specs:
-                spec_q = Q()
-                if spec.grade:
-                    spec_q &= Q(grade__iexact=spec.grade)
-                if spec.size:
-                    spec_q &= Q(size=spec.size)
-                if spec_q:
-                    q |= spec_q
-            coils_qs = coils_qs.filter(q) if specs else coils_qs.none()   # specs exist, but none is for this size
+            if not specs:
+                coils_qs = coils_qs.none()   # specs exist, but none is for this order's size
+            elif all(spec.size for spec in specs):
+                coils_qs = coils_qs.filter(size__in=[spec.size for spec in specs])   # a spec with no size allows any
 
     picked_output = order.picked_output_weight()
     required_output = order.quantity or Decimal('0')
