@@ -1,0 +1,24 @@
+{
+  "name": "Matta Drawing Works — Plant",
+  "short_name": "MDW Plant",
+  "start_url": "/employee/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1a56a0",
+  "theme_color": "#1a56a0",
+  "icons": [
+    {
+      "src": "/static/materials/portal-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/materials/portal-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

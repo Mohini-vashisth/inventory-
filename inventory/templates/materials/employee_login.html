@@ -1,4 +1,5 @@
 {% extends "materials/base.html" %}
+{% block head_extra %}{% load static %}<link rel="manifest" href="{% static 'materials/portal.webmanifest' %}"><meta name="theme-color" content="#1a56a0">{% endblock %}
 
 {% block title %}Employee Login{% endblock %}
 
