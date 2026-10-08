@@ -17,6 +17,15 @@ class GateEntryForm(forms.ModelForm):
         vehicle_no = self.cleaned_data['vehicle_no']
         return vehicle_no.upper() if vehicle_no else vehicle_no
 
+    def clean_vendor(self):
+        # Everything typed on the gate entry page is stored in capitals (the page does it as you type;
+        # this covers a submit without JavaScript), so one supplier never ends up under two spellings.
+        return self.cleaned_data['vendor'].strip().upper()
+
+    def clean_invoice_no(self):
+        invoice_no = self.cleaned_data['invoice_no']
+        return invoice_no.strip().upper() if invoice_no else invoice_no
+
     def clean_total_weight(self):
         total_weight = self.cleaned_data['total_weight']
         if total_weight <= 0:
@@ -33,6 +42,9 @@ class GateEntryLotForm(forms.Form):
     grade = forms.CharField(max_length=10)
     size = forms.DecimalField(max_digits=10, decimal_places=3)
     no_of_coils = forms.IntegerField(min_value=1)
+
+    def clean_company(self):
+        return self.cleaned_data['company'].strip().upper()
 
     def clean_grade(self):
         grade = self.cleaned_data['grade']

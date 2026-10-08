@@ -1,0 +1,23 @@
+<script>
+  // Gate entry pages: every text box is capitalised as you type (and asks the phone/tablet keyboard for
+  // capitals). The server upper-cases again, so a submit without JavaScript is stored the same way.
+  (function () {
+    function isText(el) { return el && el.tagName === 'INPUT' && el.type === 'text'; }
+    function mark(root) {
+      root.querySelectorAll('input[type="text"]').forEach(function (el) {
+        el.setAttribute('autocapitalize', 'characters');
+        el.style.textTransform = 'uppercase';
+      });
+    }
+    mark(document);
+    document.addEventListener('input', function (event) {
+      var el = event.target;
+      if (!isText(el) || el.value === el.value.toUpperCase()) return;
+      var start = el.selectionStart, end = el.selectionEnd;
+      el.value = el.value.toUpperCase();
+      try { el.setSelectionRange(start, end); } catch (e) {}
+    });
+    // Lots added with "+ Add Lot" are cloned later, so mark them when they appear.
+    new MutationObserver(function () { mark(document); }).observe(document.body, { childList: true, subtree: true });
+  })();
+</script>
