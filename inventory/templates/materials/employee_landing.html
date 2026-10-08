@@ -114,6 +114,9 @@
        staff must not be able to leave the portal. In a normal browser tab they still show. */
     @media (display-mode: standalone) {
       .back-link, .logout-form { display: none; }
+      /* The page fits the screen, so lock it: no drag-scroll, bounce or pull-to-refresh. */
+      html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+      body { min-height: 0; }
     }
   
 {% endblock %}
