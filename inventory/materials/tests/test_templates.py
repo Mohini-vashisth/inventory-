@@ -149,3 +149,19 @@ class CopyLinkScriptTests(TestCase):
                     self.assertIn('_copy_link_script.html', html)
                     self.assertNotIn('function copyLink', html)   # no private copy that can drift
         self.assertGreaterEqual(checked, 3)   # query dashboard, query detail, order dashboard
+
+
+class PortalManifestTests(TestCase):
+    """The employee pages offer an installable, address-bar-free app for the plant tablet; the
+    customer-facing pages must not reference /static/ (see the templates section of CLAUDE.md)."""
+
+    def test_employee_login_links_the_manifest_and_the_file_is_valid(self):
+        import json
+        from django.contrib.staticfiles import finders
+        page = self.client.get('/employee-login/').content.decode()
+        self.assertIn('rel="manifest"', page)
+        path = finders.find('materials/portal.webmanifest')
+        manifest = json.load(open(path))
+        self.assertEqual((manifest['display'], manifest['start_url']), ('standalone', '/employee/'))
+        for icon in manifest['icons']:
+            self.assertTrue(finders.find(icon['src'].replace('/static/', '')), icon['src'])
