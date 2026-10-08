@@ -14,6 +14,7 @@ from django.utils import timezone
 
 from .helpers import create_query
 from ..models import (
+    QueryItem,
     AllowedCoilSpec, Customer, Material, Order, OrderCoilPick, ProductCategory, ProductType, Query, Quotation,
     QuotationLineItem,
 )
@@ -944,7 +945,7 @@ class OrderDrawingAndToleranceTests(TestCase):
     def test_a_drawing_already_sent_on_whatsapp_is_used_when_none_is_attached(self):
         from django.core.files.base import ContentFile
         query = Query.objects.create(source='whatsapp', contact_phone='919876500020', customer=self.customer, status='quote_sent')
-        query.drawing.save('wa.pdf', ContentFile(b'%PDF whatsapp drawing'), save=True)
+        QueryItem.objects.create(query=query).drawing.save('wa.pdf', ContentFile(b'%PDF whatsapp drawing'), save=True)
         html = self.client.get(self.url).content.decode()
         self.assertIn('Please attach the final dimension drawing.', html)
         self.assertNotIn('WhatsApp', html)   # the customer is just asked for the final drawing
@@ -954,7 +955,7 @@ class OrderDrawingAndToleranceTests(TestCase):
     def test_a_newly_attached_drawing_replaces_the_whatsapp_one(self):
         from django.core.files.base import ContentFile
         query = Query.objects.create(source='whatsapp', contact_phone='919876500021', customer=self.customer, status='quote_sent')
-        query.drawing.save('wa.pdf', ContentFile(b'%PDF whatsapp drawing'), save=True)
+        QueryItem.objects.create(query=query).drawing.save('wa.pdf', ContentFile(b'%PDF whatsapp drawing'), save=True)
         self.client.post(self.url, self._data(**{'item-0-drawing_file': self._pdf('new.pdf')}))
         self.assertEqual(Order.objects.get(customer=self.customer).drawing_file.read(), b'%PDF-1.4 a drawing')
 

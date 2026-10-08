@@ -18,7 +18,8 @@ def quotation_item_post_data(**overrides):
     return data
 
 
-ITEM_FIELDS = ('product_category', 'product_type', 'grade', 'width', 'thickness', 'quantity', 'delivery_form')
+ITEM_FIELDS = ('product_category', 'product_type', 'grade', 'width', 'thickness', 'quantity', 'delivery_form',
+               'drawing', 'drawing_notes', 'technical_requirements', 'end_use')
 
 
 def create_query(**fields):
@@ -48,7 +49,8 @@ def item_row(item):
     return {'id': item.pk, 'product_category': item.product_category_id or '', 'product_type': item.product_type_id or '',
             'grade': item.grade, 'width': item.width if item.width is not None else '',
             'thickness': item.thickness if item.thickness is not None else '',
-            'quantity': item.quantity if item.quantity is not None else '', 'delivery_form': item.delivery_form}
+            'quantity': item.quantity if item.quantity is not None else '', 'delivery_form': item.delivery_form,
+            'drawing_notes': item.drawing_notes, 'technical_requirements': item.technical_requirements, 'end_use': item.end_use}
 
 
 def query_edit_data(query, rows=None, **fields):

@@ -18,4 +18,11 @@
     <div class="form-group"><label>Quantity (kg)</label>{{ form.quantity }}</div>
     <div class="form-group"><label>Delivery Form</label>{{ form.delivery_form }}</div>
   </div>
+  <div class="form-row cols-2">
+    <div class="form-group"><label>Make / properties / process</label>{{ form.technical_requirements }}</div>
+    <div class="form-group"><label>End use</label>{{ form.end_use }}</div>
+  </div>
+  <div class="form-row">
+    <div class="form-group"><label>Drawing / sample{% if form.instance.drawing %} — <a class="link" href="{{ form.instance.drawing.url }}" target="_blank">📎 open file</a>{% endif %}</label>{{ form.drawing_notes }}</div>
+  </div>
 </div>

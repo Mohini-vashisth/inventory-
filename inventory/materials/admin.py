@@ -561,7 +561,8 @@ class QueryItemInline(admin.TabularInline):
     """The products a query asks about — one row each."""
     model = QueryItem
     extra = 0
-    fields = ['position', 'product_category', 'product_type', 'grade', 'width', 'thickness', 'quantity', 'delivery_form']
+    fields = ['position', 'product_category', 'product_type', 'grade', 'width', 'thickness', 'quantity', 'delivery_form',
+              'drawing', 'drawing_notes', 'technical_requirements', 'end_use']
 
 
 @admin.register(Query)
@@ -571,8 +572,6 @@ class QueryAdmin(admin.ModelAdmin):
     list_filter   = ['source', 'status']
     search_fields = ['company_name', 'contact_email', 'contact_phone']
     ordering      = ['-created_at']
-    readonly_fields = ['drawing_link']
-    exclude       = ['drawing']  # shown via drawing_link instead of a raw re-upload widget
 
     @admin.display(description='Company / Contact')
     def display_name(self, obj):
@@ -584,13 +583,7 @@ class QueryAdmin(admin.ModelAdmin):
 
     @admin.display(description='Drawing', boolean=True)
     def has_drawing(self, obj):
-        return bool(obj.drawing)
-
-    def drawing_link(self, obj):
-        if not obj.drawing:
-            return obj.drawing_notes or 'No drawing provided'
-        return format_html('<a href="{}" target="_blank">Download drawing</a>', obj.drawing.url)
-    drawing_link.short_description = 'Drawing'
+        return any(item.drawing for item in obj.item_list())
 
 
 @admin.register(Order)

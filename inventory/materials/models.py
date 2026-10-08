@@ -488,15 +488,8 @@ class Query(models.Model):
     # What the customer wants to buy lives in the query's items (QueryItem below): one row per product.
     # Collected by the WhatsApp intake bot after email. One WhatsApp message
     # maps to one field: GST number + address arrive together and are split
-    # by _parse_whatsapp_gst_details; the other combined questions are saved
-    # as typed. The drawing/sample (an image/PDF the customer sends is saved
-    # in `drawing`; drawing_notes holds either their reply if they didn't
-    # attach one — typically "no" — or a short description) doubles via
-    # drawing_notes as the "this question was actually asked and answered"
-    # marker for _next_expected_query_field, since a FileField alone can't
-    # distinguish "not asked yet" from "asked, no drawing".
-    drawing       = models.FileField(upload_to='query_drawings/%Y/%m/', blank=True, null=True)
-    drawing_notes = models.CharField(max_length=255, blank=True)
+    # by _parse_whatsapp_gst_details. Everything about the products themselves (the drawing/sample,
+    # make/properties/process, end use, ...) lives on each QueryItem.
     # A reply of "no" is a real answer and is kept: a non-blank value is what
     # marks each question answered. gst_number is the one validated field: a
     # well-formed 15-character GSTIN is compulsory for every company, so there
@@ -507,8 +500,6 @@ class Query(models.Model):
     )
     gst_address            = models.TextField(blank=True)
     product_description    = models.TextField(blank=True)
-    technical_requirements = models.TextField(blank=True)  # particular make, mechanical properties, process
-    end_use                = models.TextField(blank=True)
     notes         = models.TextField(blank=True)
     status        = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new', db_index=True)
     # Set only once a quote is actually sent — before that, a query is just
@@ -540,8 +531,6 @@ class Query(models.Model):
     INTAKE_TEXT_FIELDS = [
         ('gst_number', 'GST number'),
         ('gst_address', 'GST address'),
-        ('technical_requirements', 'Make / properties / process'),
-        ('end_use', 'End use'),
     ]
 
     class Meta:
@@ -579,7 +568,7 @@ class Query(models.Model):
         read live (they close up when an earlier order is deleted), so this is always current."""
         return [f"ORD-{order.order_no:04d}" for order in sorted(self.orders.all(), key=lambda o: o.pk) if order.order_no]
 
-    MAX_ITEMS = 5   # the bot offers 1 to 5 products; staff can add more by hand
+    MAX_ITEMS = 3   # the bot offers 1 to 3 products; staff can add more by hand
 
     def item_list(self):
         """The products the customer asked about, in order (honouring a prefetch)."""
@@ -588,10 +577,6 @@ class Query(models.Model):
     def gst_rows(self):
         """[(label, value)] for the GST answers, blank ones included (the detail page shows a dash)."""
         return [(label, getattr(self, f)) for f, label in self.INTAKE_TEXT_FIELDS if f in self.GST_FIELDS]
-
-    def requirement_rows(self):
-        """[(label, value)] for the product-related answers (everything except GST), blank ones included."""
-        return [(label, getattr(self, f)) for f, label in self.INTAKE_TEXT_FIELDS if f not in self.GST_FIELDS]
 
     def __str__(self):
         label = self.company_name or self.contact_phone or f"Query #{self.pk}"
@@ -613,6 +598,14 @@ class QueryItem(models.Model):
     thickness        = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Thickness (mm)")
     quantity         = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Quantity (kg)")
     delivery_form    = models.CharField(max_length=10, blank=True, choices=Query.DELIVERY_FORM_CHOICES)
+    # What the customer sent about this product. An image/PDF is saved in `drawing`; drawing_notes holds
+    # either their text reply (typically "no") or a short note, and doubles as the "this question was
+    # asked and answered" marker for the bot, since a FileField alone can't tell "not asked yet" from
+    # "asked, no drawing". A reply of "no" to the other two is a real answer too.
+    drawing          = models.FileField(upload_to='query_drawings/%Y/%m/', blank=True, null=True)
+    drawing_notes    = models.CharField(max_length=255, blank=True)
+    technical_requirements = models.TextField(blank=True, verbose_name="Make / properties / process")
+    end_use          = models.TextField(blank=True)
 
     class Meta:
         ordering = ['position', 'pk']
