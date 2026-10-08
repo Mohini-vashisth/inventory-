@@ -101,7 +101,7 @@ class RawMaterialAvailabilityTests(TestCase):
         Material.objects.create(quantity=300, grade='EN8D', size='1.200')
         Material.objects.create(quantity=200, grade='EN8D', size='1.200')
         Material.objects.create(quantity=500, grade='SAE1008', size='6.000')  # doesn't match, excluded
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=400)
+        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=400, grade='EN8D')
 
         self.assertEqual(order.available_raw_material_output(), Decimal('500'))
         self.assertTrue(order.has_sufficient_raw_material())
@@ -109,7 +109,7 @@ class RawMaterialAvailabilityTests(TestCase):
     def test_insufficient_when_stock_falls_short(self):
         AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
         Material.objects.create(quantity=100, grade='EN8D', size='1.200')
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=400)
+        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=400, grade='EN8D')
 
         self.assertEqual(order.available_raw_material_output(), Decimal('100'))
         self.assertFalse(order.has_sufficient_raw_material())
@@ -121,7 +121,7 @@ class RawMaterialAvailabilityTests(TestCase):
             raw_material_ratio=Decimal('1.100'),
         )
         Material.objects.create(quantity=110, grade='EN8D', size='1.200')
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
+        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100, grade='EN8D')
 
         self.assertEqual(order.available_raw_material_output(), Decimal('100'))
         self.assertTrue(order.has_sufficient_raw_material())
@@ -130,14 +130,14 @@ class RawMaterialAvailabilityTests(TestCase):
         """Matches the wildcard fallback the picking flow already uses when
         a product type has no AllowedCoilSpecs configured."""
         Material.objects.create(quantity=250, grade='EN8D', size='3.000')
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
+        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100, grade='EN8D')
 
         self.assertEqual(order.available_raw_material_output(), Decimal('250'))
 
     def test_archived_coils_excluded(self):
         AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
         Material.objects.create(quantity=300, grade='EN8D', size='1.200', archived_at=timezone.now())
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
+        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100, grade='EN8D')
 
         self.assertEqual(order.available_raw_material_output(), Decimal('0'))
         self.assertFalse(order.has_sufficient_raw_material())
@@ -145,7 +145,7 @@ class RawMaterialAvailabilityTests(TestCase):
     def test_already_picked_weight_reduces_available_stock(self):
         AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
         coil = Material.objects.create(quantity=300, grade='EN8D', size='1.200')
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100)
+        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100, grade='EN8D')
         OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=250)
 
         self.assertEqual(order.available_raw_material_output(), Decimal('50'))
@@ -164,8 +164,7 @@ class OrderConfirmStockWarningTests(TestCase):
     def test_confirming_with_insufficient_stock_shows_warning(self):
         Material.objects.create(quantity=50, grade='EN8D', size='1.200')
         order = Order.objects.create(
-            customer=self.customer, product_type=self.product_type, quantity=400, status='pending',
-        )
+            customer=self.customer, product_type=self.product_type, quantity=400, status='pending', grade='EN8D')
         self.client.force_login(self.staff)
         response = self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}), follow=True)
         messages = [str(m) for m in response.context['messages']]
@@ -174,8 +173,7 @@ class OrderConfirmStockWarningTests(TestCase):
     def test_confirming_with_sufficient_stock_shows_no_warning(self):
         Material.objects.create(quantity=500, grade='EN8D', size='1.200')
         order = Order.objects.create(
-            customer=self.customer, product_type=self.product_type, quantity=400, status='pending',
-        )
+            customer=self.customer, product_type=self.product_type, quantity=400, status='pending', grade='EN8D')
         self.client.force_login(self.staff)
         response = self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}), follow=True)
         messages = [str(m) for m in response.context['messages']]
@@ -184,8 +182,7 @@ class OrderConfirmStockWarningTests(TestCase):
     def test_dashboard_shows_persistent_low_stock_badge(self):
         Material.objects.create(quantity=50, grade='EN8D', size='1.200')
         Order.objects.create(
-            customer=self.customer, product_type=self.product_type, quantity=400, status='confirmed',
-        )
+            customer=self.customer, product_type=self.product_type, quantity=400, status='confirmed', grade='EN8D')
         self.client.force_login(self.staff)
         response = self.client.get(reverse('order_dashboard'))
         self.assertContains(response, 'Low stock')
@@ -195,8 +192,7 @@ class OrderConfirmStockWarningTests(TestCase):
         committed to production — a pending order hasn't been accepted yet."""
         Material.objects.create(quantity=50, grade='EN8D', size='1.200')
         Order.objects.create(
-            customer=self.customer, product_type=self.product_type, quantity=400, status='pending',
-        )
+            customer=self.customer, product_type=self.product_type, quantity=400, status='pending', grade='EN8D')
         self.client.force_login(self.staff)
         response = self.client.get(reverse('order_dashboard'))
         self.assertNotContains(response, 'Low stock')
@@ -204,8 +200,7 @@ class OrderConfirmStockWarningTests(TestCase):
     def test_dashboard_hides_badge_when_stock_is_sufficient(self):
         Material.objects.create(quantity=500, grade='EN8D', size='1.200')
         Order.objects.create(
-            customer=self.customer, product_type=self.product_type, quantity=400, status='confirmed',
-        )
+            customer=self.customer, product_type=self.product_type, quantity=400, status='confirmed', grade='EN8D')
         self.client.force_login(self.staff)
         response = self.client.get(reverse('order_dashboard'))
         self.assertNotContains(response, 'Low stock')
@@ -227,8 +222,7 @@ class OrderWorkflowTests(TestCase):
         """A bare GET must never confirm/dispatch/reject an order (CSRF via link/image)."""
         product_type = ProductType.objects.create(item_code='Bar', grade='EN8D')
         order = Order.objects.create(
-            customer=self.customer, quantity=100, status='pending', product_type=product_type,
-        )
+            customer=self.customer, quantity=100, status='pending', product_type=product_type, grade='EN8D')
         self.client.force_login(self.staff)
 
         self.client.get(reverse('order_confirm', kwargs={'pk': order.pk}))
@@ -717,7 +711,7 @@ class OrderDashboardShowsProductTypeTests(TestCase):
         self.client.force_login(staff)
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
         code = ProductType.objects.create(item_code='FBB009', category=flat, grade='EN8D')
-        Order.objects.create(customer=Customer.objects.create(name='Row Co'), product_type=code, quantity=10)
+        Order.objects.create(customer=Customer.objects.create(name='Row Co'), product_type=code, quantity=10, grade='EN8D')
         html = self.client.get(reverse('order_dashboard')).content.decode()
         self.assertIn('FBB009', html)
         self.assertIn('Flat Bright Bar', html)

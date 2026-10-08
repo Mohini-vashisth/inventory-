@@ -68,7 +68,7 @@
       <div class="order-company">{{ order.customer.name }}</div>
       <div class="order-meta">
         {% if order.product_type_name %}<span>🏷️ {{ order.product_type_name }}</span>{% endif %}
-        {% if order.grade %}<span>📐 {{ order.grade }}</span>{% endif %}
+        {% if order.grade %}<span>📐 {{ order.grade }}</span>{% else %}<span>⚠️ No grade</span>{% endif %}
         {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
         {% if order.size_text %}<span>📏 {{ order.size_text }} mm</span>{% endif %}
       </div>
@@ -100,7 +100,7 @@
       <div class="order-company">{{ order.customer.name }}</div>
       <div class="order-meta">
         {% if order.product_type_name %}<span>🏷️ {{ order.product_type_name }}</span>{% endif %}
-        {% if order.grade %}<span>📐 {{ order.grade }}</span>{% endif %}
+        {% if order.grade %}<span>📐 {{ order.grade }}</span>{% else %}<span>⚠️ No grade</span>{% endif %}
         {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
         {% if order.size_text %}<span>📏 {{ order.size_text }} mm</span>{% endif %}
       </div>

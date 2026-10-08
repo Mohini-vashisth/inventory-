@@ -595,14 +595,15 @@ class QueryAdmin(admin.ModelAdmin):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display  = ['order_number', 'customer', 'grade', 'quantity', 'delivery_form', 'frequency', 'delivery_date', 'status_badge', 'created_at']
-    list_filter   = ['status', 'delivery_form', 'frequency', 'customer']
-    search_fields = ['customer__name', 'grade', 'mill_make']
+    list_display  = ['order_number', 'customer', 'product_type_label', 'product_code', 'grade', 'quantity', 'delivery_form', 'frequency', 'delivery_date', 'status_badge', 'created_at']
+    list_filter   = ['status', 'product_type__category', 'delivery_form', 'frequency', 'customer']
+    search_fields = ['customer__name', 'grade', 'mill_make', 'product_type__item_code']
     ordering      = ['-created_at']
-    readonly_fields = ['purchase_order_link', 'drawing_link']
+    list_select_related = ['customer', 'product_type__category']
+    readonly_fields = ['product_type_label', 'purchase_order_link', 'drawing_link']
     fieldsets = (
         ('Order Info', {
-            'fields': ('customer', 'product_type', 'status', 'delivery_date', 'frequency', 'notes')
+            'fields': ('customer', 'product_type_label', 'product_type', 'status', 'delivery_date', 'frequency', 'notes')
         }),
         ('Material Requirements', {
             'fields': ('grade', 'width', 'thickness', 'mill_make', 'drawing_dimensions', 'drawing_file', 'drawing_link', 'mechanical_properties', 'processes', 'end_usage')
@@ -617,6 +618,21 @@ class OrderAdmin(admin.ModelAdmin):
             'fields': ('purchase_order_link',)
         }),
     )
+
+    def product_type_label(self, obj):
+        """The product type (e.g. Flat Bright Bar), taken from the order's product code."""
+        return obj.product_type_name() or '—'
+    product_type_label.short_description = 'Product type'
+
+    def product_code(self, obj):
+        return obj.product_type.item_code if obj.product_type_id else '—'
+    product_code.short_description = 'Product code'
+    product_code.admin_order_field = 'product_type__item_code'
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == 'product_type':   # the model calls the product code "product_type"; the screens say code
+            kwargs['label'] = 'Product code'
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
     def purchase_order_link(self, obj):
         if not obj.purchase_order:

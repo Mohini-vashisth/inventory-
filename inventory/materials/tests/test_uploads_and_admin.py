@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ..models import (
     AllowedCoilSpec,
+    ProductCategory,
     Customer,
     GateEntry,
     GateEntryLot,
@@ -140,3 +141,21 @@ class AdminSmokeTests(TestCase):
                     self.assertEqual(self.client.get(url).status_code, 200)
                     checked += 1
         self.assertGreater(checked, 40)  # the sweep itself must not silently shrink to nothing
+
+
+class OrderAdminShowsTypeAndCodeTests(TestCase):
+    def test_list_and_change_pages_show_the_product_type_and_code(self):
+        from django.contrib.auth import get_user_model
+        get_user_model().objects.create_superuser('root', 'r@example.com', 'pw')
+        self.client.login(username='root', password='pw')
+        category = ProductCategory.objects.get(name='Flat Bright Bar')
+        code = ProductType.objects.create(item_code='ZZ-FBB9', category=category, grade='EN8D')
+        order = Order.objects.create(customer=Customer.objects.create(name='Admin Co'), product_type=code, grade='EN8D', quantity=10)
+        listing = self.client.get(reverse('admin:materials_order_changelist')).content.decode()
+        self.assertIn('Product type', listing)
+        self.assertIn('Product code', listing)
+        self.assertIn('Flat Bright Bar', listing)
+        self.assertIn('ZZ-FBB9', listing)
+        change = self.client.get(reverse('admin:materials_order_change', args=[order.pk])).content.decode()
+        self.assertIn('Flat Bright Bar', change)
+        self.assertIn('Product code', change)

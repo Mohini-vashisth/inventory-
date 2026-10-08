@@ -76,9 +76,9 @@ class MaterialUsedStatusTests(TestCase):
         quantity has no weight left to offer, same as one used up via the app."""
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         customer = Customer.objects.create(name='Legacy Test Co')
-        order = Order.objects.create(customer=customer, quantity=100, status='confirmed')
-        Material.objects.create(quantity=500, legacy_used_weight=500)
-        active = Material.objects.create(quantity=500)
+        order = Order.objects.create(customer=customer, quantity=100, status='confirmed', grade='EN8D')
+        Material.objects.create(quantity=500, grade='EN8D', legacy_used_weight=500)
+        active = Material.objects.create(quantity=500, grade='EN8D')
 
         response = self.client.get(reverse('select_coil_for_order', kwargs={'order_pk': order.pk}))
         coil_ids = [c['coil'].pk for c in response.context['coils']]
@@ -154,9 +154,9 @@ class MaterialArchivingTests(TestCase):
     def test_archived_coil_excluded_from_order_coil_selection(self):
         self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
         customer = Customer.objects.create(name='Archive Test Co')
-        order = Order.objects.create(customer=customer, quantity=100, status='confirmed')
-        Material.objects.create(quantity=500, archived_at=timezone.now())
-        active = Material.objects.create(quantity=500)
+        order = Order.objects.create(customer=customer, quantity=100, status='confirmed', grade='EN8D')
+        Material.objects.create(quantity=500, grade='EN8D', archived_at=timezone.now())
+        active = Material.objects.create(quantity=500, grade='EN8D')
 
         response = self.client.get(reverse('select_coil_for_order', kwargs={'order_pk': order.pk}))
         coil_ids = [c['coil'].pk for c in response.context['coils']]
@@ -169,8 +169,7 @@ class MaterialArchivingTests(TestCase):
         product_type = ProductType.objects.create(item_code='Bar', grade='EN8D')
         customer = Customer.objects.create(name='Archive Pick Co')
         order = Order.objects.create(
-            customer=customer, product_type=product_type, quantity=100, status='confirmed',
-        )
+            customer=customer, product_type=product_type, quantity=100, status='confirmed', grade='EN8D')
 
         response = self.client.post(
             reverse('pick_coil_for_order', kwargs={'order_pk': order.pk, 'coil_pk': coil.pk}),

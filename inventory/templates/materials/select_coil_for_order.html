@@ -154,6 +154,7 @@
   </div>
 
   <!-- Scan or type a coil number -->
+  {% if no_grade %}<div class="scan-error">⚠️ This order has no grade set — ask admin to set it before picking coils.</div>{% endif %}
   {% if scan_error %}<div class="scan-error">⚠️ {{ scan_error }}</div>{% endif %}
   <form method="POST" class="scan-form" id="coil-scan-form">
     {% csrf_token %}

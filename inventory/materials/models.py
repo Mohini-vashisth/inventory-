@@ -986,8 +986,9 @@ class Order(models.Model):
         return self.picked_output_weight() >= self.quantity
 
     def required_grade(self):
-        """The grade a raw coil must have for this order: the order's own, else its product code's."""
-        return self.grade or (self.product_type.grade if self.product_type_id else '') or ''
+        """The grade a raw coil must have for this order: the order's own grade (blank = not set; coil
+        picking is blocked until an admin sets it)."""
+        return self.grade or ''
 
     def applicable_specs(self):
         """The allowed coil specs that govern this order: those made for its exact size (width/thickness) if any
@@ -1008,8 +1009,8 @@ class Order(models.Model):
         None if there's no product type yet to check against. Used to warn
         an admin confirming an order that raw material may need reordering
         before production can actually happen."""
-        if not self.product_type:
-            return None
+        if not self.product_type or not self.required_grade():
+            return None   # nothing to check against until the order has a product code and a grade
         specs = self.applicable_specs()
         if not specs and self.product_type.allowed_specs.exists():
             return Decimal('0')   # specs are configured but none is for this order's size: nothing qualifies

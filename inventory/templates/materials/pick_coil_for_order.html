@@ -38,7 +38,9 @@
 
   {% if blocked %}
   <div class="blocked-banner">
-    {% if archived %}
+    {% if no_grade %}
+      ⚠️ This order has no grade set — ask admin to set it first.
+    {% elif archived %}
       🗄️ This coil is archived and can't be picked.
     {% elif exhausted %}
       🗄️ This coil has no weight remaining.
