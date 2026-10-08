@@ -2,33 +2,15 @@
 {% block tablet_css %}{% include "materials/_portal_tablet.css" %}{% endblock %}
 {% load static %}
 
+{% block body_attrs %} class="ds"{% endblock %}
 {% block title %}Update Progress{% endblock %}
 
 {% block css %}
-    
-    body {
-      font-family: Arial, Helvetica, sans-serif;
-      background: #2f3a35;
-      min-height: 100vh;
-      padding: 2rem 1rem;
-    }
-
-    .page { max-width: 500px; margin: 0 auto; }
-
-    .back-link {
-      color: rgba(255,255,255,0.8); text-decoration: none;
-      font-size: 0.9rem; display: inline-block; margin-bottom: 1.25rem;
-    }
-
-    h1 { color: white; font-size: 1.6rem; margin-bottom: 0.35rem; }
-    .subtitle { color: rgba(255,255,255,0.75); font-size: 0.9rem; margin-bottom: 2rem; }
-
     .scan-error {
-      background: rgba(255,200,0,0.2); border: 1px solid rgba(255,200,0,0.5);
+      background: #fef3c7; border: 1px solid #fcd34d;
       border-radius: 10px; padding: 0.7rem 1rem; margin-bottom: 1rem;
-      color: white; font-size: 0.88rem;
+      color: #92400e; font-size: 0.88rem;
     }
-
     .scan-form { display: flex; gap: 0.6rem; margin-bottom: 1.5rem; }
     .scan-form input[type="text"] {
       flex: 1; padding: 0.65rem 0.9rem; border: none; border-radius: 8px;
@@ -40,9 +22,8 @@
     }
     .scan-camera-btn {
       padding: 0.65rem 0.9rem; border: none; border-radius: 8px;
-      background: rgba(255,255,255,0.25); color: white; font-size: 1.1rem; cursor: pointer;
+      background: #256349; color: white; font-size: 1.1rem; cursor: pointer;
     }
-
     .scan-modal {
       position: fixed; inset: 0; background: #000; z-index: 100;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -54,7 +35,6 @@
       padding: 0.65rem 1.5rem; border: none; border-radius: 8px;
       background: rgba(255,255,255,0.2); color: white; font-weight: 700; cursor: pointer;
     }
-
     /* Job picker, when a coil has more than one active job */
     .job-card {
       display: flex; justify-content: space-between; align-items: center;
@@ -74,7 +54,7 @@
   <h1>Update Progress</h1>
   <p class="subtitle">
     Scan or type the coil's number to open its job.
-    <a href="{% url 'production_board' %}" style="color:white;">View all jobs →</a>
+    <a href="{% url 'production_board' %}" style="color:#256349; font-weight:700;">View all jobs →</a>
   </p>
 
   {% if scan_error %}<div class="scan-error">⚠️ {{ scan_error }}</div>{% endif %}

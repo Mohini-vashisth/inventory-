@@ -1,49 +1,29 @@
 {% extends "materials/base.html" %}
 {% block tablet_css %}{% include "materials/_portal_tablet.css" %}{% endblock %}
 
+{% block body_attrs %} class="ds"{% endblock %}
 {% block title %}Production Board{% endblock %}
 
 {% block css %}
-    body {
-      font-family: Arial, Helvetica, sans-serif;
-      background: #2f3a35;
-      min-height: 100vh;
-      padding: 2rem 1rem;
-    }
-
-    .page { max-width: 860px; margin: 0 auto; }
-
-    .back-link {
-      color: rgba(255,255,255,0.8); text-decoration: none;
-      font-size: 0.9rem; display: inline-block; margin-bottom: 1.25rem;
-    }
-
-    h1 { color: white; font-size: 1.6rem; margin-bottom: 0.35rem; }
-    .subtitle { color: rgba(255,255,255,0.75); font-size: 0.9rem; margin-bottom: 2rem; }
-
     /* Order card */
     .order-card {
       background: white; border-radius: 16px;
       box-shadow: 0 8px 24px rgba(0,0,0,0.15);
       margin-bottom: 1.75rem; overflow: hidden;
     }
-
     .order-header {
       padding: 1rem 1.5rem;
       display: flex; align-items: center; justify-content: space-between;
       gap: 1rem; flex-wrap: wrap;
       border-bottom: 1px solid #f0f0f0;
     }
-
     .order-meta { flex: 1; }
     .order-no { font-size: 0.72rem; color: #aaa; font-family: monospace; margin-bottom: 0.2rem; }
     .order-company { font-size: 1rem; font-weight: 700; color: #333; margin-bottom: 0.2rem; }
     .order-tags { display: flex; gap: 0.75rem; flex-wrap: wrap; font-size: 0.82rem; color: #666; }
-
     .order-delivery { text-align: right; flex-shrink: 0; }
     .delivery-label { font-size: 0.68rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.04em; }
     .delivery-date  { font-size: 0.9rem; font-weight: 600; color: #333; }
-
     /* Parts table */
     table { width: 100%; border-collapse: collapse; }
     thead th {
@@ -57,13 +37,11 @@
       font-size: 0.88rem; color: #333; vertical-align: middle;
     }
     tbody tr:hover td { background: #f9fbf9; }
-
     .part-no {
       font-family: monospace; font-weight: 700; font-size: 0.9rem;
       background: #eef3ef; color: #256349;
       padding: 2px 8px; border-radius: 6px; display: inline-block;
     }
-
     /* Progress bar */
     .prog-wrap { display: flex; align-items: center; gap: 0.6rem; }
     .prog-bg {
@@ -73,7 +51,6 @@
     .prog-fill { height: 100%; border-radius: 999px; background: #2f7d5b; }
     .prog-fill.done { background: #16a34a; }
     .prog-label { font-size: 0.78rem; color: #888; white-space: nowrap; }
-
     /* Step badge */
     .step-badge {
       display: inline-block; padding: 3px 10px; border-radius: 999px;
@@ -83,7 +60,6 @@
     .step-in_progress { background: #e5e7eb; color: #374151; }
     .step-completed   { background: #dcfce7; color: #166534; }
     .step-failed      { background: #fee2e2; color: #991b1b; }
-
     .btn-update {
       background: #2f7d5b; color: white;
       border: none; min-height: 40px; padding: 0.55rem 1.1rem;
@@ -98,14 +74,13 @@
     .btn-update.readonly {
       background: #eef3ef; color: #2f7d5b; cursor: default; font-weight: 400;
     }
-
     .empty-state {
-      background: rgba(255,255,255,0.15); border-radius: 16px;
+      background: #ffffff; border-radius: 16px;
       padding: 3rem; text-align: center;
-      color: rgba(255,255,255,0.85); font-size: 1rem;
+      color: #6b7280; font-size: 1rem;
     }
     .empty-state a {
-      color: white; font-weight: 700; text-decoration: underline;
+      color: #1f2933; font-weight: 700; text-decoration: underline;
     }
   
 {% endblock %}
@@ -117,7 +92,7 @@
   <h1>Production Board</h1>
   <p class="subtitle">
     All orders currently in production — read-only.
-    <a href="{% url 'select_job_for_coil' %}" style="color:white; font-weight:700;">📷 Scan a coil to update →</a>
+    <a href="{% url 'select_job_for_coil' %}" style="color:#256349; font-weight:700;">📷 Scan a coil to update →</a>
   </p>
 
   {% for item in board %}

@@ -1,35 +1,17 @@
 {% extends "materials/base.html" %}
 {% block tablet_css %}{% include "materials/_portal_tablet.css" %}{% endblock %}
 
+{% block body_attrs %} class="ds"{% endblock %}
 {% block title %}Gate Entry #{{ gate_entry.pk }}{% endblock %}
 
 {% block css %}
-    
-    body {
-      font-family: Arial, Helvetica, sans-serif;
-      background: #2f3a35;
-      min-height: 100vh;
-      padding: 2rem 1rem;
-    }
-
-    .page { max-width: 640px; margin: 0 auto; }
-
-    .back-link {
-      color: rgba(255,255,255,0.8); text-decoration: none;
-      font-size: 0.9rem; display: inline-block; margin-bottom: 1.25rem;
-    }
-
-    h1 { color: white; font-size: 1.5rem; margin-bottom: 0.35rem; }
-    .subtitle { color: rgba(255,255,255,0.8); font-size: 0.9rem; margin-bottom: 1.5rem; }
-
     .gate-entry-card {
-      background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
+      background: #ffffff; border: 1px solid #dfe3dd;
       border-radius: 12px; padding: 1rem 1.25rem; margin-bottom: 1.5rem;
-      color: white; font-size: 0.9rem;
+      color: #1f2933; font-size: 0.9rem;
       display: flex; gap: 1.25rem; flex-wrap: wrap;
     }
     .gate-entry-card strong { font-weight: 700; }
-
     .lot-card {
       background: white; border-radius: 12px;
       padding: 1rem 1.25rem;
@@ -41,55 +23,47 @@
       transform: translateY(-2px);
       box-shadow: 0 6px 20px rgba(0,0,0,0.18);
     }
-
     .lot-link {
       display: flex; align-items: center; justify-content: space-between;
       text-decoration: none; color: inherit;
     }
-
     .lot-left { flex: 1; }
     .lot-title { font-weight: 700; font-size: 1rem; color: #333; margin-bottom: 0.2rem; }
     .lot-meta { font-size: 0.82rem; color: #666; }
-
     .remove-lot-form { margin-top: 0.5rem; }
     .btn-remove-saved-lot {
       background: none; border: none; color: #dc2626;
       font-size: 0.8rem; font-weight: 600; cursor: pointer; padding: 0;
     }
     .btn-remove-saved-lot:hover { text-decoration: underline; }
-
     .lot-right { text-align: right; margin-left: 1rem; flex-shrink: 0; }
     .remaining-label { font-size: 0.7rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.04em; }
     .remaining-count { font-size: 0.92rem; font-weight: 600; color: #333; }
-
     .badge-complete {
       display: inline-block; padding: 0.2rem 0.6rem;
       border-radius: 999px; font-size: 0.72rem; font-weight: 600;
       background: #dcfce7; color: #166534;
     }
-
     .add-lot {
       display: block;
-      background: rgba(255,255,255,0.15);
-      border: 1px dashed rgba(255,255,255,0.5);
+      background: #ffffff;
+      border: 1px dashed #dfe3dd;
       border-radius: 12px;
       padding: 1rem 1.25rem;
       margin-top: 0.5rem;
-      color: white;
+      color: #1f2933;
       text-decoration: none;
       font-weight: 600;
       text-align: center;
       transition: background 0.15s;
     }
-    .add-lot:hover { background: rgba(255,255,255,0.25); }
-
+    .add-lot:hover { background: #eef3ef; }
     .empty {
-      background: rgba(255,255,255,0.15); border-radius: 12px;
+      background: #ffffff; border-radius: 12px;
       padding: 1.5rem; text-align: center;
-      color: rgba(255,255,255,0.85); font-size: 0.9rem;
+      color: #6b7280; font-size: 0.9rem;
       margin-bottom: 1rem;
     }
-
     .arrow { font-size: 1.2rem; color: #2f7d5b; }
   
 {% endblock %}
