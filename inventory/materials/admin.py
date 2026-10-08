@@ -89,7 +89,7 @@ class AllowedCoilSpecInline(admin.TabularInline):
     extra = 2
     fields = ['order_width', 'order_thickness', 'grade', 'size', 'raw_material_ratio', 'notes']
     verbose_name = "Allowed Coil Spec"
-    verbose_name_plural = "Allowed Coil Specs (leave empty to allow all coils; set the ordered width/thickness to make a spec apply to that size only)"
+    verbose_name_plural = "Allowed Coil Specs"
 
 
 # ── ProductType ──────────────────────────────────────────────
