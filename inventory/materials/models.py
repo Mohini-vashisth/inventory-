@@ -148,6 +148,12 @@ class Material(models.Model):
                   "cut via the app to compute total usage.",
     )
 
+    def save(self, *args, **kwargs):
+        # Heat numbers are kept in capitals however they arrive (employee page, admin, import, shell).
+        if self.heat_no:
+            self.heat_no = self.heat_no.strip().upper()
+        super().save(*args, **kwargs)
+
     def formatted_coil(self):
         return f"COIL{self.coil_no:04d}"
 

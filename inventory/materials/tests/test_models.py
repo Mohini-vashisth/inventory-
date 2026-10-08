@@ -288,3 +288,22 @@ class GateEntryLotModelTests(TestCase):
         Material.objects.create(lot=lot, quantity=500)
         self.assertEqual(lot.coils_remaining(), 0)
         self.assertTrue(lot.is_complete())
+
+
+class HeatNumberCapitalsTests(TestCase):
+    def test_heat_no_is_upper_cased_on_save_however_it_arrives(self):
+        coil = Material.objects.create(quantity=100, heat_no=' 21e02404 ')
+        coil.refresh_from_db()
+        self.assertEqual(coil.heat_no, '21E02404')
+        coil.heat_no = 'ab12'
+        coil.save()
+        coil.refresh_from_db()
+        self.assertEqual(coil.heat_no, 'AB12')
+
+    def test_admin_edit_form_capitalises_the_heat_no_box(self):
+        from django.contrib.auth import get_user_model
+        get_user_model().objects.create_superuser('root', 'r@example.com', 'pw')
+        self.client.login(username='root', password='pw')
+        coil = Material.objects.create(quantity=100, heat_no='X1')
+        page = self.client.get(reverse('admin:materials_material_change', args=[coil.pk])).content.decode()
+        self.assertIn('text-transform: uppercase', page)
