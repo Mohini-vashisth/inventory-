@@ -13,13 +13,10 @@
   hint.style.cssText = 'margin-top:4px;font-size:12px;color:#2f7d5b;';
   code.parentNode.appendChild(hint);
 
-  // Same rule as Python's grade_key: case, spaces and punctuation don't make a different grade.
-  function gradeKey(value) { return (value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
-
-  // Grades are stored as capital letters and digits only (models.normalize_grade): "en-8d" -> "EN8D".
-  function canonicalGrade() {
-    var normalized = grade.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (normalized !== grade.value) grade.value = normalized;
+  // The grade is a dropdown of the grade list: what the lookup needs is the chosen option's name, not its id.
+  function gradeName() {
+    var option = grade.options && grade.options[grade.selectedIndex];
+    return option && grade.value ? option.text.trim() : '';
   }
 
   function clearAuto() {
@@ -32,10 +29,10 @@
   function update() {
     clearTimeout(timer);
     if (code.value && !autoFilled) { hint.textContent = ''; return; }
-    if (!category.value || !grade.value.trim()) { clearAuto(); hint.textContent = ''; return; }
+    if (!category.value || !gradeName()) { clearAuto(); hint.textContent = ''; return; }
     timer = setTimeout(function () {
       var query = '?category=' + encodeURIComponent(category.value) +
-        '&grade=' + encodeURIComponent(grade.value.trim());
+        '&grade=' + encodeURIComponent(gradeName());
       fetch(code.dataset.lookupUrl + query, {credentials: 'same-origin'})
         .then(function (response) { return response.json(); })
         .then(function (data) {
@@ -60,7 +57,6 @@
   }
 
   code.addEventListener('input', function () { autoFilled = false; hint.textContent = ''; });
-  grade.addEventListener('change', function () { canonicalGrade(); update(); });
   [category, grade].forEach(function (field) {
     field.addEventListener('input', update);
     field.addEventListener('change', update);
