@@ -1,0 +1,11 @@
+/* Employee portal pages on a tablet held upright (about 700px wide and up): the pages were laid out
+   for a phone-width column, which leaves wide empty margins and small text. Everything sized in rem
+   scales with the root size; the px-sized form fields and the column width are set here. Included
+   only by employee pages, never the customer-facing ones. */
+@media (min-width: 700px) and (orientation: portrait) {
+  html { font-size: 17px; }
+  .page { max-width: 720px !important; }
+  input, select, textarea { font-size: 17px !important; min-height: 48px; }
+  button, .btn { min-height: 48px; }
+  .form-group { margin-bottom: 0.8rem; }
+}
