@@ -134,7 +134,7 @@
       {% if order.product_type_name %}<span>🏷️ {{ order.product_type_name }}</span>{% endif %}
       {% if order.grade %}<span>📐 Grade: {{ order.grade }}</span>{% endif %}
       {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
-      {% if order.product_type %}<span>🔧 {{ order.product_type.item_code }}</span>{% endif %}
+      {% if order.size_text %}<span>📏 {{ order.size_text }}</span>{% endif %}
       {% if order.delivery_date %}<span>📅 {{ order.delivery_date|date:"d M Y" }}</span>{% endif %}
     </div>
   </div>
@@ -194,9 +194,9 @@
 
   <h2>
     {% if order.product_type and order.product_type.allowed_specs.all %}
-      Matching coils for {{ order.product_type.item_code }}
+      Matching coils
     {% elif order.product_type %}
-      All coils with remaining weight (no coil specs configured for {{ order.product_type.item_code }})
+      All coils with remaining weight (no coil specs configured)
     {% else %}
       All coils with remaining weight
     {% endif %}
@@ -232,7 +232,7 @@
   {% empty %}
   <div class="empty">
     {% if order.product_type and order.product_type.allowed_specs.all %}
-      No coils in inventory match the allowed specs for <strong>{{ order.product_type.item_code }}</strong>.<br>
+      No coils in inventory match the allowed specs for this order.<br>
       Ask admin to update the allowed coil specs or add matching coils to inventory.
     {% else %}
       No coils with remaining weight in inventory.

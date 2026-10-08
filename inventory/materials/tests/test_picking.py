@@ -307,3 +307,27 @@ class ScanCoilForOrderTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "no weight remaining")
+
+
+class PickingPagesShowSizeTests(TestCase):
+    """The picking pages show the order's size as 16 x 8, not its product code."""
+
+    def setUp(self):
+        session = self.client.session
+        session['employee_auth'] = True
+        session.save()
+        customer = Customer.objects.create(name='Size Co')
+        self.code = ProductType.objects.create(item_code='ZZCODE9', grade='EN8D')
+        self.order = Order.objects.create(customer=customer, product_type=self.code, grade='EN8D', width=Decimal('16'),
+                                          thickness=Decimal('8.0'), quantity=Decimal('500'), status='confirmed')
+
+    def test_size_text_is_width_x_thickness(self):
+        self.assertEqual(self.order.size_text(), '16 x 8')
+        self.order.thickness = None
+        self.assertEqual(self.order.size_text(), '16')
+
+    def test_the_pages_show_the_size_and_not_the_product_code(self):
+        for url in (reverse('select_order'), reverse('select_coil_for_order', args=[self.order.pk])):
+            page = self.client.get(url).content.decode()
+            self.assertIn('16 x 8', page, url)
+            self.assertNotIn('ZZCODE9', page, url)
