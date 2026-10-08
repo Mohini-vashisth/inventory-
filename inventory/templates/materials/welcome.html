@@ -1,0 +1,29 @@
+{% extends "materials/base.html" %}
+{% block head_extra %}{% load static %}<link rel="manifest" href="{% static 'materials/portal.webmanifest' %}"><meta name="theme-color" content="#2f3a35">{% endblock %}
+{% block body_attrs %} class="ds"{% endblock %}
+
+{% block title %}Welcome — Matta Drawing Works{% endblock %}
+
+{% block css %}
+    .ds { display: flex; align-items: center; justify-content: center; text-align: center; overscroll-behavior: none; }
+    .welcome { width: 100%; max-width: 560px; padding: 2rem 1rem; }
+    .mark {
+      width: 120px; height: 120px; border-radius: 28px; margin: 0 auto 2rem;
+      background: #2f3a35; color: #fff; display: flex; align-items: center; justify-content: center;
+      font-size: 2.6rem; font-weight: 700; letter-spacing: 0.04em; box-shadow: var(--ds-shadow);
+    }
+    .hello { color: var(--ds-muted); font-size: 1.2rem; margin-bottom: 0.4rem; }
+    .welcome h1 { font-size: 2.4rem; margin-bottom: 0.6rem; }
+    .tagline { color: var(--ds-muted); font-size: 1.05rem; margin-bottom: 2.75rem; }
+    .go { display: block; max-width: 360px; margin: 0 auto; padding: 1.1rem; font-size: 1.2rem; border-radius: 14px; }
+{% endblock %}
+
+{% block content %}
+<div class="welcome">
+  <div class="mark">MDW</div>
+  <p class="hello">Welcome to</p>
+  <h1>Matta Drawing Works</h1>
+  <p class="tagline">Plant portal</p>
+  <a href="{% url 'employee_login' %}" class="btn-submit go">Continue →</a>
+</div>
+{% endblock %}

@@ -47,6 +47,11 @@ def employee_logout(request):
     return redirect('employee_login')
 
 
+def welcome(request):
+    """The first screen of the installed tablet app (the manifest's start_url): a welcome, then on to the PIN page."""
+    return render(request, 'materials/welcome.html')
+
+
 def home(request):
     return render(request, "home.html")
 

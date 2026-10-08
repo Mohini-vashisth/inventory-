@@ -245,6 +245,7 @@ class MaterialsRouteGuardTests(TestCase):
 
     PUBLIC = {
         'home',               # landing page, no data
+        'welcome',            # the tablet app's first screen, static text
         'admin_login',        # login form itself
         'employee_login',     # PIN form itself
         'employee_logout',    # only clears this browser's own session
@@ -319,3 +320,12 @@ class MaterialsRouteGuardTests(TestCase):
         for name in ('coils', 'orders', 'jobs', 'product-types'):
             with self.subTest(endpoint=name):
                 self.assertIn(self.client.get(f'/api/{name}/').status_code, (401, 403))
+
+
+class WelcomePageTests(TestCase):
+    def test_welcome_is_public_and_leads_to_the_pin_page(self):
+        response = self.client.get(reverse('welcome'))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Welcome to')
+        self.assertContains(response, 'Matta Drawing Works')
+        self.assertContains(response, reverse('employee_login'))
