@@ -72,6 +72,10 @@ class MaterialForm(forms.ModelForm):
         # usage from the spreadsheet), never through this form.
         exclude = ['coil_no', 'lot', 'invoice_weight', 'archived_at', 'legacy_used_weight']
 
+    def clean_heat_no(self):
+        heat_no = self.cleaned_data['heat_no']
+        return heat_no.strip().upper() if heat_no else heat_no
+
     def clean_grade(self):
         grade = self.cleaned_data['grade']
         if not GradeOption.objects.filter(name=grade).exists():
