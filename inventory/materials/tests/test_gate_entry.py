@@ -192,11 +192,11 @@ class GateEntryFormTests(TestCase):
         response = self.client.post(reverse('gate_entry_form'), data)
         ge = GateEntry.objects.get()
         self.assertRedirects(response, reverse('gate_entry_detail', args=[ge.pk]))
-        self.assertEqual(ge.vendor, 'ABC Traders')
+        self.assertEqual(ge.vendor, 'ABC TRADERS')
         self.assertEqual(ge.total_weight, Decimal('2500.000'))
         lot = GateEntryLot.objects.get()
         self.assertEqual(lot.gate_entry, ge)
-        self.assertEqual(lot.company, 'Tata Steel')
+        self.assertEqual(lot.company, 'TATA STEEL')
         self.assertEqual(lot.no_of_coils, 3)
 
     def test_multiple_lots_created_together(self):
@@ -209,7 +209,7 @@ class GateEntryFormTests(TestCase):
         self.assertEqual(GateEntryLot.objects.filter(gate_entry=ge).count(), 2)
         self.assertEqual(ge.no_of_coils(), 5)
         companies = set(GateEntryLot.objects.filter(gate_entry=ge).values_list('company', flat=True))
-        self.assertEqual(companies, {'Tata Steel', 'JSW'})
+        self.assertEqual(companies, {'TATA STEEL', 'JSW'})
 
     def test_invalid_lot_rolls_back_the_whole_submission(self):
         """All-or-nothing: an invalid second lot must not leave a gate entry
@@ -338,7 +338,7 @@ class GateEntryEditTests(TestCase):
         )
         self.assertRedirects(response, reverse('gate_entry_detail', args=[self.gate_entry.pk]))
         self.gate_entry.refresh_from_db()
-        self.assertEqual(self.gate_entry.vendor, 'XYZ Traders')
+        self.assertEqual(self.gate_entry.vendor, 'XYZ TRADERS')
         self.assertEqual(self.gate_entry.vehicle_no, 'KA1A1234')  # server-side uppercase safety net
         self.assertEqual(self.gate_entry.invoice_no, 'INV-0002')
         self.assertEqual(self.gate_entry.total_weight, Decimal('1500.000'))
@@ -357,7 +357,7 @@ class GateEntryEditTests(TestCase):
         )
         self.assertRedirects(response, reverse('gate_entry_detail', args=[self.gate_entry.pk]))
         self.gate_entry.refresh_from_db()
-        self.assertEqual(self.gate_entry.vendor, 'XYZ Traders')
+        self.assertEqual(self.gate_entry.vendor, 'XYZ TRADERS')
 
     def test_invalid_edit_shows_error_and_does_not_save(self):
         response = self.client.post(
@@ -518,3 +518,28 @@ class MaterialFormGateEntryTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "reload and check with the office")
         self.assertEqual(Material.objects.filter(lot=self.lot).count(), 1)
+
+
+class GateEntryUppercaseTests(TestCase):
+    """Whatever is typed on the gate entry pages is stored in capitals."""
+
+    def test_vendor_invoice_and_company_are_stored_in_capitals(self):
+        from ..forms import GateEntryForm, GateEntryLotForm
+        form = GateEntryForm({'date': '2026-07-06', 'vendor': ' abc traders ', 'vehicle_no': 'ap16ta1234',
+                              'invoice_no': 'inv-42a', 'total_weight': '2500'})
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual((form.cleaned_data['vendor'], form.cleaned_data['invoice_no'], form.cleaned_data['vehicle_no']),
+                         ('ABC TRADERS', 'INV-42A', 'AP16TA1234'))
+        GradeOption.objects.create(name='EN8D')
+        SizeOption.objects.create(value='1.200')
+        lot = GateEntryLotForm({'company': 'tata steel', 'grade': 'EN8D', 'size': '1.2', 'no_of_coils': '3'})
+        self.assertTrue(lot.is_valid(), lot.errors)
+        self.assertEqual(lot.cleaned_data['company'], 'TATA STEEL')
+
+    def test_the_pages_load_the_uppercase_script(self):
+        from django.contrib.auth import get_user_model  # noqa: F401
+        session = self.client.session
+        session['employee_auth'] = True
+        session.save()
+        for name in ('gate_entry_form',):
+            self.assertContains(self.client.get(reverse(name)), "autocapitalize', 'characters'")
