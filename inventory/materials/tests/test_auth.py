@@ -339,3 +339,31 @@ class WelcomePageTests(TestCase):
         response = self.client.get(reverse('employee'))
         self.assertEqual(response.status_code, 302)
         self.assertIn('/employee-login/', response['Location'])
+
+
+class CoilTagForStaffTests(TestCase):
+    """A coil's QR tag can be reprinted from the admin by staff, not only by an employee-PIN browser."""
+
+    def setUp(self):
+        self.coil = Material.objects.create(quantity=500, heat_no='1')
+        self.url = reverse('coil_tag', kwargs={'pk': self.coil.pk})
+
+    def test_staff_login_can_open_the_tag_without_the_pin(self):
+        from django.contrib.auth import get_user_model
+        get_user_model().objects.create_user('boss', password='pw', is_staff=True)
+        self.client.login(username='boss', password='pw')
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+
+    def test_anonymous_and_non_staff_are_sent_to_the_pin_page(self):
+        self.assertEqual(self.client.get(self.url).status_code, 302)
+        from django.contrib.auth import get_user_model
+        get_user_model().objects.create_user('plain', password='pw')
+        self.client.login(username='plain', password='pw')
+        self.assertEqual(self.client.get(self.url).status_code, 302)
+
+    def test_admin_lists_and_shows_a_qr_tag_link(self):
+        from django.contrib.auth import get_user_model
+        get_user_model().objects.create_superuser('root', 'r@example.com', 'pw')
+        self.client.login(username='root', password='pw')
+        for url in (reverse('admin:materials_material_changelist'), reverse('admin:materials_material_change', args=[self.coil.pk])):
+            self.assertContains(self.client.get(url), self.url)

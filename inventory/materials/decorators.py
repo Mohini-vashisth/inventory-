@@ -38,3 +38,15 @@ def employee_required(view_func):
             return redirect(f"{reverse('employee_login')}?next={request.path}")
         return view_func(request, *args, **kwargs)
     return _tag(wrapper, 'employee')
+
+
+def employee_or_staff_required(view_func):
+    """Either an employee-PIN browser or a logged-in staff user (admin) may reach the view, e.g. reprinting a
+    coil's QR tag. Anyone else is sent to the PIN page. Tagged 'employee' for MaterialsRouteGuardTests: an
+    anonymous or non-staff visitor is denied, and a PIN session stays out of the staff-only routes."""
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not (request.session.get('employee_auth') or request.user.is_staff):
+            return redirect(f"{reverse('employee_login')}?next={request.path}")
+        return view_func(request, *args, **kwargs)
+    return _tag(wrapper, 'employee')

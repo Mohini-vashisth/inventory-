@@ -11,7 +11,7 @@ from django.http import JsonResponse
 
 from ..models import GateEntry, GateEntryLot, Material, GradeOption, SizeOption
 from ..forms import GateEntryForm, GateEntryLotForm, GateEntryLotFormSet, MaterialForm
-from ..decorators import employee_required
+from ..decorators import employee_required, employee_or_staff_required
 from .common import _GateEntryOverCommitted, _first_form_error, _first_formset_error
 
 
@@ -226,7 +226,7 @@ def material_form(request, lot_pk):
     })
 
 
-@employee_required
+@employee_or_staff_required
 def coil_tag(request, pk):
     coil = get_object_or_404(Material, pk=pk)
 
