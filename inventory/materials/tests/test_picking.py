@@ -331,3 +331,52 @@ class PickingPagesShowSizeTests(TestCase):
             page = self.client.get(url).content.decode()
             self.assertIn('16 x 8 mm', page, url)
             self.assertNotIn('ZZCODE9', page, url)
+
+
+class SizeSpecificCoilSpecTests(TestCase):
+    """An allowed coil spec can be made for one ordered size (width x thickness); picking then depends on the
+    product type, grade and size together."""
+
+    def setUp(self):
+        session = self.client.session
+        session['employee_auth'] = True
+        session.save()
+        customer = Customer.objects.create(name='Spec Co')
+        self.code = ProductType.objects.create(item_code='SPEC1', grade='EN8D')
+        self.coil_a = Material.objects.create(grade='EN8D', size=Decimal('12'), quantity=Decimal('1000'))
+        self.coil_b = Material.objects.create(grade='EN8D', size=Decimal('14'), quantity=Decimal('1000'))
+        AllowedCoilSpec.objects.create(product_type=self.code, grade='EN8D', size=Decimal('12'), raw_material_ratio=Decimal('1.1'),
+                                       order_width=Decimal('16'), order_thickness=Decimal('8'))
+        AllowedCoilSpec.objects.create(product_type=self.code, grade='EN8D', size=Decimal('14'), raw_material_ratio=Decimal('1.2'),
+                                       order_width=Decimal('20'), order_thickness=Decimal('10'))
+        self.customer = customer
+
+    def _order(self, width, thickness):
+        return Order.objects.create(customer=self.customer, product_type=self.code, grade='EN8D', width=Decimal(width),
+                                    thickness=Decimal(thickness), quantity=Decimal('500'), status='confirmed')
+
+    def test_only_the_spec_for_the_ordered_size_applies(self):
+        from ..views.picking import _coil_matches_order_specs, _ratio_for_coil
+        small, large = self._order('16', '8'), self._order('20', '10')
+        self.assertTrue(_coil_matches_order_specs(self.coil_a, small))
+        self.assertFalse(_coil_matches_order_specs(self.coil_b, small))
+        self.assertTrue(_coil_matches_order_specs(self.coil_b, large))
+        self.assertFalse(_coil_matches_order_specs(self.coil_a, large))
+        self.assertEqual(_ratio_for_coil(small, self.coil_a), Decimal('1.1'))
+        self.assertEqual(_ratio_for_coil(large, self.coil_b), Decimal('1.2'))
+
+    def test_a_size_with_no_spec_gets_nothing_when_specs_exist_only_for_other_sizes(self):
+        from ..views.picking import _coil_matches_order_specs
+        other = self._order('30', '5')
+        self.assertFalse(_coil_matches_order_specs(self.coil_a, other))
+        page = self.client.get(reverse('select_coil_for_order', args=[other.pk])).content.decode()
+        self.assertNotIn('COIL%04d' % self.coil_a.pk, page)
+        self.assertEqual(other.available_raw_material_output(), Decimal('0'))
+
+    def test_a_size_less_spec_is_the_fallback_for_other_sizes(self):
+        from ..views.picking import _coil_matches_order_specs
+        AllowedCoilSpec.objects.create(product_type=self.code, grade='EN8D', size=Decimal('14'))
+        other = self._order('30', '5')
+        self.assertTrue(_coil_matches_order_specs(self.coil_b, other))
+        self.assertFalse(_coil_matches_order_specs(self.coil_a, other))
+        self.assertTrue(_coil_matches_order_specs(self.coil_a, self._order('16', '8')))   # its own size-specific spec still wins
