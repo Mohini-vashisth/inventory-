@@ -10,7 +10,7 @@
   var autoFilled = false;
   var timer = null;
   var hint = document.createElement('div');
-  hint.style.cssText = 'margin-top:4px;font-size:12px;color:#4e73df;';
+  hint.style.cssText = 'margin-top:4px;font-size:12px;color:#2f7d5b;';
   code.parentNode.appendChild(hint);
 
   // Same rule as Python's grade_key: case, spaces and punctuation don't make a different grade.
@@ -47,7 +47,7 @@
           } else if (data.item_code) {
             code.value = data.item_code;
             autoFilled = true;
-            hint.style.color = '#4e73df';
+            hint.style.color = '#2f7d5b';
             hint.textContent = 'Generated from the product type and grade.';
           } else {
             clearAuto();

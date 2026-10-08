@@ -4,10 +4,10 @@
 
 {% block css %}
     
-    body { font-family: Arial, Helvetica, sans-serif; background: #f4f6f9; color: #333; }
+    body { font-family: Arial, Helvetica, sans-serif; background: #f3f4f2; color: #333; }
 
     header {
-      background: #4e73df; color: white;
+      background: #2f7d5b; color: white;
       padding: 1rem 2rem;
       display: flex; justify-content: space-between; align-items: center;
     }
@@ -38,8 +38,8 @@
     .section-label {
       font-size: 0.7rem; font-weight: 700;
       text-transform: uppercase; letter-spacing: 0.06em;
-      color: #4e73df; margin: 1.25rem 0 0.6rem;
-      padding-bottom: 0.3rem; border-bottom: 1px solid #e8ecff;
+      color: #2f7d5b; margin: 1.25rem 0 0.6rem;
+      padding-bottom: 0.3rem; border-bottom: 1px solid #e4ece6;
     }
     .section-label:first-child { margin-top: 0; }
 
@@ -58,18 +58,18 @@
       padding: 0.55rem 0.75rem; border: 1px solid #ddd;
       border-radius: 8px; font-size: 0.9rem; width: 100%;
     }
-    input:focus, select:focus, textarea:focus { outline: none; border-color: #4e73df; }
+    input:focus, select:focus, textarea:focus { outline: none; border-color: #2f7d5b; }
     textarea { resize: vertical; min-height: 60px; }
 
     /* Quick send */
-    .quick-send-card .card-body { background: #f8f9ff; }
+    .quick-send-card .card-body { background: #f7faf8; }
     .send-row { display: flex; gap: 0.75rem; align-items: flex-end; margin-top: 0.75rem; }
     .btn-send {
-      padding: 0.6rem 1.5rem; background: #1cc88a; color: white;
+      padding: 0.6rem 1.5rem; background: #2f7d5b; color: white;
       border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer; white-space: nowrap;
     }
-    .btn-send:hover { background: #17a673; }
-    .btn-send:disabled { background: #a3e4cc; cursor: default; }
+    .btn-send:hover { background: #256349; }
+    .btn-send:disabled { background: #b9d8c8; cursor: default; }
 
     /* Autocomplete */
 
@@ -77,7 +77,7 @@
 
     .submit-row { display: flex; justify-content: flex-end; margin-top: 1rem; }
     .btn-primary {
-      padding: 0.65rem 2rem; background: #4e73df; color: white;
+      padding: 0.65rem 2rem; background: #2f7d5b; color: white;
       border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
     }
 
@@ -90,19 +90,19 @@
     /* Table */
     table { width: 100%; border-collapse: collapse; }
     th {
-      background: #f8f9fb; padding: 0.65rem 1rem; text-align: left;
+      background: #f7f7f5; padding: 0.65rem 1rem; text-align: left;
       font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em;
       color: #888; font-weight: 600; white-space: nowrap;
     }
     td { padding: 0.75rem 1rem; border-top: 1px solid #f0f0f0; font-size: 0.88rem; vertical-align: middle; }
-    tr:hover td { background: #fafbff; }
+    tr:hover td { background: #f9fbf9; }
 
     .badge {
       display: inline-block; padding: 0.25rem 0.65rem;
       border-radius: 999px; font-size: 0.72rem; font-weight: 600; white-space: nowrap;
     }
     .badge-pending       { background: #fef3c7; color: #92400e; }
-    .badge-confirmed     { background: #dbeafe; color: #1e40af; }
+    .badge-confirmed     { background: #e5e7eb; color: #374151; }
     .badge-in_production { background: #d1fae5; color: #065f46; }
     .badge-completed     { background: #dcfce7; color: #166534; }
     .badge-cancelled     { background: #fee2e2; color: #991b1b; }
@@ -118,14 +118,14 @@
 
     .expand-btn {
       background: none; border: none; cursor: pointer;
-      color: #4e73df; font-size: 0.82rem; padding: 0;
+      color: #2f7d5b; font-size: 0.82rem; padding: 0;
     }
     .expand-btn:hover { text-decoration: underline; }
 
     .detail-row { display: none; }
     .detail-row.open { display: table-row; }
     .detail-box {
-      background: #f8f9fb; padding: 1rem 1.25rem; border-radius: 8px;
+      background: #f7f7f5; padding: 1rem 1.25rem; border-radius: 8px;
       display: grid; grid-template-columns: repeat(3, 1fr);
       gap: 0.75rem 1.5rem; font-size: 0.85rem;
     }
@@ -137,7 +137,7 @@
     .icon-btn {
       background: #f3f4f6; border: 1px solid #ddd;
       border-radius: 6px; padding: 0.25rem 0.65rem;
-      font-size: 0.75rem; cursor: pointer; color: #4e73df;
+      font-size: 0.75rem; cursor: pointer; color: #2f7d5b;
     }
     
     .icon-btn.green { background: #dcfce7; border-color: #bbf7d0; color: #166534; margin-left: 4px; }
@@ -151,16 +151,16 @@
       border-top: 1px solid #f0f0f0;
     }
     .btn-send {
-      padding: 0.6rem 1.4rem; background: #1cc88a; color: white;
+      padding: 0.6rem 1.4rem; background: #2f7d5b; color: white;
       border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
     }
-    .btn-send:hover { background: #17a673; }
+    .btn-send:hover { background: #256349; }
     .btn-manual {
       padding: 0.6rem 1.4rem; background: #f3f4f6; color: #333;
       border: 1px solid #ddd; border-radius: 8px; font-size: 0.95rem; cursor: pointer;
     }
     .btn-manual:hover { background: #e5e7eb; }
-    .btn-manual.active { background: #eff2ff; border-color: #c7d2fe; color: #4e73df; }
+    .btn-manual.active { background: #eef3ef; border-color: #c5d6cb; color: #2f7d5b; }
 
     .manual-fields { display: none; margin-top: 1.25rem; }
     .manual-fields.open { display: block; }
@@ -400,7 +400,7 @@
           <td style="font-weight:600;"><a href="{% url 'order_detail' order.pk %}" style="color:inherit; text-decoration:none;">{{ order.customer.name }}</a></td>
           <td>
             {% if order.product_type %}
-              <span style="font-size:0.82rem; font-weight:600; color:#4e73df;">{{ order.product_type.item_code }}</span>
+              <span style="font-size:0.82rem; font-weight:600; color:#2f7d5b;">{{ order.product_type.item_code }}</span>
               {% if order.product_type.category %}<div class="muted" style="font-size:0.75rem;">{{ order.product_type.category.name }}</div>{% endif %}
             {% else %}
               <span style="color:#f59e0b; font-size:0.78rem;">⚠ Not set</span>
@@ -430,7 +430,7 @@
               <span class="badge badge-in_production">In Production</span>
               <form method="post" action="{% url 'order_dispatch' order.pk %}" style="display:inline; margin-left:4px;">
                 {% csrf_token %}
-                <button class="action-btn" style="background:#dbeafe;color:#1e40af;">🚚 Dispatch</button>
+                <button class="action-btn" style="background:#e5e7eb;color:#374151;">🚚 Dispatch</button>
               </form>
             {% else %}
               <span class="badge badge-{{ order.status }}">{{ order.get_status_display }}</span>

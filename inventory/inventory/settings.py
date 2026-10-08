@@ -246,3 +246,15 @@ if not EMPLOYEE_PIN:
 # Wrong PINs allowed per client IP before employee login locks that IP out.
 EMPLOYEE_LOGIN_MAX_FAILURES = 5
 EMPLOYEE_LOGIN_LOCKOUT_SECONDS = 15 * 60
+
+
+# Admin look (django-jazzmin): flat, dark-neutral navigation with a green accent instead of the default blue.
+JAZZMIN_UI_TWEAKS = {
+    "navbar": "navbar-dark",
+    "no_navbar_border": True,
+    "sidebar": "sidebar-dark-success",
+    "accent": "accent-success",
+    "brand_colour": "navbar-dark",
+    "navbar_fixed": False,
+    "theme": "default",
+}

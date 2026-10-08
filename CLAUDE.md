@@ -256,6 +256,8 @@ All 24 page templates `{% extends "materials/base.html" %}` (since 2026-10-05; e
 
 **Partials** are `{% include %}`d fragments, not pages, and are named with a leading underscore (`_base.css`, `_query_actions.html`, `_copy_link_script.html`); `TemplateStructureTests` skips them. **Adding a page:** extend `base.html`, put page-specific CSS in the `css` block, and only move a rule into `_base.css` if it's identical in 3+ pages and its class isn't used elsewhere without a rule. `TemplateStructureTests.test_every_page_template_extends_base_html` enforces the `extends`.
 
+**Colours (2026-10-08, "less blue and metallic"):** the blue→green gradients and blue accents were replaced with a flat palette — page backgrounds on the portal/customer/standalone pages are solid `#2f3a35` (dark, so their white headings stay readable), the accent for buttons, links and PDF headings is green (`#2f7d5b`, hover `#256349`; PDFs use `#2f6f4f`), and dashboards sit on `#f3f4f2`. Blue tints became green-grey tints and the blue info badges grey. The admin uses `JAZZMIN_UI_TWEAKS` in `settings.py` (dark sidebar, green accent). To change the look again, search for those hex values; there is no single palette file, because each page carries its own CSS (see above).
+
 ## Order-first coil picking (important constraint)
 
 When an order has a ProductType with AllowedCoilSpecs configured, only coils matching those grade/size specs can be picked (`_coil_matches_order_specs` in `materials/views/picking.py`, used by both the scan lookup and the browse list). If no specs are configured, all coils with remaining weight are eligible. Orders **cannot be confirmed** without a product type set, and picking is blocked entirely without one.

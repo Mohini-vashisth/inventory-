@@ -28,8 +28,8 @@ from reportlab.platypus import (
     Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 
-ACCENT = colors.HexColor('#4e73df')
-BOX_BG = colors.HexColor('#EFF2FF')
+ACCENT = colors.HexColor('#2f6f4f')
+BOX_BG = colors.HexColor('#eef3ef')
 MUTED = colors.HexColor('#6b7280')
 DARK = colors.HexColor('#1a1a1a')
 BORDER = colors.HexColor('#dddddd')
