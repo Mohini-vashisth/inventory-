@@ -1,68 +1,19 @@
 {% extends "materials/base.html" %}
 {% block tablet_css %}{% include "materials/_portal_tablet.css" %}{% endblock %}
 
+{% block body_attrs %} class="ds"{% endblock %}
 {% block title %}Pick Coil for Order{% endblock %}
 
 {% block css %}
-  body {
-    font-family: Arial, Helvetica, sans-serif;
-    background: #2f3a35;
-    min-height: 100vh;
-    padding: 2rem 1rem;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-  }
-
-  .page { width: 100%; max-width: 480px; }
-
-  .back-link {
-    color: rgba(255,255,255,0.8); text-decoration: none;
-    font-size: 0.9rem; display: inline-block; margin-bottom: 1.25rem;
-  }
-
-  h1 { color: white; font-size: 1.5rem; margin-bottom: 0.3rem; }
-  .subtitle { color: rgba(255,255,255,0.75); font-size: 0.88rem; margin-bottom: 1.25rem; }
-
   .banner {
-    background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3);
+    background: #ffffff; border: 1px solid #dfe3dd;
     border-radius: 10px; padding: 0.75rem 1.1rem; margin-bottom: 1.25rem;
-    color: white; font-size: 0.88rem;
+    color: #1f2933; font-size: 0.88rem;
     display: flex; gap: 1.25rem; flex-wrap: wrap;
   }
   .banner strong { font-weight: 700; }
-
-  .card {
-    background: white; border-radius: 16px;
-    padding: 1.75rem;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-  }
-
   .form-group { margin-bottom: 1.1rem; }
-
-  label {
-    display: block;
-    font-size: 0.72rem; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.05em;
-    color: #666; margin-bottom: 0.35rem;
-  }
-
-  input[type="number"] {
-    width: 100%; padding: 0.6rem 0.85rem;
-    border: 1px solid #ddd; border-radius: 8px;
-    font-size: 16px; color: #333;
-  }
-  input:focus { outline: none; border-color: #2f7d5b; }
   input[readonly] { background: #f7f7f5; color: #888; }
-
-  .btn-submit {
-    width: 100%; padding: 0.8rem;
-    background: #2f7d5b; color: white;
-    border: none; border-radius: 8px;
-    font-size: 1rem; font-weight: 600; cursor: pointer;
-    margin-top: 0.5rem;
-  }
-
   
 
   .blocked-banner {
@@ -70,6 +21,7 @@
     padding: 1rem 1.5rem; margin-bottom: 1.25rem;
     color: #991b1b; font-weight: 600; text-align: center;
   }
+
 {% endblock %}
 
 {% block content %}

@@ -1,0 +1,36 @@
+/* The shared look for every page that opts in with <body class="ds"> (see CLAUDE.md, "Design system").
+   One light palette, one card, one heading style, one back button, one set of form fields and buttons.
+   Page CSS keeps only what is genuinely page-specific. Selectors start with .ds so they win over any
+   older rule a page still carries. */
+:root {
+  --ds-bg: #f3f4f2; --ds-surface: #ffffff; --ds-text: #1f2933; --ds-muted: #6b7280; --ds-border: #dfe3dd;
+  --ds-accent: #2f7d5b; --ds-accent-dark: #256349; --ds-accent-soft: #eef3ef; --ds-danger: #b91c1c;
+  --ds-radius: 12px; --ds-shadow: 0 1px 3px rgba(31,41,51,0.10);
+}
+.ds { font-family: Arial, Helvetica, sans-serif; background: var(--ds-bg); color: var(--ds-text); min-height: 100vh; padding: 1.5rem 1rem; }
+.ds .page { width: 100%; max-width: 760px; margin: 0 auto; }
+.ds h1 { color: var(--ds-text); font-size: 1.5rem; font-weight: 700; margin-bottom: 0.3rem; }
+.ds .subtitle { color: var(--ds-muted); font-size: 0.92rem; margin-bottom: 1.5rem; }
+.ds .section-title { color: var(--ds-muted); }
+.ds .empty, .ds .muted { color: var(--ds-muted); }
+
+.ds .back-link {
+  display: block; width: fit-content; margin: 0 auto 1.1rem 0; padding: 0.55rem 1rem; min-height: 44px; line-height: 1.5;
+  background: var(--ds-surface); color: var(--ds-text); border: 1px solid var(--ds-border); border-radius: 10px;
+  font-size: 0.95rem; font-weight: 600; text-decoration: none; box-shadow: var(--ds-shadow);
+}
+.ds .back-link:hover { background: var(--ds-accent-soft); color: var(--ds-accent-dark); }
+
+.ds .card { background: var(--ds-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: 1.25rem 1.5rem; box-shadow: var(--ds-shadow); }
+
+.ds label { display: block; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ds-muted); margin-bottom: 0.35rem; }
+.ds input[type="text"], .ds input[type="number"], .ds input[type="date"], .ds input[type="password"], .ds input[type="email"], .ds select, .ds textarea {
+  width: 100%; padding: 0.6rem 0.85rem; border: 1px solid #cfd4cc; border-radius: 8px; font-size: 16px; color: var(--ds-text); background: #fff;
+}
+.ds input:focus, .ds select:focus, .ds textarea:focus { outline: none; border-color: var(--ds-accent); box-shadow: 0 0 0 3px rgba(47,125,91,0.15); }
+
+.ds .btn-submit, .ds .btn-primary {
+  width: 100%; padding: 0.8rem; background: var(--ds-accent); color: #fff; border: none; border-radius: 8px;
+  font-size: 1rem; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; display: block;
+}
+.ds .btn-submit:hover, .ds .btn-primary:hover { background: var(--ds-accent-dark); }

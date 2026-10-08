@@ -1,26 +1,14 @@
 {% extends "materials/base.html" %}
 {% block tablet_css %}{% include "materials/_portal_tablet.css" %}{% endblock %}
 
+{% block body_attrs %} class="ds"{% endblock %}
 {% block title %}Select Order{% endblock %}
 
 {% block css %}
-    
-    body {
-      font-family: Arial, Helvetica, sans-serif;
-      background: #2f3a35;
-      min-height: 100vh;
-      padding: 2rem 1rem;
-    }
-
-    .page { max-width: 760px; margin: 0 auto; }
-
-    h1 { color: white; font-size: 1.5rem; margin-bottom: 0.35rem; }
-    .subtitle { color: rgba(255,255,255,0.8); font-size: 0.9rem; margin-bottom: 2rem; }
-
     .section-title {
       font-size: 0.72rem; font-weight: 700;
       text-transform: uppercase; letter-spacing: 0.07em;
-      color: rgba(255,255,255,0.7);
+      color: #6b7280;
       margin: 1.5rem 0 0.6rem;
       display: flex; align-items: center; gap: 0.5rem;
     }
@@ -29,7 +17,6 @@
     }
     .dot-yellow { background: #fbbf24; }
     .dot-green  { background: #34d399; }
-
     .order-card {
       background: white; border-radius: 12px;
       padding: 1rem 1.25rem;
@@ -43,32 +30,22 @@
       transform: translateY(-2px);
       box-shadow: 0 6px 20px rgba(0,0,0,0.18);
     }
-
     .order-left { flex: 1; }
     .order-no { font-size: 0.75rem; color: #aaa; font-family: monospace; margin-bottom: 0.2rem; }
     .order-company { font-weight: 700; font-size: 1rem; color: #333; margin-bottom: 0.25rem; }
     .order-meta { font-size: 0.82rem; color: #666; display: flex; gap: 1rem; flex-wrap: wrap; }
     .order-meta span { display: flex; align-items: center; gap: 0.25rem; }
-
     .order-right { text-align: right; margin-left: 1rem; flex-shrink: 0; }
     .delivery-label { font-size: 0.7rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.04em; }
     .delivery-date  { font-size: 0.92rem; font-weight: 600; color: #333; }
     .no-product-type { font-size: 0.72rem; color: #f59e0b; margin-top: 0.2rem; }
-
     .badge {
       display: inline-block; padding: 0.2rem 0.6rem;
       border-radius: 999px; font-size: 0.72rem; font-weight: 600;
     }
     .badge-yellow { background: #fef3c7; color: #92400e; }
     .badge-green  { background: #d1fae5; color: #065f46; }
-
-    .empty { color: rgba(255,255,255,0.6); font-size: 0.9rem; padding: 0.5rem 0 1rem; }
-
-    .back-link {
-      display: inline-block; margin-top: 2rem;
-      color: rgba(255,255,255,0.7); font-size: 0.9rem; text-decoration: none;
-    }
-
+    .empty { color: #6b7280; font-size: 0.9rem; padding: 0.5rem 0 1rem; }
     .arrow { font-size: 1.2rem; color: #2f7d5b; }
   
 {% endblock %}

@@ -1,37 +1,24 @@
 {% extends "materials/base.html" %}
 {% block tablet_css %}{% include "materials/_portal_tablet.css" %}{% endblock %}
 
+{% block body_attrs %} class="ds"{% endblock %}
 {% block title %}New Coil Entry{% endblock %}
 
 {% block css %}
-    
-    body {
-      font-family: Arial, Helvetica, sans-serif;
-      background: #2f3a35;
-      min-height: 100vh;
-      padding: 2rem 1rem;
-    }
-
-    .page { max-width: 760px; margin: 0 auto; }
-
-    h1 { color: white; font-size: 1.5rem; margin-bottom: 0.35rem; }
-    .subtitle { color: rgba(255,255,255,0.8); font-size: 0.9rem; margin-bottom: 2rem; }
-
     .new-gate-entry {
       display: block;
-      background: rgba(255,255,255,0.15);
-      border: 1px dashed rgba(255,255,255,0.5);
+      background: #ffffff;
+      border: 1px dashed #dfe3dd;
       border-radius: 12px;
       padding: 1rem 1.25rem;
       margin-bottom: 1.5rem;
-      color: white;
+      color: #1f2933;
       text-decoration: none;
       font-weight: 600;
       text-align: center;
       transition: background 0.15s;
     }
-    .new-gate-entry:hover { background: rgba(255,255,255,0.25); }
-
+    .new-gate-entry:hover { background: #eef3ef; }
     .entry-card {
       background: white; border-radius: 12px;
       padding: 1rem 1.25rem;
@@ -45,28 +32,19 @@
       transform: translateY(-2px);
       box-shadow: 0 6px 20px rgba(0,0,0,0.18);
     }
-
     .entry-left { flex: 1; }
     .entry-no { font-size: 0.75rem; color: #aaa; font-family: monospace; margin-bottom: 0.2rem; }
     .entry-company { font-weight: 700; font-size: 1rem; color: #333; margin-bottom: 0.25rem; }
     .entry-meta { font-size: 0.82rem; color: #666; display: flex; gap: 1rem; flex-wrap: wrap; }
     .entry-meta span { display: flex; align-items: center; gap: 0.25rem; }
-
     .entry-right { text-align: right; margin-left: 1rem; flex-shrink: 0; }
     .remaining-label { font-size: 0.7rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.04em; }
     .remaining-count { font-size: 0.92rem; font-weight: 600; color: #333; }
-
     .empty {
-      background: rgba(255,255,255,0.15); border-radius: 12px;
+      background: #ffffff; border-radius: 12px;
       padding: 1.5rem; text-align: center;
-      color: rgba(255,255,255,0.85); font-size: 0.9rem;
+      color: #6b7280; font-size: 0.9rem;
     }
-
-    .back-link {
-      display: inline-block; margin-top: 2rem;
-      color: rgba(255,255,255,0.7); font-size: 0.9rem; text-decoration: none;
-    }
-
     .arrow { font-size: 1.2rem; color: #2f7d5b; }
   
 {% endblock %}
