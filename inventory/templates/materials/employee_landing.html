@@ -109,6 +109,12 @@
     .logout-link:hover {
       color: white;
     }
+
+    /* The installed tablet app (no browser bar) has no use for these: the tablet stays signed in and
+       staff must not be able to leave the portal. In a normal browser tab they still show. */
+    @media (display-mode: standalone) {
+      .back-link, .logout-form { display: none; }
+    }
   
 {% endblock %}
 
