@@ -73,6 +73,7 @@
 
 {% block content %}
 <div class="page">
+  <a href="{% url 'employee' %}" class="back-link">← Back to portal</a>
 
   <h1>New Coil Entry</h1>
   <p class="subtitle">Pick the lot this coil belongs to, or log a new delivery</p>
@@ -101,6 +102,5 @@
   <p class="empty">No lot has coils left to register — log a new gate entry above.</p>
   {% endfor %}
 
-  <a href="{% url 'employee' %}" class="back-link">← Back</a>
 </div>
 {% endblock %}

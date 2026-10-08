@@ -75,6 +75,7 @@
 
 {% block content %}
 <div class="page">
+  <a href="{% url 'employee' %}" class="back-link">← Back to portal</a>
 
   <h1>Pick Coils for Order</h1>
   <p class="subtitle">Select the order you are picking raw material for</p>
@@ -141,6 +142,5 @@
   <p class="empty">No confirmed orders waiting to start.</p>
   {% endfor %}
 
-  <a href="{% url 'employee' %}" class="back-link">← Back</a>
 </div>
 {% endblock %}
