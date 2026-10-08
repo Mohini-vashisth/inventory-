@@ -446,6 +446,12 @@ class MaterialAdmin(admin.ModelAdmin):
         'picks_count', 'weight_remaining', 'status_badge', 'archived_badge', 'qr_tag',
     ]
     readonly_fields = ['qr_tag']
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        field = super().formfield_for_dbfield(db_field, request, **kwargs)
+        if db_field.name == 'heat_no':   # shown in capitals as it is typed; Material.save() upper-cases it too
+            field.widget.attrs.update({'style': 'text-transform: uppercase;', 'autocapitalize': 'characters'})
+        return field
     list_filter   = ['grade', 'size', 'company', UsedStatusFilter, ArchivedFilter]
     search_fields = ['coil_no', 'heat_no', 'vendor', 'company', 'lot__gate_entry__vehicle_no']
     ordering = ['-coil_no']
