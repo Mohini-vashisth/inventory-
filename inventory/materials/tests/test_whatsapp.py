@@ -1462,10 +1462,26 @@ class WhatsAppMultiProductIntakeTests(WhatsAppReviewBase):
         self.assertEqual([i.product_category_id for i in self._items()], [None, None, None])
         self.assertTrue(asked.call_args[0][1].startswith('Product 1 of 3: '))
 
-    def test_delivery_forms_are_read_from_a_list(self):
+    def test_coil_or_bar_is_asked_once_per_product_with_buttons(self):
         self._awaiting('delivery_form')
-        self._reply('coil, bar, coil')
-        self.assertEqual([i.delivery_form for i in self._items()], ['Coil', 'Bar', 'Coil'])
+        with patch('materials.views.whatsapp._send_whatsapp_buttons_message_background') as asked:
+            self._reply('Coil')
+            first = asked.call_args[0]
+            self._tap_button('Bar')
+            second = asked.call_args[0]
+            self._reply('bars please')
+        self.assertEqual([i.delivery_form for i in self._items()], ['Coil', 'Bar', 'Bar'])
+        self.assertEqual(asked.call_count, 2)   # product 2's and product 3's questions (product 1's was asked before)
+        self.assertTrue(first[1].startswith('Product 2 of 3: '))
+        self.assertTrue(second[1].startswith('Product 3 of 3: '))
+        self.assertEqual([choice[1] for choice in first[2]], ['Coil', 'Bar'])
+
+    def test_an_unclear_coil_or_bar_asks_the_same_product_again_with_the_buttons(self):
+        self._awaiting('delivery_form')
+        with patch('materials.views.whatsapp._send_whatsapp_buttons_message_background') as asked:
+            self._reply('whatever')
+        self.assertEqual([i.delivery_form for i in self._items()], ['', '', ''])
+        self.assertTrue(asked.call_args[0][1].startswith('Product 1 of 3: '))
 
     def test_end_use_is_asked_one_product_at_a_time_and_may_contain_commas(self):
         self._awaiting('end_use')

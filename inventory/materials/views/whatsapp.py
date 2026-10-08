@@ -57,10 +57,11 @@ WHATSAPP_QUERY_FIELDS = [
 # Only the company details (company name, email, GST number & address) are asked once for the whole query;
 # everything else is asked per product. With several products there are two shapes (the first question,
 # item_count, says how many): the short answers are one comma-separated list with a value per product, in
-# order; the product type (a tappable list) and the free-text answers (drawing, make/properties/process,
-# end use) are asked one product at a time, because a tap answers one product and the text can contain commas.
-WHATSAPP_LIST_ITEM_FIELDS = ('grade', 'width', 'thickness', 'delivery_form', 'quantity')
-WHATSAPP_SEQUENTIAL_ITEM_FIELDS = ('product_category', 'drawing', 'technical_requirements', 'end_use')
+# order; the product type (a tappable list), the Coil/Bar choice (tappable buttons) and the free-text answers
+# (drawing, make/properties/process, end use) are asked one product at a time, because a tap answers one
+# product and the text can contain commas.
+WHATSAPP_LIST_ITEM_FIELDS = ('grade', 'width', 'thickness', 'quantity')
+WHATSAPP_SEQUENTIAL_ITEM_FIELDS = ('product_category', 'drawing', 'technical_requirements', 'end_use', 'delivery_form')
 WHATSAPP_PER_ITEM_FIELDS = tuple(f for f in ('product_category', 'drawing', 'grade', 'width', 'thickness',
                                               'technical_requirements', 'end_use', 'delivery_form', 'quantity'))
 WHATSAPP_MAX_ITEMS = Query.MAX_ITEMS
@@ -89,14 +90,12 @@ _LIST_QUESTIONS = {
     'grade': "Which grades of material do you require?" + _LIST_SUFFIX + " Example: {example}",
     'width': "What widths do you need, in mm?" + _LIST_SUFFIX + " Use a dot for decimals. Example: {example}",
     'thickness': "And the thicknesses, in mm?" + _LIST_SUFFIX + " Use a dot for decimals. Example: {example}",
-    'delivery_form': "In what form do you need each one delivered, Coil or Bar?" + _LIST_SUFFIX + " Example: {example}",
     'quantity': "Please enter the quantity in kgs for each product." + _LIST_SUFFIX + " Example: {example}",
 }
 _LIST_EXAMPLES = {
     'grade': ['EN8D', 'SAE1010', 'SS304', 'EN9', 'SAE1008'],
     'width': ['50', '12.5', '30', '45', '60'],
     'thickness': ['6', '1.2', '3', '4', '8'],
-    'delivery_form': ['Coil', 'Bar', 'Coil', 'Bar', 'Coil'],
     'quantity': ['500', '2000', '800', '1500', '3000'],
 }
 
@@ -334,7 +333,7 @@ def _send_whatsapp_question(phone, field, count=1, lead=''):
             return _send_whatsapp_list_message_background(phone, text, "Choose type", rows)
         return _send_whatsapp_text_message_background(phone, lead + "Which product type do you need? Please type its name.")
     choices = WHATSAPP_QUERY_CHOICES.get(field)
-    if choices and count <= 1:
+    if choices:
         return _send_whatsapp_buttons_message_background(phone, text, choices)
     return _send_whatsapp_text_message_background(phone, text)
 
@@ -980,11 +979,6 @@ def _parse_single_value(field, part, position, count):
         if kg is None:
             raise _InvalidAnswer(say=where + WHATSAPP_QUANTITY_INVALID_MESSAGE)
         return str(kg)
-    if field == 'delivery_form':
-        parsed = _parse_whatsapp_delivery_form(part)
-        if parsed is None:
-            raise _InvalidAnswer(say=f"{where}please say Coil or Bar." if count > 1 else None, ask=None if count > 1 else 'delivery_form')
-        return parsed
     if not part.strip():   # grade
         raise _InvalidAnswer(say=f"{where}please give the grade.")
     return part.strip()
@@ -1029,6 +1023,11 @@ def _parse_answer(field, text, count=1, index=None):
         if detected is None:
             raise _InvalidAnswer(ask='product_category')
         return {'_items': {'product_category': [detected.pk]}, '_item_only': index if index is not None else 0}
+    if field == 'delivery_form':
+        parsed = _parse_whatsapp_delivery_form(text)
+        if parsed is None:
+            raise _InvalidAnswer(ask='delivery_form')   # the Coil / Bar buttons again, for the same product
+        return {'_items': {'delivery_form': [parsed]}, '_item_only': index if index is not None else 0}
     if field in WHATSAPP_SEQUENTIAL_ITEM_FIELDS:
         # Free text about one product. A text reply to the drawing question means no attachment came with
         # it ("no", or a short description); an actual image/PDF is handled by the media path instead.
@@ -1459,6 +1458,6 @@ def _question_step(field, count=1):
         if rows:
             return ('list', text, "Choose type", rows)
         return ('text', "Which product type do you need? Please type its name.")
-    if field in WHATSAPP_QUERY_CHOICES and count <= 1:
+    if field in WHATSAPP_QUERY_CHOICES:
         return ('buttons', text, WHATSAPP_QUERY_CHOICES[field])
     return ('text', text)
