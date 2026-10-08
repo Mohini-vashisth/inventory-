@@ -329,3 +329,13 @@ class WelcomePageTests(TestCase):
         self.assertContains(response, 'Welcome to')
         self.assertContains(response, 'Matta Drawing Works')
         self.assertContains(response, reverse('employee_login'))
+
+    def test_opening_the_welcome_page_asks_for_the_pin_again(self):
+        session = self.client.session
+        session['employee_auth'] = True
+        session.save()
+        self.assertEqual(self.client.get(reverse('employee')).status_code, 200)   # signed in
+        self.client.get(reverse('welcome'))
+        response = self.client.get(reverse('employee'))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/employee-login/', response['Location'])
