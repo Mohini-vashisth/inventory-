@@ -443,8 +443,9 @@ class MaterialAdmin(admin.ModelAdmin):
     list_display = [
         'formatted_coil', 'date', 'grade', 'size',
         'company', 'vendor', 'quantity', 'invoice_weight', 'heat_no', 'lot',
-        'picks_count', 'weight_remaining', 'status_badge', 'archived_badge',
+        'picks_count', 'weight_remaining', 'status_badge', 'archived_badge', 'qr_tag',
     ]
+    readonly_fields = ['qr_tag']
     list_filter   = ['grade', 'size', 'company', UsedStatusFilter, ArchivedFilter]
     search_fields = ['coil_no', 'heat_no', 'vendor', 'company', 'lot__gate_entry__vehicle_no']
     ordering = ['-coil_no']
@@ -459,6 +460,13 @@ class MaterialAdmin(admin.ModelAdmin):
     def picks_count(self, obj):
         return obj.order_picks.count()
     picks_count.short_description = 'Picks'
+
+    def qr_tag(self, obj):
+        """Opens the printable QR tag for this coil (to reprint a lost or missed one)."""
+        if not obj.pk:
+            return '—'
+        return format_html('<a href="{}" target="_blank">🏷 QR tag</a>', reverse('coil_tag', args=[obj.pk]))
+    qr_tag.short_description = 'QR tag'
 
     def weight_remaining(self, obj):
         if not obj.quantity:
