@@ -79,7 +79,7 @@
   <p class="subtitle">Allocate {{ coil.formatted_coil }} to ORD-{{ order.order_no|stringformat:"04d" }}</p>
 
   <div class="banner">
-    <span><strong>{{ order.customer.name }}</strong> — {{ order.product_type.item_code|default:"no product type" }}</span>
+    <span><strong>{{ order.customer.name }}</strong> — {% if order.product_type_name %}{{ order.product_type_name }} · {% endif %}{{ order.product_type.item_code|default:"no product code" }}</span>
     <span>{{ coil.grade|default:"—" }}, {{ coil.size|default:"—" }} mm</span>
     <span>⚖️ {{ coil_remaining|floatformat:1 }} / {{ coil_total|floatformat:1 }} kg left on coil</span>
   </div>

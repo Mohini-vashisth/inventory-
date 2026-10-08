@@ -90,6 +90,7 @@
       <div class="order-no">ORD-{{ order.order_no|stringformat:"04d" }}</div>
       <div class="order-company">{{ order.customer.name }}</div>
       <div class="order-meta">
+        {% if order.product_type_name %}<span>🏷️ {{ order.product_type_name }}</span>{% endif %}
         {% if order.grade %}<span>📐 {{ order.grade }}</span>{% endif %}
         {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
         {% if order.product_type %}<span>🔧 {{ order.product_type.item_code }}</span>{% endif %}
@@ -121,6 +122,7 @@
       <div class="order-no">ORD-{{ order.order_no|stringformat:"04d" }}</div>
       <div class="order-company">{{ order.customer.name }}</div>
       <div class="order-meta">
+        {% if order.product_type_name %}<span>🏷️ {{ order.product_type_name }}</span>{% endif %}
         {% if order.grade %}<span>📐 {{ order.grade }}</span>{% endif %}
         {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
         {% if order.product_type %}<span>🔧 {{ order.product_type.item_code }}</span>{% endif %}
