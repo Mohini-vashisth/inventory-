@@ -1,7 +1,7 @@
 {
   "name": "Matta Drawing Works — Plant",
   "short_name": "MDW Plant",
-  "start_url": "/employee/",
+  "start_url": "/welcome/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",

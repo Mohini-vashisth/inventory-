@@ -162,6 +162,6 @@ class PortalManifestTests(TestCase):
         self.assertIn('rel="manifest"', page)
         path = finders.find('materials/portal.webmanifest')
         manifest = json.load(open(path))
-        self.assertEqual((manifest['display'], manifest['start_url']), ('standalone', '/employee/'))
+        self.assertEqual((manifest['display'], manifest['start_url']), ('standalone', '/welcome/'))
         for icon in manifest['icons']:
             self.assertTrue(finders.find(icon['src'].replace('/static/', '')), icon['src'])

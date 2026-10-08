@@ -13,6 +13,7 @@ urlpatterns = [
     path("gate-entry/lot/<int:lot_pk>/coil/", gate_entry.material_form, name="material_form"),
     path("admin-login/", auth.admin_login, name="admin_login"),
     path("employee/", auth.employee_landing, name="employee"),
+    path("welcome/", auth.welcome, name="welcome"),
     path("employee-login/", auth.employee_login, name="employee_login"),
     path("employee-logout/", auth.employee_logout, name="employee_logout"),
     path('coil/<int:pk>/tag/', gate_entry.coil_tag, name='coil_tag'),
