@@ -7,7 +7,7 @@ from django.db.models.functions import Coalesce
 from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
 
-from ..models import Material, OrderCoilPick, ProductionJob, StepLog, Order
+from ..models import Material, OrderCoilPick, ProductionJob, StepLog, Order, ProductionPart
 from ..decorators import employee_required
 from .common import _CoilOverCommitted, _parse_coil_no, _safe_get
 
@@ -211,9 +211,10 @@ def pick_coil_for_order(request, order_pk, coil_pk):
                     )
                     job.job_no = f"JOB-{job.pk:04d}"
                     job.save(update_fields=['job_no'])
+                    root = ProductionPart.objects.create(job=job, label=job.job_no, weight=weight_value)   # the whole picked coil
                     for step in pt.steps.all():
                         StepLog.objects.create(
-                            job=job, step=step, status='pending',
+                            job=job, part=root, step=step, status='pending',
                             updated_by=request.user if request.user.is_authenticated else None,
                         )
                     # Mark order as in production when its first coil is picked

@@ -131,37 +131,37 @@
         </tr>
       </thead>
       <tbody>
-        {% for jd in item.jobs %}
+        {% for jd in item.jobs %}{% for row in jd.rows %}
         <tr>
-          <td><span class="part-no">{{ jd.job.pick.coil.formatted_coil }}</span></td>
-          <td>{{ jd.job.pick.weight_allocated|default:"—" }}{% if jd.job.pick.weight_allocated %} kg{% endif %}</td>
+          <td><span class="part-no">{{ row.label }}</span>{% if jd.multiple %}<div class="muted" style="font-size:0.72rem;">{{ jd.job.pick.coil.formatted_coil }}</div>{% endif %}</td>
+          <td>{{ row.weight|default:"—" }}{% if row.weight %} kg{% endif %}</td>
           <td>
             <div class="prog-wrap">
               <div class="prog-bg">
-                <div class="prog-fill {% if jd.completed == jd.total and jd.total > 0 %}done{% endif %}"
-                     style="width:{{ jd.pct }}%;"></div>
+                <div class="prog-fill {% if row.completed == row.total and row.total > 0 %}done{% endif %}"
+                     style="width:{{ row.pct }}%;"></div>
               </div>
-              <span class="prog-label">{{ jd.completed }}/{{ jd.total }}</span>
+              <span class="prog-label">{{ row.completed }}/{{ row.total }}</span>
             </div>
           </td>
           <td>
-            {% if jd.current_step %}
-              <span class="step-badge step-{{ jd.current_status }}">
-                {{ jd.current_step.name }}
+            {% if row.current_step %}
+              <span class="step-badge step-{{ row.current_status }}">
+                {{ row.current_step.name }}
               </span>
             {% else %}
               <span class="step-badge step-completed">All done</span>
             {% endif %}
           </td>
           <td>
-            {% if jd.current_step %}
+            {% if row.current_step %}
               <a href="{% url 'select_job_for_coil' %}" class="btn-update">📷 Scan to update</a>
             {% else %}
               <span class="btn-update done">Completed</span>
             {% endif %}
           </td>
         </tr>
-        {% endfor %}
+        {% endfor %}{% endfor %}
       </tbody>
     </table>
   </div>

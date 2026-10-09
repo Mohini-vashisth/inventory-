@@ -172,8 +172,8 @@ class ScreenOffReturnsToWelcomeTests(TestCase):
     again). The script lives in one partial that only the employee portal pages include."""
 
     PORTAL_PAGES = ['select_gate_entry', 'gate_entry_form', 'gate_entry_lot_form', 'gate_entry_detail', 'gate_entry_edit',
-                    'select_order', 'select_coil_for_order', 'pick_coil_for_order', 'select_job_for_coil', 'job_detail',
-                    'production_board', 'material_form', 'employee_landing']
+                    'select_order', 'select_coil_for_order', 'pick_coil_for_order', 'select_job_for_coil', 'part_detail',
+                    'job_overview', 'production_board', 'material_form', 'employee_landing']
 
     @staticmethod
     def _source(name):

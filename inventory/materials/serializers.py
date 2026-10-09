@@ -1,7 +1,7 @@
 from django.db.models import Sum
 from rest_framework import serializers
 
-from .models import Customer, Material, Order, ProcessStep, ProductionJob, ProductType, StepLog
+from .models import Customer, Material, Order, ProcessStep, ProductionJob, ProductionPart, ProductType, StepLog
 
 
 class ProcessStepSerializer(serializers.ModelSerializer):
@@ -58,17 +58,26 @@ class StepLogSerializer(serializers.ModelSerializer):
         fields = ['id', 'step', 'step_name', 'status', 'timestamp', 'notes']
 
 
+class ProductionPartSerializer(serializers.ModelSerializer):
+    parent_label = serializers.CharField(source='parent.label', read_only=True, default=None)
+
+    class Meta:
+        model = ProductionPart
+        fields = ['id', 'label', 'parent_label', 'weight', 'scrap_weight']
+
+
 class ProductionJobSerializer(serializers.ModelSerializer):
     product_type_item_code = serializers.CharField(source='product_type.item_code', read_only=True)
     coil_no = serializers.CharField(source='pick.coil.formatted_coil', read_only=True)
     weight_allocated = serializers.DecimalField(source='pick.weight_allocated', max_digits=10, decimal_places=3, read_only=True)
     latest_logs = serializers.SerializerMethodField()
+    parts = ProductionPartSerializer(many=True, read_only=True)
 
     class Meta:
         model = ProductionJob
         fields = [
             'id', 'job_no', 'status', 'product_type', 'product_type_item_code',
-            'coil_no', 'weight_allocated', 'order', 'created_at', 'updated_at', 'latest_logs',
+            'coil_no', 'weight_allocated', 'order', 'created_at', 'updated_at', 'latest_logs', 'parts',
         ]
 
     def get_latest_logs(self, obj):
