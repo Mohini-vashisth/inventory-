@@ -316,6 +316,11 @@ class ProcessStep(models.Model):
     product_type = models.ForeignKey(ProductType, on_delete=models.CASCADE, related_name='steps')
     name = models.CharField(max_length=100)   # e.g. "Blanking", "Forming", "Heat treat"
     order = models.PositiveIntegerField()      # 1, 2, 3 ...
+    # Material is cut into smaller parts at some steps: completing a step marked "splits the material" asks
+    # how it was divided (each part then carries on separately). A step marked "all parts together" (packing,
+    # shipping) is done once for every part of the job at the same time.
+    splits_material = models.BooleanField("splits the material", default=False)
+    joins_parts = models.BooleanField("all parts together", default=False)
 
     class Meta:
         ordering = ['order']
@@ -379,32 +384,94 @@ class ProductionJob(models.Model):
         """Returns the latest StepLog entry for this job."""
         return self.step_logs.order_by('-timestamp').first()
 
-    def recalculate_status(self):
-        """Recomputes overall status from the latest StepLog per step and
-        saves it. A failed step needs attention, so it takes priority over
-        everything else — otherwise a step marked 'failed' (only possible via
-        admin; the employee portal only ever logs 'in_progress'/'completed')
-        would leave the job silently looking pending/in-progress forever.
-        Single source of truth — called from the employee step-update view
-        and from StepLogAdmin whenever a StepLog is added, changed, or
-        deleted, so this stays correct regardless of where a log came from."""
-        steps = list(self.product_type.steps.all())
-        latest_by_step = {
-            step.id: self.step_logs.filter(step=step).order_by('-timestamp').first()
-            for step in steps
-        }
-        latest_statuses = [log.status for log in latest_by_step.values() if log]
+    def root_part(self):
+        """The part that is the whole picked coil (created with the job; made on demand for older rows)."""
+        root = ProductionPart.objects.filter(job=self, parent__isnull=True).first()   # fresh, never a stale prefetch
+        if root is None:
+            root = ProductionPart.objects.create(job=self, label=self.job_no, weight=self.pick.weight_allocated)
+        return root
 
-        if 'failed' in latest_statuses:
+    def active_parts(self):
+        """The parts still being worked on: those that have not been split into smaller ones."""
+        parts = list(ProductionPart.objects.filter(job=self).order_by('label'))
+        if not parts:
+            parts = [self.root_part()]   # an older job that has no part yet gets its whole-coil part now
+        return [part for part in parts if not part.is_split()]
+
+    def recalculate_status(self):
+        """Recomputes overall status from the latest StepLog per step of every active part (a part that
+        was split into smaller ones no longer counts, its children do) and saves it. A failed step needs
+        attention, so it takes priority over everything else — otherwise a step marked 'failed' (only
+        possible via admin; the employee portal only ever logs 'in_progress'/'completed') would leave the
+        job silently looking pending/in-progress forever. The job is completed only when every part has
+        completed every step. Single source of truth — called from the employee step-update views and from
+        StepLogAdmin whenever a StepLog is added, changed, or deleted, so this stays correct regardless of
+        where a log came from."""
+        steps = list(self.product_type.steps.all())
+        self.root_part()   # make sure there is at least the whole-coil part to look at
+        statuses, all_done = [], bool(steps)
+        for part in self.active_parts():
+            latest = part.latest_logs_by_step()
+            statuses += [log.status for log in latest.values()]
+            if not all(latest.get(step.id) and latest[step.id].status == 'completed' for step in steps):
+                all_done = False
+
+        if 'failed' in statuses:
             self.status = 'on_hold'
-        elif steps and all(latest_by_step.get(step.id) and latest_by_step[step.id].status == 'completed'
-                            for step in steps):
+        elif all_done:
             self.status = 'completed'
-        elif 'in_progress' in latest_statuses:
+        elif 'in_progress' in statuses:
             self.status = 'in_progress'
         else:
             self.status = 'pending'
         self.save(update_fields=['status'])
+
+    def scrap_weight(self):
+        """Weight lost at splits across the whole job (cut-offs and scrap)."""
+        return sum((part.scrap_weight for part in self.parts.all()), Decimal('0'))
+
+    def finished_weight(self):
+        """Weight of the parts that have been through every step."""
+        steps = list(self.product_type.steps.all())
+        total = Decimal('0')
+        for part in self.active_parts():
+            latest = part.latest_logs_by_step()
+            if steps and all(latest.get(step.id) and latest[step.id].status == 'completed' for step in steps):
+                total += part.weight
+        return total
+
+
+class ProductionPart(models.Model):
+    """A piece of a job's material. A job starts as one part (the whole picked coil); completing a step
+    that splits the material replaces a part by its children, each with its own weight, its own printed
+    tag (`label`) and its own progress through the remaining steps. The weight lost in a split is
+    recorded on the part that was divided."""
+    job          = models.ForeignKey(ProductionJob, on_delete=models.CASCADE, related_name='parts')
+    parent       = models.ForeignKey('self', on_delete=models.CASCADE, null=True, blank=True, related_name='children')
+    label        = models.CharField(max_length=40, unique=True)   # JOB-0012, JOB-0012-A, JOB-0012-A1 ...
+    weight       = models.DecimalField(max_digits=10, decimal_places=3)
+    scrap_weight = models.DecimalField(max_digits=10, decimal_places=3, default=Decimal('0'))   # lost when this part was divided
+    split_at_step = models.ForeignKey(ProcessStep, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['label']
+
+    def __str__(self):
+        return self.label
+
+    def is_split(self):
+        return self.children.exists()
+
+    def depth(self):
+        return 0 if self.parent_id is None else 1 + self.parent.depth()
+
+    def latest_logs_by_step(self):
+        """{step id: latest StepLog} for this part."""
+        latest = {}
+        for log in sorted(self.step_logs.all(), key=lambda entry: (entry.timestamp, entry.pk), reverse=True):
+            latest.setdefault(log.step_id, log)   # .all() so a prefetch of step_logs is used
+        return latest
 
 
 class StepLog(models.Model):
@@ -417,6 +484,9 @@ class StepLog(models.Model):
     ]
 
     job = models.ForeignKey(ProductionJob, on_delete=models.CASCADE, related_name='step_logs')
+    # Which part of the job this is about. Left blank it means the job's first part (the whole coil), which
+    # keeps older code and admin entries working: save() fills it in.
+    part = models.ForeignKey(ProductionPart, on_delete=models.CASCADE, null=True, blank=True, related_name='step_logs')
     step = models.ForeignKey(ProcessStep, on_delete=models.PROTECT)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
@@ -425,6 +495,11 @@ class StepLog(models.Model):
 
     class Meta:
         ordering = ['-timestamp']
+
+    def save(self, *args, **kwargs):
+        if self.part_id is None and self.job_id:
+            self.part = self.job.root_part()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.job.job_no} | {self.step.name} | {self.status}"

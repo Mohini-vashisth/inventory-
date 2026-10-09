@@ -10,7 +10,7 @@ from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django import forms
 from .product_codes import canonical_grade, item_code_for, reserve_grade_number
-from .models import QueryItem, GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductCategory, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
+from .models import QueryItem, GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductCategory, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, ProductionPart, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
 
 
 class GateEntryLotInline(admin.TabularInline):
@@ -217,10 +217,23 @@ class OrderCoilPickAdmin(admin.ModelAdmin):
 class StepLogInline(admin.TabularInline):
     model = StepLog
     extra = 0
-    readonly_fields = ['step', 'status', 'updated_by', 'timestamp', 'notes']
+    readonly_fields = ['part', 'step', 'status', 'updated_by', 'timestamp', 'notes']
     can_delete = False
     ordering = ['-timestamp']
     max_num = 0  # no adding via inline — only through the job_detail view
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+class ProductionPartInline(admin.TabularInline):
+    """The parts a job's material was divided into (read-only: made by the employee portal's split)."""
+    model = ProductionPart
+    extra = 0
+    fields = ['label', 'parent', 'weight', 'scrap_weight', 'split_at_step']
+    readonly_fields = fields
+    can_delete = False
+    show_change_link = False
 
     def has_add_permission(self, request, obj=None):
         return False
@@ -242,7 +255,7 @@ class ProductionJobAdmin(admin.ModelAdmin):
     list_filter  = ['status', 'product_type', 'created_at']
     search_fields = ['job_no', 'pick__coil__coil_no']
     readonly_fields = ['job_no', 'progress_bar', 'status_badge', 'created_at', 'updated_at']
-    inlines = [StepLogInline]
+    inlines = [ProductionPartInline, StepLogInline]
 
     # ── Custom columns ───────────────────────────────────────
     def get_queryset(self, request):
@@ -260,14 +273,15 @@ class ProductionJobAdmin(admin.ModelAdmin):
         anywhere on that job (recalculate_status runs on every StepLog
         add/change/delete) would silently revert the status this action
         just set."""
-        for job in queryset.prefetch_related('step_logs', 'product_type__steps'):
-            logged_step_ids = {log.step_id for log in job.step_logs.all() if log.status == 'completed'}
-            for step in job.product_type.steps.all():
-                if step.id not in logged_step_ids:
-                    StepLog.objects.create(
-                        job=job, step=step, status='completed', updated_by=request.user,
-                        notes='Marked completed via admin bulk action.',
-                    )
+        for job in queryset.prefetch_related('product_type__steps'):
+            for part in job.active_parts():   # a split job: every part still being worked on
+                done = {step_id for step_id, log in part.latest_logs_by_step().items() if log.status == 'completed'}
+                for step in job.product_type.steps.all():
+                    if step.id not in done:
+                        StepLog.objects.create(
+                            job=job, part=part, step=step, status='completed', updated_by=request.user,
+                            notes='Marked completed via admin bulk action.',
+                        )
             job.recalculate_status()
     mark_completed.short_description = 'Mark selected jobs as completed'
 
@@ -276,15 +290,15 @@ class ProductionJobAdmin(admin.ModelAdmin):
         StepLog — writes one against the job's current step (or its first
         step, for a job with no logs yet) so the hold actually sticks
         instead of being overwritten by the next unrelated StepLog change."""
-        for job in queryset.prefetch_related('step_logs', 'product_type__steps'):
+        for job in queryset.prefetch_related('product_type__steps'):
             current_log = job.step_logs.order_by('-timestamp').first()
             steps = list(job.product_type.steps.all())
             target_step = current_log.step if current_log else (steps[0] if steps else None)
             if target_step is None:
                 continue
             StepLog.objects.create(
-                job=job, step=target_step, status='failed', updated_by=request.user,
-                notes='Marked on hold via admin bulk action.',
+                job=job, part=current_log.part if current_log else None, step=target_step, status='failed',
+                updated_by=request.user, notes='Marked on hold via admin bulk action.',
             )
             job.recalculate_status()
     mark_on_hold.short_description = 'Mark selected jobs as on hold'
@@ -378,7 +392,7 @@ class ProductionJobAdmin(admin.ModelAdmin):
 
 @admin.register(StepLog)
 class StepLogAdmin(admin.ModelAdmin):
-    list_display  = ['job', 'step', 'status_badge', 'updated_by', 'timestamp', 'notes']
+    list_display  = ['job', 'part', 'step', 'status_badge', 'updated_by', 'timestamp', 'notes']
     list_filter   = ['status', 'step__product_type', 'updated_by']
     search_fields = ['job__job_no', 'step__name']
     readonly_fields = ['timestamp']

@@ -1,0 +1,51 @@
+{% extends "materials/base.html" %}
+
+{% block title %}Part tags – {{ job.job_no }}{% endblock %}
+
+{% block css %}
+    body { font-family: 'Segoe UI', sans-serif; background: #f3f4f2; padding: 1.5rem; }
+    .tags { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; }
+    .tag { background: #fff; border: 2.5px solid #1a1a1a; border-radius: 10px; padding: 1.2rem; width: 300px; text-align: center; page-break-inside: avoid; }
+    .tag-label { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.18em; color: #999; text-transform: uppercase; margin-bottom: 0.2rem; }
+    .tag-number { font-size: 1.9rem; font-weight: 800; letter-spacing: 0.06em; color: #111; margin-bottom: 0.6rem; }
+    .tag-weight { font-size: 1.3rem; font-weight: 700; margin-bottom: 0.6rem; }
+    .tag-details { text-align: left; font-size: 0.85rem; border-top: 1px solid #ddd; padding-top: 0.6rem; }
+    .row { display: flex; justify-content: space-between; padding: 0.15rem 0; }
+    .field-name { color: #777; }
+    .tag-qr { width: 150px; height: 150px; margin-top: 0.6rem; }
+    .btn-row { display: flex; gap: 0.75rem; justify-content: center; margin-top: 1.5rem; }
+    .btn { padding: 0.7rem 1.4rem; border-radius: 8px; border: none; font-size: 0.95rem; font-weight: 600; cursor: pointer; text-decoration: none; }
+    .btn-print { background: #2f7d5b; color: #fff; }
+    .btn-back { background: #fff; color: #1f2933; border: 1px solid #dfe3dd; }
+    .empty { text-align: center; color: #6b7280; }
+    @media print { .btn-row { display: none; } body { background: #fff; padding: 0; } }
+{% endblock %}
+
+{% block content %}
+{% if tags %}
+<div class="tags">
+  {% for tag in tags %}
+  <div class="tag">
+    <div class="tag-label">Part</div>
+    <div class="tag-number">{{ tag.part.label }}</div>
+    <div class="tag-weight">{{ tag.part.weight }} kg</div>
+    <div class="tag-details">
+      <div class="row"><span class="field-name">Job</span><span>{{ job.job_no }}</span></div>
+      <div class="row"><span class="field-name">Coil</span><span>{{ job.pick.coil.formatted_coil }}</span></div>
+      <div class="row"><span class="field-name">Product</span><span>{{ job.product_type.item_code }}</span></div>
+      <div class="row"><span class="field-name">Grade</span><span>{{ job.pick.coil.grade|default:"—" }}</span></div>
+      <div class="row"><span class="field-name">Customer</span><span>{{ job.order.customer.name }}</span></div>
+    </div>
+    <img class="tag-qr" src="data:image/png;base64,{{ tag.qr_b64 }}" alt="QR – {{ tag.part.label }}">
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="empty">No parts to tag yet — nothing has been split.</p>
+{% endif %}
+
+<div class="btn-row">
+  {% if tags %}<button class="btn btn-print" onclick="window.print()">🖨 Print / Save as PDF</button>{% endif %}
+  <a class="btn btn-back" href="{% if from_part %}{% url 'part_detail' from_part %}{% else %}{% url 'job_detail' job.pk %}{% endif %}">Done</a>
+</div>
+{% endblock %}

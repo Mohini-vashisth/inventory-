@@ -1,0 +1,69 @@
+{% extends "materials/base.html" %}
+{% block tablet_css %}{% include "materials/_portal_tablet.css" %}{% endblock %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}{{ job.job_no }} — Parts{% endblock %}
+
+{% block css %}
+    .job-meta { color: #6b7280; font-size: 0.88rem; margin-bottom: 1.2rem; }
+    .totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.7rem; margin-bottom: 1.2rem; }
+    .total-box { background: #fff; border: 1px solid #dfe3dd; border-radius: 12px; padding: 0.8rem 1rem; }
+    .total-box b { display: block; font-size: 1.15rem; }
+    .total-box span { font-size: 0.72rem; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }
+    .part-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: #fff; border: 1px solid #dfe3dd; border-radius: 10px; padding: 0.8rem 1rem; margin-bottom: 0.5rem; text-decoration: none; color: inherit; }
+    .part-row.split { background: #f7f7f5; color: #6b7280; }
+    .part-label { font-weight: 700; }
+    .part-sub { font-size: 0.78rem; color: #6b7280; }
+    .part-state { text-align: right; font-size: 0.82rem; flex-shrink: 0; }
+    .state-pill { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.72rem; font-weight: 600; background: #e5e7eb; color: #374151; }
+    .state-pill.completed { background: #dcfce7; color: #166534; }
+    .state-pill.in_progress { background: #fef3c7; color: #92400e; }
+    .icon-btn { display: inline-block; background: #fff; border: 1px solid #dfe3dd; border-radius: 8px; padding: 0.6rem 1rem; font-weight: 600; color: #256349; text-decoration: none; }
+    .done-banner { background: #dcfce7; border: 1px solid #86efac; border-radius: 12px; padding: 1rem 1.5rem; text-align: center; color: #166534; font-weight: 700; margin-bottom: 1.2rem; }
+    .hold-banner { background: #fee2e2; border: 1px solid #fca5a5; border-radius: 12px; padding: 1rem 1.5rem; text-align: center; color: #991b1b; font-weight: 600; margin-bottom: 1.2rem; }
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <a href="{% url 'employee' %}" class="back-link">← Back to employee portal</a>
+
+  <h1>{{ job.job_no }}</h1>
+  <p class="job-meta">
+    Product: <strong>{{ job.product_type.item_code }}</strong> &nbsp;|&nbsp;
+    Coil: <strong>{{ job.pick.coil.formatted_coil }}</strong> ({{ job.pick.weight_allocated }} kg) &nbsp;|&nbsp;
+    {{ job.order.customer.name }}
+  </p>
+
+  {% if job.status == 'on_hold' %}<div class="hold-banner">⚠️ This job is on hold — a step was marked failed. Check with the office before continuing.</div>{% endif %}
+  {% if job.status == 'completed' %}<div class="done-banner">✅ Every part has completed every step — this job is done!</div>{% endif %}
+
+  <div class="totals">
+    <div class="total-box"><b>{{ job.pick.weight_allocated }} kg</b><span>Picked from the coil</span></div>
+    <div class="total-box"><b>{{ active_count }}</b><span>Parts being worked on</span></div>
+    <div class="total-box"><b>{{ finished_weight }} kg</b><span>Finished (all steps done)</span></div>
+    <div class="total-box"><b>{{ scrap_weight }} kg</b><span>Scrap at splits</span></div>
+  </div>
+
+  {% for node in tree %}
+  <a class="part-row {% if node.split %}split{% endif %}" href="{% url 'part_detail' node.part.pk %}" style="margin-left:{{ node.indent }}rem;">
+    <div>
+      <div class="part-label">{{ node.part.label }}</div>
+      <div class="part-sub">{{ node.part.weight }} kg{% if node.split %} · split into {{ node.part.children.count }} part{{ node.part.children.count|pluralize }}{% if node.part.scrap_weight %} · scrap {{ node.part.scrap_weight }} kg{% endif %}{% endif %}</div>
+    </div>
+    <div class="part-state">
+      {% if node.split %}
+        <span class="part-sub">divided</span>
+      {% elif node.current %}
+        <span class="state-pill {{ node.status }}">{{ node.current.name }}</span>
+        <div class="part-sub">{{ node.done }}/{{ node.total }} steps</div>
+      {% else %}
+        <span class="state-pill completed">All done ✓</span>
+      {% endif %}
+    </div>
+  </a>
+  {% endfor %}
+
+  <p><a class="icon-btn" href="{% url 'part_tags' job.pk %}" target="_blank">🏷 Print tags for all parts</a></p>
+</div>
+{% include "materials/_screen_off_welcome.html" %}
+{% endblock %}

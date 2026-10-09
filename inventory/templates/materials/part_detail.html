@@ -1,0 +1,280 @@
+{% extends "materials/base.html" %}
+{% block tablet_css %}{% include "materials/_portal_tablet.css" %}{% endblock %}
+{% load dict_extras %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}{{ part.label }} — Steps{% endblock %}
+
+{% block css %}
+    .job-meta {
+      color: #6b7280;
+      font-size: 0.88rem;
+      margin-bottom: 2rem;
+    }
+    /* ── On-hold banner ── */
+    .hold-banner {
+      background: #fee2e2;
+      border: 1px solid #fca5a5;
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      text-align: center;
+      color: #991b1b;
+      font-weight: 600;
+      margin-bottom: 1.5rem;
+    }
+    /* ── All-done banner ── */
+    .done-banner {
+      background: #dcfce7;
+      border: 1px solid #86efac;
+      border-radius: 12px;
+      padding: 1rem 1.5rem;
+      text-align: center;
+      color: #166534;
+      font-weight: 700;
+      font-size: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    /* ── Step cards ── */
+    .step-card {
+      background: white;
+      border-radius: 14px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1rem;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .step-number {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.95rem;
+      flex-shrink: 0;
+    }
+    .step-number.pending     { background: #f3f4f6; color: #6b7280; }
+    .step-number.in_progress { background: #e5e7eb; color: #374151; }
+    .step-number.completed   { background: #dcfce7; color: #166534; }
+    .step-number.failed      { background: #fee2e2; color: #991b1b; }
+    .step-info { flex: 1; }
+    .step-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #111;
+      margin-bottom: 0.2rem;
+    }
+    .step-time {
+      font-size: 0.78rem;
+      color: #888;
+    }
+    .step-actions { display: flex; gap: 0.5rem; flex-shrink: 0; }
+    .btn-start {
+      min-height: 44px;
+      padding: 0.6rem 1.25rem;
+      background: #e5e7eb;
+      color: #374151;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-start:hover { background: #d1d5db; }
+    .btn-complete {
+      min-height: 44px;
+      padding: 0.6rem 1.25rem;
+      background: #2f7d5b;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-complete:hover { background: #256349; }
+    .checkmark {
+      font-size: 1.3rem;
+      color: #16a34a;
+    }
+    .step-tag { display: inline-block; margin-left: 0.4rem; padding: 0.1rem 0.5rem; border-radius: 999px; background: #eef3ef; color: #256349; font-size: 0.7rem; font-weight: 600; }
+    .step-wrap { margin-bottom: 1rem; }
+    .step-wrap .step-card { flex-wrap: wrap; }
+    .step-wrap .step-info { flex: 1 1 200px; min-width: 0; }
+    .step-wrap .step-actions { margin-left: auto; }
+    .step-wrap .step-card { margin-bottom: 0; }
+    .step-actions { flex-wrap: wrap; justify-content: flex-end; }
+    .btn-split { min-height: 44px; padding: 0.6rem 1.25rem; background: #fff; color: #256349; border: 2px solid #2f7d5b; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; }
+    .split-box { background: #fff; border: 1px solid #dfe3dd; border-top: none; border-radius: 0 0 14px 14px; margin-top: -10px; padding: 1.1rem 1.25rem 1rem; }
+    .split-box h3 { font-size: 0.95rem; margin-bottom: 0.4rem; }
+    .split-box p { font-size: 0.82rem; color: #6b7280; margin-bottom: 0.7rem; }
+    .split-weights { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.6rem; margin-bottom: 0.7rem; }
+    .split-weights label { font-size: 0.7rem; }
+    .split-total { font-size: 0.88rem; font-weight: 600; margin-bottom: 0.8rem; }
+    .split-total.over { color: #b91c1c; }
+    .child-link { display: flex; justify-content: space-between; align-items: center; background: #fff; border: 1px solid #dfe3dd; border-radius: 10px; padding: 0.8rem 1rem; margin-bottom: 0.5rem; text-decoration: none; color: inherit; }
+    .error-banner { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; border-radius: 12px; padding: 0.8rem 1.1rem; margin-bottom: 1rem; font-weight: 600; font-size: 0.9rem; }
+
+  
+{% endblock %}
+
+{% block content %}
+<div class="page">
+
+  <a href="{% if has_parts %}{% url 'job_detail' job.pk %}{% else %}{% url 'employee' %}{% endif %}" class="back-link">← Back to {% if has_parts %}{{ job.job_no }}{% else %}employee portal{% endif %}</a>
+
+  <h1>{{ part.label }}</h1>
+  <p class="job-meta">
+    Product: <strong>{{ job.product_type.item_code }}</strong> &nbsp;|&nbsp;
+    {% if is_whole_coil %}
+      Coil: <strong>{{ job.pick.coil.formatted_coil }}</strong> ({{ job.pick.weight_allocated }} kg)
+    {% else %}
+      Weight: <strong>{{ part.weight }} kg</strong> &nbsp;|&nbsp; Coil: <strong>{{ job.pick.coil.formatted_coil }}</strong>
+      {% if part.parent %}&nbsp;|&nbsp; Split from <a class="link" href="{% url 'part_detail' part.parent.pk %}">{{ part.parent.label }}</a>{% endif %}
+    {% endif %}
+  </p>
+
+  {% if error %}<div class="error-banner">⚠️ {{ error }}</div>{% endif %}
+
+  {% if job.status == 'on_hold' %}
+  <div class="hold-banner">⚠️ This job is on hold — a step was marked failed. Check with the office before continuing.</div>
+  {% endif %}
+
+  {% if job.status == 'completed' %}
+  <div class="done-banner">✅ All parts have completed every step — this job is done!</div>
+  {% endif %}
+
+  {% if is_split %}
+  <p class="job-meta" style="margin-bottom:0.6rem;">This part was split into smaller parts{% if part.scrap_weight %} ({{ part.scrap_weight }} kg scrap){% endif %} — update those:</p>
+  {% for child in children %}
+  <a class="child-link" href="{% url 'part_detail' child.pk %}"><span><strong>{{ child.label }}</strong> &nbsp; {{ child.weight }} kg</span><span>›</span></a>
+  {% endfor %}
+  <p class="job-meta" style="margin:1.2rem 0 0.6rem;">Steps this part went through:</p>
+  {% endif %}
+
+  {% for row in rows %}
+  {% with step=row.step log=row.log %}
+  <div class="step-wrap">
+  <div class="step-card">
+
+    <div class="step-number {% if log %}{{ log.status }}{% else %}pending{% endif %}">
+      {{ step.order }}
+    </div>
+
+    <div class="step-info">
+      <div class="step-name">{{ step.name }}{% if step.splits_material %}<span class="step-tag">✂ splits the material</span>{% endif %}{% if step.joins_parts %}<span class="step-tag">all parts together</span>{% endif %}</div>
+      <div class="step-time">
+        {% if log %}
+          {% if log.status == 'completed' %}
+            Completed {{ log.timestamp|date:"d M Y" }} at {{ log.timestamp|date:"H:i" }}
+            {% if log.updated_by %} by {{ log.updated_by }}{% endif %}
+          {% elif log.status == 'in_progress' %}
+            Started {{ log.timestamp|date:"d M Y" }} at {{ log.timestamp|date:"H:i" }}
+          {% elif log.status == 'failed' %}
+            ⚠️ Marked failed {{ log.timestamp|date:"d M Y" }}{% if log.notes %} — {{ log.notes }}{% endif %}
+          {% endif %}
+        {% else %}
+          Not started
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="step-actions">
+      {% if log and log.status == 'completed' %}
+        <span class="checkmark">✓</span>
+      {% elif is_split %}
+        <span style="font-size:0.78rem; color:#bbb;">—</span>
+      {% elif row.unlocked %}
+        {% if not log or log.status != 'in_progress' %}
+          <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="step_id" value="{{ step.id }}">
+            <input type="hidden" name="action" value="start">
+            <button type="submit" class="btn-start">Start{% if step.joins_parts %} (all parts){% endif %}</button>
+          </form>
+        {% endif %}
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="step_id" value="{{ step.id }}">
+          <input type="hidden" name="action" value="complete">
+          <button type="submit" class="btn-complete">{% if step.splits_material %}Complete without splitting{% elif step.joins_parts %}Complete (all parts){% else %}Mark Complete{% endif %}</button>
+        </form>
+        {% if step.splits_material %}
+          <button type="button" class="btn-split" data-open-split="{{ step.id }}">✂ Complete &amp; split…</button>
+        {% endif %}
+      {% elif row.waiting %}
+        <span style="font-size:0.78rem; color:#6b7280;">⏳ Waiting for {{ row.waiting|join:", " }}</span>
+      {% else %}
+        <span style="font-size:0.78rem; color:#bbb;">⏳ Complete previous step first</span>
+      {% endif %}
+    </div>
+
+  </div>
+
+  {% if step.splits_material and row.open and not is_split %}
+  <form method="post" class="split-box" id="split-{{ step.id }}" data-weight="{{ part.weight }}" hidden>
+    {% csrf_token %}
+    <input type="hidden" name="step_id" value="{{ step.id }}">
+    <input type="hidden" name="action" value="split">
+    <h3>Split {{ part.label }} ({{ part.weight }} kg) into parts</h3>
+    <p>Enter the weight of each new part in kg. Anything that doesn't add up to {{ part.weight }} kg is recorded as scrap. You can print a tag for each part afterwards.</p>
+    <div class="split-weights" data-weights>
+      <div><label>Part 1 (kg)</label><input type="number" name="weight" step="0.001" min="0.001"></div>
+      <div><label>Part 2 (kg)</label><input type="number" name="weight" step="0.001" min="0.001"></div>
+    </div>
+    <p><button type="button" class="icon-btn" data-add-weight>+ Add another part</button></p>
+    <div class="split-total" data-total></div>
+    <button type="submit" class="btn-submit">Complete step &amp; create the parts</button>
+  </form>
+  {% endif %}
+  </div>
+  {% endwith %}
+  {% endfor %}
+
+</div>
+<script>
+  // "Complete & split": open the form, start with the weight divided equally between two parts, keep a
+  // running total and show what would be recorded as scrap.
+  (function () {
+    var MAX = {{ max_parts }};
+    document.querySelectorAll('[data-open-split]').forEach(function (button) {
+      var form = document.getElementById('split-' + button.dataset.openSplit);
+      if (!form) return;
+      var holder = form.querySelector('[data-weights]');
+      var totalBox = form.querySelector('[data-total]');
+      var whole = parseFloat(form.dataset.weight) || 0;
+      function inputs() { return holder.querySelectorAll('input[name="weight"]'); }
+      function update() {
+        var sum = 0;
+        inputs().forEach(function (box) { sum += parseFloat(box.value) || 0; });
+        var scrap = Math.round((whole - sum) * 1000) / 1000;
+        totalBox.classList.toggle('over', scrap < 0);
+        totalBox.textContent = scrap < 0
+          ? 'Parts add up to ' + sum + ' kg, which is more than ' + whole + ' kg.'
+          : 'Parts: ' + sum + ' kg · scrap: ' + scrap + ' kg';
+      }
+      function addBox() {
+        if (inputs().length >= MAX) return;
+        var wrap = document.createElement('div');
+        wrap.innerHTML = '<label>Part ' + (inputs().length + 1) + ' (kg)</label><input type="number" name="weight" step="0.001" min="0.001">';
+        holder.appendChild(wrap);
+        wrap.querySelector('input').addEventListener('input', update);
+      }
+      inputs().forEach(function (box) { box.addEventListener('input', update); });
+      form.querySelector('[data-add-weight]').addEventListener('click', addBox);
+      button.addEventListener('click', function () {
+        form.hidden = !form.hidden;
+        var boxes = inputs();
+        if (!form.hidden && boxes[0] && !boxes[0].value && !boxes[1].value) {
+          boxes[0].value = boxes[1].value = Math.round(whole / 2 * 1000) / 1000;
+        }
+        update();
+      });
+    });
+  })();
+</script>
+{% include "materials/_screen_off_welcome.html" %}
+{% endblock %}
