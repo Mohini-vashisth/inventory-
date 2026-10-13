@@ -194,6 +194,16 @@ Clicking an order on the Orders list (its number, the customer name, or **👁 D
 
 Checked once, at `order_confirm` (`materials/views/orders.py`) — not at quote submission, since the exact grade/size requirement is only locked in once a product type is assigned, which confirming already requires. If stock looks short, the admin gets an immediate `messages.warning()` on confirming, **and** a persistent "⚠️ Low stock" badge stays on that order's row in `/orders/` for as long as it's still true — scoped to `confirmed`/`in_production` orders only (not pending/completed/cancelled, where it isn't actionable). On-screen only, deliberately no email — the owner sees it browsing the dashboard, not in an inbox.
 
+### Stock outlook on pending orders
+
+Decided 2026-10-13. The confirm-time check above only sees the whole stock, so two orders can each look fine while competing for the same coils. `Order.stock_outlook()` (`models.py`) answers "what is free for *this* order once the accepted orders have taken their share?" and is shown on **pending** orders — on the Orders dashboard (under the status) and the order page — as e.g. "Stock free for this order: 700 of 900 kg — held by ORD-0004 (300 kg)":
+- Only **confirmed** and **in-production** orders claim stock; **pending orders claim nothing** and never block anyone. A confirmed order claims its `quantity`; an in-production order claims only what is still to pick (`quantity − picked_output_weight()`), because the picked coils have already left the stock figure and counting them again would double count.
+- Two orders compete when they have the **same grade** (case-insensitive) and can use **at least one coil size in common** (`Order._coil_sizes_allowed()`: `None` = any size, a set of sizes otherwise, from `applicable_specs()`). A pending order competes only with accepted orders.
+- Purely informational: nothing is reserved or blocked. Nothing is stored — it is worked out each time the page loads. The tag is hidden when stock is enough and nobody competes; a pending order with no grade or product code says "can't check yet".
+- Figures are finished-product kg (like the confirm check), so a rival's claim is not converted through a different wastage ratio — an approximation.
+- The dashboard caches `available_raw_material_output()` per (product code, grade, width, thickness); it used to be per product code only, which ignored that the grade and size-specific specs can change the answer.
+- **Not built yet (the owner's next step): tracking raw material that has been ordered from suppliers**, so a shortfall can be marked as ordered.
+
 ### Two user roles
 
 **Access control is declared with decorators, not hand-written per view** (`materials/decorators.py`). Every routed view in `materials/urls.py` carries one of:

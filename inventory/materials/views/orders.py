@@ -87,8 +87,11 @@ def order_detail(request, pk):
     if order.status in ('confirmed', 'in_production'):
         available = order.available_raw_material_output()
         low_stock = available is not None and available < order.quantity
+    outlook = order.stock_outlook() if order.status == 'pending' else None
     return render(request, 'materials/order_detail.html', {
         'order': order,
+        'outlook': outlook,
+        'outlook_unchecked': order.status == 'pending' and outlook is None,
         'picks': picks,
         'weight_picked': weight_picked,
         'low_stock': low_stock,
@@ -138,21 +141,29 @@ def order_dashboard(request):
 
     # Persistent low-stock indicator for orders already committed to
     # production — a one-time warning at confirm time can get missed, so
-    # this stays visible for as long as it's actually true. Skipped for
-    # pending/completed/cancelled orders where it isn't actionable.
+    # this stays visible for as long as it's actually true. Pending orders
+    # instead get a stock outlook tag (what is left for them after the
+    # accepted orders); completed/cancelled orders get nothing.
     #
-    # available_raw_material_output() depends only on product_type, not on
-    # the individual order, so it's cached per product_type here — several
-    # orders sharing one catalog item (the common case) reuse one result
+    # available_raw_material_output() depends on the order's product code,
+    # grade and size (not on the individual order), so it's cached on those
+    # — several orders for one item (the common case) reuse one result
     # instead of each re-running its own set of aggregate queries.
     raw_material_output_cache = {}
     for order in orders:
-        if order.status not in ('confirmed', 'in_production'):
-            order.low_stock = False
+        order.low_stock = False
+        order.outlook = None
+        if order.status not in ('confirmed', 'in_production', 'pending'):
             continue
-        if order.product_type_id not in raw_material_output_cache:
-            raw_material_output_cache[order.product_type_id] = order.available_raw_material_output()
-        available = raw_material_output_cache[order.product_type_id]
+        # The cache key includes the size: which specs apply can depend on the order's width and thickness.
+        cache_key = (order.product_type_id, order.grade, order.width, order.thickness)
+        if cache_key not in raw_material_output_cache:
+            raw_material_output_cache[cache_key] = order.available_raw_material_output()
+        available = raw_material_output_cache[cache_key]
+        if order.status == 'pending':
+            order.outlook = order.stock_outlook(available=available)
+            order.outlook_unchecked = available is None
+            continue
         order.low_stock = available is not None and available < order.quantity
 
     return render(request, 'materials/order_dashboard.html', {

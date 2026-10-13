@@ -70,6 +70,12 @@
       </div>
       {% if not order.product_type %}<p class="warn">⚠ No product code is set, so this order can't be confirmed yet. Set one in the admin (Orders → this order).</p>{% endif %}
       {% if low_stock %}<p class="warn">⚠️ Low stock: the raw material in stock isn't enough to fulfil this order.</p>{% endif %}
+      {% if outlook_unchecked %}
+      <p class="muted">Stock: can't check yet (the order needs a grade and a product code).</p>
+      {% elif outlook and outlook.short or outlook.rivals %}
+      <p class="warn">⚠️ Stock free for this order: {{ outlook.free|floatformat:0 }} of {{ outlook.needed|floatformat:0 }} kg.
+        {% if outlook.rivals %}Held by accepted orders:{% for other, claim in outlook.rivals %} <a href="{% url 'order_detail' other.pk %}">ORD-{{ other.order_no|stringformat:"04d" }}</a> ({{ claim|floatformat:0 }} kg){% if not forloop.last %},{% endif %}{% endfor %}.{% endif %}</p>
+      {% endif %}
     </div>
   </div>
 

@@ -152,6 +152,105 @@ class RawMaterialAvailabilityTests(TestCase):
         self.assertEqual(order.available_raw_material_output(), Decimal('50'))
 
 
+class StockOutlookTests(TestCase):
+    """Order.stock_outlook(): what is free for an order once the accepted orders competing for the
+    same coils have taken their share. Pending orders claim nothing."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(name='Outlook Co')
+        self.code = ProductType.objects.create(item_code='OUT1', grade='EN8D')
+        AllowedCoilSpec.objects.create(product_type=self.code, size='1.200')
+        self.coil = Material.objects.create(quantity=1000, grade='EN8D', size='1.200')
+
+    def _order(self, quantity, status, **fields):
+        fields.setdefault('product_type', self.code)
+        fields.setdefault('grade', 'EN8D')
+        return Order.objects.create(customer=self.customer, quantity=quantity, status=status, **fields)
+
+    def test_confirmed_order_claims_its_whole_quantity(self):
+        rival = self._order(300, 'confirmed')
+        pending = self._order(900, 'pending')
+        outlook = pending.stock_outlook()
+        self.assertEqual(outlook['held'], Decimal('300'))
+        self.assertEqual(outlook['free'], Decimal('700'))
+        self.assertTrue(outlook['short'])
+        self.assertEqual(outlook['rivals'], [(rival, Decimal('300'))])
+
+    def test_pending_orders_claim_nothing(self):
+        self._order(500, 'pending')
+        outlook = self._order(900, 'pending').stock_outlook()
+        self.assertEqual(outlook['held'], Decimal('0'))
+        self.assertEqual(outlook['rivals'], [])
+        self.assertFalse(outlook['short'])
+
+    def test_in_production_order_claims_only_what_is_left_to_pick(self):
+        """Its picked coils have already left the stock figure, so counting them again would double count."""
+        rival = self._order(500, 'in_production')
+        OrderCoilPick.objects.create(order=rival, coil=self.coil, weight_allocated=200)
+        pending = self._order(100, 'pending')
+        outlook = pending.stock_outlook()
+        self.assertEqual(outlook['available'], Decimal('800'))
+        self.assertEqual(outlook['held'], Decimal('300'))
+        self.assertEqual(outlook['free'], Decimal('500'))
+
+    def test_fully_picked_in_production_order_claims_nothing(self):
+        rival = self._order(200, 'in_production')
+        OrderCoilPick.objects.create(order=rival, coil=self.coil, weight_allocated=200)
+        outlook = self._order(100, 'pending').stock_outlook()
+        self.assertEqual(outlook['rivals'], [])
+
+    def test_different_grade_does_not_compete(self):
+        self._order(300, 'confirmed', grade='SAE1008')
+        outlook = self._order(100, 'pending').stock_outlook()
+        self.assertEqual(outlook['held'], Decimal('0'))
+
+    def test_orders_using_different_coil_sizes_do_not_compete(self):
+        other_code = ProductType.objects.create(item_code='OUT2', grade='EN8D', category=ProductCategory.objects.create(name='Outlook Type 2', code='OT2'))
+        AllowedCoilSpec.objects.create(product_type=other_code, size='3.000')
+        self._order(300, 'confirmed', product_type=other_code)
+        outlook = self._order(100, 'pending').stock_outlook()
+        self.assertEqual(outlook['rivals'], [])
+
+    def test_order_with_no_size_restriction_competes_with_any_size(self):
+        no_specs = ProductType.objects.create(item_code='OUT3', grade='EN8D', category=ProductCategory.objects.create(name='Outlook Type 3', code='OT3'))
+        self._order(300, 'confirmed', product_type=no_specs)
+        outlook = self._order(100, 'pending').stock_outlook()
+        self.assertEqual(outlook['held'], Decimal('300'))
+
+    def test_cannot_check_without_a_grade(self):
+        self.assertIsNone(self._order(100, 'pending', grade='').stock_outlook())
+
+    def test_dashboard_shows_what_is_free_and_who_holds_the_rest(self):
+        rival = self._order(300, 'confirmed')
+        self._order(900, 'pending')
+        User.objects.create_user('outlook_staff', password='pw', is_staff=True)
+        self.client.login(username='outlook_staff', password='pw')
+        response = self.client.get(reverse('order_dashboard'))
+        self.assertContains(response, 'Stock free for this order: 700 of 900 kg')
+        self.assertContains(response, f'ORD-{rival.order_no:04d} (300 kg)')
+
+    def test_dashboard_says_when_a_pending_order_cannot_be_checked(self):
+        self._order(100, 'pending', grade='')
+        User.objects.create_user('outlook_staff2', password='pw', is_staff=True)
+        self.client.login(username='outlook_staff2', password='pw')
+        self.assertContains(self.client.get(reverse('order_dashboard')), "can't check yet")
+
+    def test_detail_page_links_the_holding_orders(self):
+        rival = self._order(300, 'confirmed')
+        pending = self._order(900, 'pending')
+        User.objects.create_user('outlook_staff3', password='pw', is_staff=True)
+        self.client.login(username='outlook_staff3', password='pw')
+        response = self.client.get(reverse('order_detail', args=[pending.pk]))
+        self.assertContains(response, 'Stock free for this order: 700 of 900 kg')
+        self.assertContains(response, reverse('order_detail', args=[rival.pk]))
+
+    def test_no_tag_when_stock_is_enough_and_nobody_competes(self):
+        self._order(100, 'pending')
+        User.objects.create_user('outlook_staff4', password='pw', is_staff=True)
+        self.client.login(username='outlook_staff4', password='pw')
+        self.assertNotContains(self.client.get(reverse('order_dashboard')), 'Stock free for this order')
+
+
 class OrderConfirmStockWarningTests(TestCase):
     """Confirming an order checks raw material availability and warns —
     on-screen only, no email — if stock looks short."""
