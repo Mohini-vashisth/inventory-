@@ -2,7 +2,9 @@ from django.urls import path
 from .views import auth, finance, gate_entry, media, orders, picking, production, queries, quotations, whatsapp
 
 urlpatterns = [
-    path("", auth.home, name="home"),
+    path("", auth.welcome, name="home"),
+    path("dashboard/", auth.staff_home, name="staff_home"),
+    path("login/", auth.code_login, name="login"),
     path("gate-entry/", gate_entry.gate_entry_form, name="gate_entry_form"),
     path("gate-entry/autocomplete/", gate_entry.material_field_autocomplete, name="material_field_autocomplete"),
     path("gate-entry/select/", gate_entry.select_gate_entry, name="select_gate_entry"),
@@ -15,7 +17,7 @@ urlpatterns = [
     path("non-coil-entry/", gate_entry.non_coil_entry_form, name="non_coil_entry_form"),
     path("admin-login/", auth.admin_login, name="admin_login"),
     path("finance/", finance.finance_dashboard, name="finance"),
-    path("finance-login/", auth.finance_login, name="finance_login"),
+    path("finance-login/", auth.code_login, name="finance_login"),   # old address, same page
     path("finance-logout/", auth.finance_logout, name="finance_logout"),
     path("finance/upload/coil/<int:pk>/", finance.finance_upload_coil_bill, name="finance_upload_coil_bill"),
     path("finance/upload/other/<int:pk>/", finance.finance_upload_other_bill, name="finance_upload_other_bill"),
@@ -23,7 +25,7 @@ urlpatterns = [
     path("finance/bill/other/<int:pk>/", finance.finance_other_bill, name="finance_other_bill"),
     path("employee/", auth.employee_landing, name="employee"),
     path("welcome/", auth.welcome, name="welcome"),
-    path("employee-login/", auth.employee_login, name="employee_login"),
+    path("employee-login/", auth.code_login, name="employee_login"),   # old address, same page
     path("employee-logout/", auth.employee_logout, name="employee_logout"),
     path('coil/<int:pk>/tag/', gate_entry.coil_tag, name='coil_tag'),
     path('select-order/', picking.select_order, name='select_order'),

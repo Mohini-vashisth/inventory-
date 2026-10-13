@@ -150,7 +150,7 @@ class ProgressTests(PartsTestBase):
 class PartViewTests(PartsTestBase):
     def setUp(self):
         super().setUp()
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
 
     def test_an_unsplit_job_shows_the_steps_and_offers_the_split_on_a_splitting_step(self):
         self.complete(self.root, self.drawing)

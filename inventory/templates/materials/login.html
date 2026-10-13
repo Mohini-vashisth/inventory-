@@ -1,8 +1,10 @@
 {% extends "materials/base.html" %}
+{% block head_extra %}{% load static %}<link rel="manifest" href="{% static 'materials/portal.webmanifest' %}"><meta name="theme-color" content="#f3f4f2">{% endblock %}
 
-{% block title %}Finance Login{% endblock %}
+{% block title %}Sign in{% endblock %}
 
 {% block css %}
+    
     body {
       font-family: Arial, Helvetica, sans-serif;
       background: #f3f4f2;
@@ -42,21 +44,30 @@
       border-radius: 8px; padding: 0.5rem 0.75rem;
       font-size: 0.85rem; margin-bottom: 1rem;
     }
+    .admin-btn {
+      display: block; margin-top: 0.9rem; padding: 0.7rem;
+      border: 1px solid #cfd4cc; border-radius: 10px;
+      color: #374151; font-size: 0.95rem; font-weight: 600; text-decoration: none;
+    }
+    .admin-btn:hover { border-color: #2f7d5b; color: #256349; }
+  
 {% endblock %}
 
 {% block content %}
 <div class="box">
-  <div class="icon">🧾</div>
-  <h1>Finance</h1>
-  <p>Enter the finance code to continue</p>
+  <div class="icon">👷</div>
+  <h1>Matta Drawing Works</h1>
+  <p>Enter your code to continue</p>
 
   {% if error %}<div class="error">{{ error }}</div>{% endif %}
 
   <form method="post">
     {% csrf_token %}
     <input type="hidden" name="next" value="{{ next }}">
-    <input type="password" name="pin" placeholder="••••" autofocus autocomplete="off">
+    <input type="password" name="pin" inputmode="numeric" placeholder="••••" autofocus autocomplete="off">
     <button type="submit">Enter</button>
   </form>
+
+  <a href="{% url 'admin_login' %}" class="admin-btn">Login as admin instead</a>
 </div>
 {% endblock %}

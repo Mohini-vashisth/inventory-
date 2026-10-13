@@ -252,7 +252,11 @@ if not FINANCE_CODE:
         )
     FINANCE_CODE = '5678'
 
-# Wrong PINs allowed per client IP before employee login locks that IP out.
+# The one login page tells the roles apart by the code typed, so the two codes must differ.
+if EMPLOYEE_PIN == FINANCE_CODE:
+    raise ImproperlyConfigured("EMPLOYEE_PIN and FINANCE_CODE must be different: the login page decides the role by the code.")
+
+# Wrong codes allowed per client IP (employee and finance login share one counter) before that IP is locked out.
 EMPLOYEE_LOGIN_MAX_FAILURES = 5
 EMPLOYEE_LOGIN_LOCKOUT_SECONDS = 15 * 60
 

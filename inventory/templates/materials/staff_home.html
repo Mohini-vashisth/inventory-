@@ -1,6 +1,6 @@
 {% extends "materials/base.html" %}
 
-{% block title %}Management System{% endblock %}
+{% block title %}Dashboard{% endblock %}
 {% block base_css %}{% endblock %}
 
 {% block css %}
@@ -74,23 +74,9 @@ h1{
 {% block content %}
 <div class="container">
 
-<h1>Management System</h1>
+<h1>Dashboard</h1>
 
 <div class="cards">
-
-<a href="{% url 'employee' %}" class="card-link">
-<div class="card">
-<div class="icon">👷</div>
-<h2>Employee</h2>
-</div>
-</a>
-
-<a href="{% url 'admin_login' %}" class="card-link">
-<div class="card">
-<div class="icon">⚙️</div>
-<h2>Admin</h2>
-</div>
-</a>
 
 <a href="{% url 'order_dashboard' %}" class="card-link">
 <div class="card">
@@ -103,6 +89,13 @@ h1{
 <div class="card">
 <div class="icon">📞</div>
 <h2>Queries</h2>
+</div>
+</a>
+
+<a href="/admin/" class="card-link">
+<div class="card">
+<div class="icon">⚙️</div>
+<h2>Django Admin</h2>
 </div>
 </a>
 

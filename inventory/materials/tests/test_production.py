@@ -21,7 +21,7 @@ class JobStepUnlockTests(TestCase):
     """A step can only be advanced once every earlier step is completed."""
 
     def setUp(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         coil = Material.objects.create(quantity=500)
         customer = Customer.objects.create(name='Job Step Unlock Co')
         order = Order.objects.create(customer=customer, quantity=10)
@@ -112,7 +112,7 @@ class JobStatusRollupTests(TestCase):
         self.assertEqual(self.job.status, 'on_hold')
 
     def test_employee_starting_a_step_recalculates_status(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.client.post(
             reverse('job_detail', kwargs={'pk': self.job.pk}),
             {'step_id': self.step1.pk, 'action': 'start'},
@@ -124,7 +124,7 @@ class JobStatusRollupTests(TestCase):
         """Only step1 (of two) has a log at all, and it's 'completed' — must
         not roll up to 'completed' just because every step *with* a log
         happens to be completed; step2 was never touched."""
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.client.post(
             reverse('job_detail', kwargs={'pk': self.job.pk}),
             {'step_id': self.step1.pk, 'action': 'complete'},
@@ -201,7 +201,7 @@ class SelectJobForCoilTests(TestCase):
     own number — production_board is read-only, this is the only path in."""
 
     def setUp(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.customer = Customer.objects.create(name='Job Scan Co')
         self.product_type = ProductType.objects.create(item_code='Job Scan Bar')
         self.order = Order.objects.create(customer=self.customer, quantity=100, status='in_production')
@@ -252,7 +252,7 @@ class SelectJobForCoilTests(TestCase):
 class ProductionBoardScanLinkTests(TestCase):
     def test_scan_to_update_is_a_link_to_the_scan_page(self):
         from ..models import Order, ProcessStep, ProductionJob, StepLog
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         customer = Customer.objects.create(name='Board Co')
         code = ProductType.objects.create(item_code='BOARD1', grade='EN8D')
         ProcessStep.objects.create(product_type=code, name='Drawing', order=1)
