@@ -1,0 +1,2 @@
+{# The one Log out control, used at the top-left of every top-level page (employee portal, finance, owners' dashboard). Pass the POST address as `action`. It looks and sits exactly like a back button. #}
+<form method="POST" action="{{ action }}" class="logout-form">{% csrf_token %}<button type="submit" class="back-link">Log out</button></form>

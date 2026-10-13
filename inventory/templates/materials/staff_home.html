@@ -1,105 +1,36 @@
 {% extends "materials/base.html" %}
 
+{% block body_attrs %} class="ds"{% endblock %}
 {% block title %}Dashboard{% endblock %}
-{% block base_css %}{% endblock %}
 
 {% block css %}
-body{
-    font-family: Arial, Helvetica, sans-serif;
-    background: #f3f4f2;
-    margin:0;
-    min-height:100vh;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    padding:2rem 1.25rem;
-    box-sizing:border-box;
-}
-
-.container{
-    text-align:center;
-}
-
-h1{
-    color:#1f2933;
-    margin-bottom:40px;
-    font-size:36px;
-}
-
-.cards{
-    display:flex;
-    flex-wrap:wrap;
-    gap:40px;
-    justify-content:center;
-}
-
-@media (max-width: 640px) {
-    h1{ font-size:28px; margin-bottom:28px; }
-    .cards{ gap:20px; }
-    .card{ width:150px; padding:28px 16px; }
-    .icon{ font-size:38px; margin-bottom:14px; }
-}
-
-.card-link{
-    text-decoration:none;
-}
-
-.card{
-    background:white;
-    width:220px;
-    padding:40px 20px;
-    border-radius:12px;
-    text-align:center;
-    box-shadow:0 10px 25px rgba(0,0,0,0.2);
-    transition:0.3s;
-    cursor:pointer;
-}
-
-.card:hover{
-    transform:translateY(-10px);
-    box-shadow:0 15px 35px rgba(0,0,0,0.3);
-}
-
-.icon{
-    font-size:50px;
-    margin-bottom:20px;
-}
-
-.card h2{
-    margin:10px 0;
-    color:#333;
-}
+    /* Log out sits top-left like every back button; the cards are centred in the space that is left. */
+    .ds { display: flex; flex-direction: column; }
+    .center { margin: auto; width: 100%; max-width: 900px; text-align: center; padding: 1rem 0; }
+    .center h1 { font-size: 2rem; margin-bottom: 1.75rem; }
+    .tiles { display: flex; flex-wrap: wrap; gap: 1.5rem; justify-content: center; }
+    .tile-link { text-decoration: none; }
+    .tile {
+      background: white; width: 200px; padding: 2rem 1rem; border-radius: 12px; text-align: center;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.15); transition: 0.2s;
+    }
+    .tile:hover { transform: translateY(-6px); box-shadow: 0 15px 35px rgba(0,0,0,0.25); }
+    .tile .icon { font-size: 2.6rem; margin-bottom: 0.8rem; }
+    .tile h2 { color: #333; font-size: 1.1rem; }
+    @media (max-width: 640px) { .tiles { gap: 1rem; } .tile { width: 150px; } }
 {% endblock %}
 
 {% block content %}
-<div class="container">
-
-<h1>Dashboard</h1>
-
-<div class="cards">
-
-<a href="{% url 'order_dashboard' %}" class="card-link">
-<div class="card">
-<div class="icon">📋</div>
-<h2>Orders</h2>
-</div>
-</a>
-
-<a href="{% url 'query_dashboard' %}" class="card-link">
-<div class="card">
-<div class="icon">📞</div>
-<h2>Queries</h2>
-</div>
-</a>
-
-<a href="/admin/" class="card-link">
-<div class="card">
-<div class="icon">⚙️</div>
-<h2>Django Admin</h2>
-</div>
-</a>
-
+<div class="ds-top">
+  {% url 'staff_logout' as logout_url %}{% include "materials/_logout_button.html" with action=logout_url %}
 </div>
 
+<div class="center">
+  <h1>Dashboard</h1>
+  <div class="tiles">
+    <a href="{% url 'order_dashboard' %}" class="tile-link"><div class="tile"><div class="icon">📋</div><h2>Orders</h2></div></a>
+    <a href="{% url 'query_dashboard' %}" class="tile-link"><div class="tile"><div class="icon">📞</div><h2>Queries</h2></div></a>
+    <a href="/admin/" class="tile-link"><div class="tile"><div class="icon">⚙️</div><h2>Django Admin</h2></div></a>
+  </div>
 </div>
 {% endblock %}

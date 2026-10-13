@@ -124,7 +124,7 @@
 {% block content %}
 <div class="page">
 
-  <a href="{% if has_parts %}{% url 'job_detail' job.pk %}{% else %}{% url 'employee' %}{% endif %}" class="back-link">← Back to {% if has_parts %}{{ job.job_no }}{% else %}employee portal{% endif %}</a>
+  <a href="{% if has_parts %}{% url 'job_detail' job.pk %}{% else %}{% url 'employee' %}{% endif %}" class="back-link">← Back to {% if has_parts %}{{ job.job_no }}{% else %}portal{% endif %}</a>
 
   <h1>{{ part.label }}</h1>
   <p class="job-meta">

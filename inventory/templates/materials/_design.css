@@ -20,6 +20,9 @@
   font-size: 0.95rem; font-weight: 600; text-decoration: none; box-shadow: var(--ds-shadow);
 }
 .ds .back-link:hover { background: var(--ds-accent-soft); color: var(--ds-accent-dark); }
+/* A Log out button is the same control as a back button: top-left, first thing on the page. */
+.ds button.back-link { font-family: inherit; cursor: pointer; text-align: left; }
+.ds .logout-form { margin: 0; }
 
 .ds .card { background: var(--ds-surface); border: 1px solid var(--ds-border); border-radius: var(--ds-radius); padding: 1.25rem 1.5rem; box-shadow: var(--ds-shadow); }
 

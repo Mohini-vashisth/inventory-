@@ -1,7 +1,7 @@
 """Employee PIN login/logout, the admin login page, and the public home page."""
 
 from django.shortcuts import render, redirect
-from django.contrib.auth import authenticate, login
+from django.contrib.auth import authenticate, login, logout
 from django.conf import settings
 from django.core.cache import cache
 from django.urls import Resolver404, resolve, reverse
@@ -93,6 +93,13 @@ def welcome(request):
     request.session.pop('employee_auth', None)
     request.session.pop('finance_auth', None)
     return render(request, 'materials/welcome.html')
+
+
+def staff_logout(request):
+    """Ends an owner's sign-in (POST only, so a stray link can't do it); back to the Welcome page."""
+    if request.method == 'POST':
+        logout(request)
+    return redirect('home')
 
 
 @staff_required(on_denied=redirect_to_admin_login)

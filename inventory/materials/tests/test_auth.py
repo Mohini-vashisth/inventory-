@@ -253,6 +253,7 @@ class MaterialsRouteGuardTests(TestCase):
         'admin_login',        # login form itself
         'code_login',         # the employee/finance code form itself (/login/ and its two old addresses)
         'employee_logout',    # only clears this browser's own session
+        'staff_logout',       # only ends this browser's own staff sign-in
         'finance_logout',     # only clears this browser's own finance flag
         'quote_form',         # customer-facing; the unguessable UUID token is the credential
         'whatsapp_webhook',   # Meta calls it directly; HMAC signature is checked in the view
@@ -372,3 +373,47 @@ class CoilTagForStaffTests(TestCase):
         self.client.login(username='root', password='pw')
         for url in (reverse('admin:materials_material_changelist'), reverse('admin:materials_material_change', args=[self.coil.pk])):
             self.assertContains(self.client.get(url), self.url)
+
+
+class LogoutButtonIsTheSameEverywhereTests(TestCase):
+    """Log out is one control (the shared partial), top-left like a back button, on every top-level page."""
+
+    BUTTON = '<button type="submit" class="back-link">Log out</button>'
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+
+    def test_the_employee_portal_finance_page_and_owner_dashboard_use_it(self):
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
+        self.assertContains(self.client.get(reverse('employee')), self.BUTTON)
+        self.client.post(reverse('employee_logout'))
+        self.client.post(reverse('login'), {'pin': settings.FINANCE_CODE})
+        self.assertContains(self.client.get(reverse('finance')), self.BUTTON)
+        User.objects.create_user('boss', password='pw', is_staff=True)
+        self.client.login(username='boss', password='pw')
+        self.assertContains(self.client.get(reverse('staff_home')), self.BUTTON)
+
+    def test_no_page_carries_its_own_log_out_markup(self):
+        from pathlib import Path
+        folder = Path(settings.BASE_DIR) / 'templates'
+        for path in folder.rglob('*.html'):
+            if path.name == '_logout_button.html':
+                continue
+            with self.subTest(page=path.name):
+                self.assertNotIn('>Log out<', path.read_text())   # only the shared partial may draw it
+
+    def test_logout_is_the_first_thing_on_the_page_in_the_top_row(self):
+        self.client.post(reverse('login'), {'pin': settings.FINANCE_CODE})
+        page = self.client.get(reverse('finance')).content.decode()
+        self.assertLess(page.index('class="ds-top"'), page.index('>Log out<'))
+        self.assertLess(page.index('>Log out<'), page.index('<h1>'))
+
+    def test_owner_logout_ends_the_staff_sign_in_by_post_only(self):
+        User.objects.create_user('boss', password='pw', is_staff=True)
+        self.client.login(username='boss', password='pw')
+        self.client.get(reverse('staff_logout'))
+        self.assertEqual(self.client.get(reverse('staff_home')).status_code, 200)   # a GET does nothing
+        response = self.client.post(reverse('staff_logout'))
+        self.assertRedirects(response, reverse('home'))
+        self.assertEqual(self.client.get(reverse('staff_home')).status_code, 302)
