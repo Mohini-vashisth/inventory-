@@ -40,6 +40,12 @@ def material_field_autocomplete(request):
 
 
 @employee_required
+def gate_entry_choice(request):
+    """What the portal's Gate Entry button opens: a truck of coils, or anything else that arrived."""
+    return render(request, 'materials/gate_entry_choice.html')
+
+
+@employee_required
 def non_coil_entry_form(request):
     """Something other than a truck of coils arrived (dies, machine parts, anything): the gate person types what
     it is and which company sent it, and the arrival time is recorded automatically. The finance team's page

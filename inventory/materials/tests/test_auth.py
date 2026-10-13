@@ -108,7 +108,7 @@ class EmployeePortalPageTests(TestCase):
 
     def test_employee_landing_links_to_gate_entry(self):
         response = self.client.get(reverse('employee'))
-        self.assertContains(response, reverse('gate_entry_form'))
+        self.assertContains(response, f'href="{reverse("gate_entry_choice")}"')
 
     def test_select_order_splits_confirmed_and_in_production(self):
         customer = Customer.objects.create(name='Select Order Co')

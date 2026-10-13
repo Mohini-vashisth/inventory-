@@ -11,6 +11,7 @@ urlpatterns = [
     path("gate-entry/<int:gate_entry_pk>/add-lot/", gate_entry.gate_entry_lot_form, name="gate_entry_lot_form"),
     path("gate-entry/lot/<int:lot_pk>/delete/", gate_entry.gate_entry_lot_delete, name="gate_entry_lot_delete"),
     path("gate-entry/lot/<int:lot_pk>/coil/", gate_entry.material_form, name="material_form"),
+    path("gate-entry/new/", gate_entry.gate_entry_choice, name="gate_entry_choice"),
     path("non-coil-entry/", gate_entry.non_coil_entry_form, name="non_coil_entry_form"),
     path("admin-login/", auth.admin_login, name="admin_login"),
     path("finance/", finance.finance_dashboard, name="finance"),
