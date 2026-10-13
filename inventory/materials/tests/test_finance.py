@@ -63,8 +63,18 @@ class NonCoilEntryFormTests(TestCase):
                 self.assertEqual(response.status_code, 200)
         self.assertFalse(NonCoilEntry.objects.exists())
 
-    def test_portal_home_links_to_it(self):
-        self.assertContains(self.client.get(reverse('employee')), reverse('non_coil_entry_form'))
+    def test_portal_gate_entry_button_opens_a_choice_of_two(self):
+        home = self.client.get(reverse('employee'))
+        self.assertContains(home, reverse('gate_entry_choice'))
+        self.assertNotContains(home, reverse('non_coil_entry_form'))   # no extra tile on the portal home
+        choice = self.client.get(reverse('gate_entry_choice'))
+        self.assertContains(choice, reverse('gate_entry_form'))
+        self.assertContains(choice, reverse('non_coil_entry_form'))
+
+    def test_the_choice_page_needs_the_employee_pin(self):
+        self.client.post(reverse('employee_logout'))
+        response = self.client.get(reverse('gate_entry_choice'))
+        self.assertIn(reverse('employee_login'), response['Location'])
 
 
 class FinanceLoginTests(TestCase):

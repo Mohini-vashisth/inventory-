@@ -1,0 +1,41 @@
+{% extends "materials/base.html" %}
+{% block tablet_css %}{% include "materials/_portal_tablet.css" %}{% endblock %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}Gate Entry{% endblock %}
+
+{% block css %}
+  .choices { display: grid; gap: 1rem; }
+  .choice { display: block; text-decoration: none; color: inherit; }
+  .choice .card { padding: 1.75rem 1.5rem; text-align: center; transition: transform 0.15s, box-shadow 0.15s; }
+  .choice .card:hover { transform: translateY(-3px); }
+  .choice .icon { font-size: 2.6rem; margin-bottom: 0.5rem; }
+  .choice h2 { font-size: 1.2rem; color: var(--ds-text); margin-bottom: 0.35rem; }
+  .choice p { font-size: 0.9rem; color: var(--ds-muted); }
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <a href="{% url 'employee' %}" class="back-link">← Back to portal</a>
+  <h1>Gate Entry</h1>
+  <p class="subtitle">What arrived?</p>
+
+  <div class="choices">
+    <a href="{% url 'gate_entry_form' %}" class="choice">
+      <div class="card">
+        <div class="icon">🚚</div>
+        <h2>Coils (truck delivery)</h2>
+        <p>Log a truck's delivery from its invoice before registering coils</p>
+      </div>
+    </a>
+    <a href="{% url 'non_coil_entry_form' %}" class="choice">
+      <div class="card">
+        <div class="icon">🧰</div>
+        <h2>Anything else</h2>
+        <p>Dies, machine parts, anything other than coils</p>
+      </div>
+    </a>
+  </div>
+</div>
+{% include "materials/_screen_off_welcome.html" %}
+{% endblock %}
