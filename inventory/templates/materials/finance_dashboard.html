@@ -20,14 +20,12 @@
   }
   .upload-btn:hover { background: var(--ds-accent-dark); }
   .view-link { font-size: 0.85rem; font-weight: 600; color: var(--ds-accent); margin-right: 0.5rem; }
-  .logout-form { display: inline; margin: 0; }
-  .logout-form button { background: none; border: none; padding: 0; font: inherit; cursor: pointer; }
 {% endblock %}
 
 {% block content %}
 <div class="page">
   <div class="ds-top">
-    <form method="POST" action="{% url 'finance_logout' %}" class="logout-form">{% csrf_token %}<button type="submit" class="back-link">Log out</button></form>
+    {% url 'finance_logout' as logout_url %}{% include "materials/_logout_button.html" with action=logout_url %}
   </div>
   <h1>Finance</h1>
   <p class="subtitle">Upload the supplier's bill for every arrival. Entries still waiting for a bill are at the top.</p>

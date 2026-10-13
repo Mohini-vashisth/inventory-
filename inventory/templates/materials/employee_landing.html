@@ -1,32 +1,27 @@
 {% extends "materials/base.html" %}
 {% block head_extra %}{% load static %}<link rel="manifest" href="{% static 'materials/portal.webmanifest' %}"><meta name="theme-color" content="#f3f4f2">{% endblock %}
 
+{% block body_attrs %} class="ds"{% endblock %}
 {% block title %}Employee Portal{% endblock %}
 
 {% block css %}
-    body {
-      font-family: Arial, Helvetica, sans-serif;
-      background: #f3f4f2;
-      min-height: 100vh;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-    }
+    /* Log out sits top-left like every back button; the tiles are centred in the space that is left. */
+    .ds { display: flex; flex-direction: column; }
 
     .container {
+      margin: auto;
       text-align: center;
       padding: 1.25rem 1rem;
       width: 100%;
       max-width: 1100px;
     }
 
-    h1 {
-      color: #1f2933;
+    .container h1 {
       font-size: 2rem;
       margin-bottom: 0.5rem;
     }
 
-    .subtitle {
+    .container .subtitle {
       color: #6b7280;
       font-size: 1rem;
       margin-bottom: 1.5rem;
@@ -40,14 +35,14 @@
       flex-wrap: wrap;
     }
 
-    .card-link {
+    .tile-link {
       text-decoration: none;
       flex: 1 1 150px;
       min-width: 0;
       max-width: 260px;
     }
 
-    .card {
+    .tile {
       background: white;
       height: 100%;
       padding: 1.5rem 0.9rem;
@@ -58,7 +53,7 @@
       cursor: pointer;
     }
 
-    .card:hover {
+    .tile:hover {
       transform: translateY(-10px);
       box-shadow: 0 18px 40px rgba(0,0,0,0.3);
     }
@@ -68,37 +63,16 @@
       margin-bottom: 0.6rem;
     }
 
-    .card h2 {
+    .tile h2 {
       color: #333;
       font-size: 1.1rem;
       margin-bottom: 0.5rem;
     }
 
-    .card p {
+    .tile p {
       color: #888;
       font-size: 0.82rem;
       line-height: 1.4;
-    }
-
-    .logout-form {
-      display: inline;
-    }
-
-    .logout-link {
-      display: inline-block;
-      margin-top: 1.5rem;
-      color: #6b7280;
-      font-size: 0.9rem;
-      background: none;
-      border: none;
-      font-family: inherit;
-      cursor: pointer;
-      text-decoration: none;
-      padding: 0;
-    }
-
-    .logout-link:hover {
-      color: #256349;
     }
 
     /* The installed tablet app (no browser bar) has no use for these: the tablet stays signed in and
@@ -106,18 +80,18 @@
     /* Portrait (a tablet held upright): a 2 x 2 grid of big buttons filling the height, not a thin row. */
     @media (orientation: portrait) {
       .container { max-width: 760px; padding: 1.5rem 1.25rem; }
-      h1 { font-size: 2.2rem; }
-      .subtitle { font-size: 1.15rem; margin-bottom: 2rem; }
+      .container h1 { font-size: 2.2rem; }
+      .container .subtitle { font-size: 1.15rem; margin-bottom: 2rem; }
       .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
-      .card-link { max-width: none; }
-      .card { padding: 2.5rem 1.25rem; display: flex; flex-direction: column; justify-content: center; }
+      .tile-link { max-width: none; }
+      .tile { padding: 2.5rem 1.25rem; display: flex; flex-direction: column; justify-content: center; }
       .icon { font-size: 3.6rem; margin-bottom: 0.9rem; }
-      .card h2 { font-size: 1.4rem; margin-bottom: 0.6rem; }
-      .card p { font-size: 1rem; line-height: 1.45; }
+      .tile h2 { font-size: 1.4rem; margin-bottom: 0.6rem; }
+      .tile p { font-size: 1rem; line-height: 1.45; }
     }
 
     @media (display-mode: standalone) {
-      .logout-form { display: none; }
+      .ds-top { display: none; }
       /* The page fits the screen, so lock it: no drag-scroll, bounce or pull-to-refresh. */
       html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
       body { min-height: 0; }
@@ -126,6 +100,10 @@
 {% endblock %}
 
 {% block content %}
+<div class="ds-top">
+  {% url 'employee_logout' as logout_url %}{% include "materials/_logout_button.html" with action=logout_url %}
+</div>
+
 <div class="container">
 
   <h1>Employee Portal</h1>
@@ -133,32 +111,32 @@
 
   <div class="cards">
 
-    <a href="{% url 'gate_entry_choice' %}" class="card-link">
-      <div class="card">
+    <a href="{% url 'gate_entry_choice' %}" class="tile-link">
+      <div class="tile">
         <div class="icon">🚚</div>
         <h2>Gate Entry</h2>
         <p>Log something that arrived at the gate: a truck of coils or anything else</p>
       </div>
     </a>
 
-    <a href="{% url 'select_gate_entry' %}" class="card-link">
-      <div class="card">
+    <a href="{% url 'select_gate_entry' %}" class="tile-link">
+      <div class="tile">
         <div class="icon">📦</div>
         <h2>New Coil Entry</h2>
         <p>Register a newly received coil into the inventory</p>
       </div>
     </a>
 
-    <a href="{% url 'select_order' %}" class="card-link">
-      <div class="card">
+    <a href="{% url 'select_order' %}" class="tile-link">
+      <div class="tile">
         <div class="icon">📦</div>
         <h2>Pick Coils for Order</h2>
         <p>Scan coils to fulfil an order's raw material requirement</p>
       </div>
     </a>
 
-    <a href="{% url 'select_job_for_coil' %}" class="card-link">
-      <div class="card">
+    <a href="{% url 'select_job_for_coil' %}" class="tile-link">
+      <div class="tile">
         <div class="icon">🔄</div>
         <h2>Update Progress</h2>
         <p>Scan a coil to update its manufacturing step status</p>
@@ -166,11 +144,6 @@
     </a>
 
   </div>
-
-  <form method="POST" action="{% url 'employee_logout' %}" class="logout-form">
-    {% csrf_token %}
-    <button type="submit" class="logout-link">Log out</button>
-  </form>
 
 </div>
 {% include "materials/_screen_off_welcome.html" %}
