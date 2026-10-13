@@ -1102,6 +1102,49 @@ class Order(models.Model):
             total += remaining / ratio
         return total
 
+    def _coil_sizes_allowed(self):
+        """The raw coil sizes this order may use: None means any size (no specs, or a spec with no size),
+        otherwise a set (empty when specs exist but none is for this order's size)."""
+        specs = self.applicable_specs()
+        if not specs:
+            has_specs = bool(self.product_type_id) and self.product_type.allowed_specs.exists()
+            return set() if has_specs else None
+        if any(spec.size is None for spec in specs):
+            return None
+        return {spec.size for spec in specs}
+
+    def stock_outlook(self, available=None):
+        """How much of the in-stock raw material is still free for this order once the accepted orders
+        (confirmed or in production) that compete for the same coils have taken their share. Pending
+        orders claim nothing; a confirmed order claims its quantity, an in-production one only what is
+        still to be picked (the picked coils have already left the stock figure). Two orders compete when
+        they have the same grade and can use at least one coil size in common. Informational only.
+        None when it can't be checked (no product code or grade). `available` can be passed in when the
+        caller already has available_raw_material_output()."""
+        if available is None:
+            available = self.available_raw_material_output()
+        if available is None:
+            return None
+        my_sizes = self._coil_sizes_allowed()
+        rivals = []
+        rival_orders = (Order.objects.filter(status__in=('confirmed', 'in_production'), grade__iexact=self.required_grade())
+                        .exclude(pk=self.pk).select_related('product_type', 'customer'))
+        for other in rival_orders:
+            if not other.product_type_id:
+                continue
+            their_sizes = other._coil_sizes_allowed()
+            if my_sizes is not None and their_sizes is not None and not (my_sizes & their_sizes):
+                continue
+            claim = other.quantity if other.status == 'confirmed' else max(other.quantity - other.picked_output_weight(), Decimal('0'))
+            if claim > 0:
+                rivals.append((other, claim))
+        held = sum((claim for _, claim in rivals), Decimal('0'))
+        free = max(available - held, Decimal('0'))
+        return {
+            'available': available, 'held': held, 'free': free, 'needed': self.quantity,
+            'rivals': rivals, 'short': free < self.quantity,
+        }
+
     def tolerance_lines(self):
         """["Width 49.95 to 50.05 mm", "Thickness ...", "Other: ..."] — only what was given."""
         def span(label, low, high):

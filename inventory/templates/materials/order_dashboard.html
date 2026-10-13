@@ -367,6 +367,16 @@
                 ⚠️ Low stock
               </div>
             {% endif %}
+            {% if order.status == 'pending' %}
+              {% if order.outlook_unchecked %}
+                <div class="muted" style="font-size:0.72rem; margin-top:3px;">Stock: can't check yet (no grade or product code)</div>
+              {% elif order.outlook and order.outlook.short or order.outlook.rivals %}
+                <div style="font-size:0.72rem; color:#f59e0b; font-weight:600; margin-top:3px;">
+                  Stock free for this order: {{ order.outlook.free|floatformat:0 }} of {{ order.outlook.needed|floatformat:0 }} kg
+                  {% if order.outlook.rivals %}<span style="font-weight:400;">— held by{% for other, claim in order.outlook.rivals %} ORD-{{ other.order_no|stringformat:"04d" }} ({{ claim|floatformat:0 }} kg){% if not forloop.last %},{% endif %}{% endfor %}</span>{% endif %}
+                </div>
+              {% endif %}
+            {% endif %}
           </td>
           <td class="muted">{{ order.created_at|date:"d M Y" }}</td>
           <td>
