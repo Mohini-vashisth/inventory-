@@ -58,7 +58,7 @@ class GateEntryFormViewErrorDisplayTests(TestCase):
     def setUp(self):
         GradeOption.objects.get_or_create(name='EN8D')
         SizeOption.objects.get_or_create(value='1.200')
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
 
     def test_non_numeric_total_weight_shows_error_and_repopulates_fields(self):
         response = self.client.post(reverse('gate_entry_form'), {
@@ -96,7 +96,7 @@ class GateEntryLotFormViewErrorDisplayTests(TestCase):
     def setUp(self):
         GradeOption.objects.get_or_create(name='EN8D')
         SizeOption.objects.get_or_create(value='1.200')
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.gate_entry = GateEntry.objects.create(
             vendor='ABC Traders', vehicle_no='AP16TA1234', total_weight=2500,
         )
@@ -117,7 +117,7 @@ class MaterialFormViewErrorDisplayTests(TestCase):
     def setUp(self):
         GradeOption.objects.get_or_create(name='EN8D')
         SizeOption.objects.get_or_create(value='1.200')
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         gate_entry = GateEntry.objects.create(
             vendor='ABC Traders', vehicle_no='AP16TA1234', total_weight=2500,
         )
@@ -135,7 +135,7 @@ class MaterialFormViewErrorDisplayTests(TestCase):
 
 class MaterialFieldAutocompleteTests(TestCase):
     def setUp(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         Material.objects.create(company='Tata Steel', vendor='ABC Traders', quantity=500)
         Material.objects.create(company='Tata Sons', vendor='XYZ Traders', quantity=500)
 
@@ -159,7 +159,7 @@ class MaterialFieldAutocompleteTests(TestCase):
         self.client.post(reverse('employee_logout'))
         url = reverse('material_field_autocomplete')
         response = self.client.get(url, {'field': 'company', 'q': 'tata'})
-        self.assertRedirects(response, f"{reverse('employee_login')}?next={url}")
+        self.assertRedirects(response, f"{reverse('login')}?next={url}")
 
 
 class GateEntryFormTests(TestCase):
@@ -170,7 +170,7 @@ class GateEntryFormTests(TestCase):
     def setUp(self):
         GradeOption.objects.get_or_create(name='EN8D')
         SizeOption.objects.get_or_create(value='1.200')
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
 
     def _post_data(self, lots, **overrides):
         data = {
@@ -226,7 +226,7 @@ class GateEntryFormTests(TestCase):
     def test_requires_employee_login(self):
         self.client.post(reverse('employee_logout'))
         response = self.client.get(reverse('gate_entry_form'))
-        self.assertRedirects(response, f"{reverse('employee_login')}?next={reverse('gate_entry_form')}")
+        self.assertRedirects(response, f"{reverse('login')}?next={reverse('gate_entry_form')}")
 
     def test_vehicle_no_is_uppercased_even_if_submitted_lowercase(self):
         """The form's own JS already forces uppercase as the employee types —
@@ -245,7 +245,7 @@ class GateEntryLotFormTests(TestCase):
     def setUp(self):
         GradeOption.objects.get_or_create(name='EN8D')
         SizeOption.objects.get_or_create(value='1.200')
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.gate_entry = GateEntry.objects.create(
             vendor='ABC Traders', vehicle_no='AP16TA1234', total_weight=2500,
         )
@@ -273,7 +273,7 @@ class GateEntryLotFormTests(TestCase):
 
 class GateEntryDetailTests(TestCase):
     def setUp(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.gate_entry = GateEntry.objects.create(
             vendor='ABC Traders', vehicle_no='AP16TA1234', total_weight=1000,
         )
@@ -307,7 +307,7 @@ class GateEntryEditTests(TestCase):
     paper/reference details."""
 
     def setUp(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.gate_entry = GateEntry.objects.create(
             date='2026-07-01', vendor='ABC Traders', vehicle_no='AP16TA1234',
             invoice_no='INV-0001', total_weight=1000,
@@ -318,7 +318,7 @@ class GateEntryEditTests(TestCase):
         response = self.client.get(reverse('gate_entry_edit', args=[self.gate_entry.pk]))
         self.assertRedirects(
             response,
-            f"{reverse('employee_login')}?next={reverse('gate_entry_edit', args=[self.gate_entry.pk])}",
+            f"{reverse('login')}?next={reverse('gate_entry_edit', args=[self.gate_entry.pk])}",
         )
 
     def test_get_prefills_existing_values(self):
@@ -374,7 +374,7 @@ class GateEntryLotDeleteTests(TestCase):
     registered against it yet."""
 
     def setUp(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.gate_entry = GateEntry.objects.create(
             vendor='ABC Traders', vehicle_no='AP16TA1234', total_weight=1000,
         )
@@ -400,12 +400,12 @@ class GateEntryLotDeleteTests(TestCase):
         self.client.post(reverse('employee_logout'))
         url = reverse('gate_entry_lot_delete', args=[self.lot.pk])
         response = self.client.post(url)
-        self.assertRedirects(response, f"{reverse('employee_login')}?next={url}")
+        self.assertRedirects(response, f"{reverse('login')}?next={url}")
 
 
 class SelectGateEntryTests(TestCase):
     def setUp(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
 
     def test_only_open_lots_are_listed(self):
         open_ge = GateEntry.objects.create(total_weight=1000, vehicle_no='OPEN1')
@@ -433,7 +433,7 @@ class MaterialFormGateEntryTests(TestCase):
     def setUp(self):
         GradeOption.objects.get_or_create(name='EN8D')
         SizeOption.objects.get_or_create(value='1.200')
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.gate_entry = GateEntry.objects.create(
             vendor='ABC Traders', vehicle_no='AP16TA1234', total_weight=1000,
         )
@@ -451,7 +451,7 @@ class MaterialFormGateEntryTests(TestCase):
         self.client.post(reverse('employee_logout'))
         url = reverse('material_form', args=[self.lot.pk])
         response = self.client.get(url)
-        self.assertRedirects(response, f"{reverse('employee_login')}?next={url}")
+        self.assertRedirects(response, f"{reverse('login')}?next={url}")
 
     def test_unknown_lot_404s(self):
         response = self.client.get(reverse('material_form', args=[99999]))

@@ -23,7 +23,7 @@ class OrderCoilPickCreationTests(TestCase):
     """Picking a coil must be all-or-nothing: never an OrderCoilPick with no job."""
 
     def setUp(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.coil = Material.objects.create(
             date='2026-07-01', grade='EN8D', size='1.2',
             company='Tata Steel', vendor='ABC Traders', quantity=500, heat_no='H001',
@@ -99,7 +99,7 @@ class SelectCoilForOrderSpecFilterTests(TestCase):
     no-specs-configured case."""
 
     def setUp(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.customer = Customer.objects.create(name='Spec Test Co')
         self.product_type = ProductType.objects.create(item_code='Spec Bar', grade='EN8D')
         AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
@@ -128,7 +128,7 @@ class SelectCoilForOrderBestFitSortTests(TestCase):
     grabbing whichever coil was registered most recently."""
 
     def setUp(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.customer = Customer.objects.create(name='Best Fit Co')
         self.product_type = ProductType.objects.create(item_code='Fit Bar', grade='EN8D')
         AllowedCoilSpec.objects.create(
@@ -239,7 +239,7 @@ class ScanCoilForOrderTests(TestCase):
     the browse list already filters coils by."""
 
     def setUp(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.customer = Customer.objects.create(name='Scan Test Co')
         self.product_type = ProductType.objects.create(item_code='Scan Bar', grade='EN8D')
         AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')

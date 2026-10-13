@@ -19,11 +19,11 @@ def bill_file(name='bill.pdf', content=b'%PDF-1.4 fake bill'):
 
 
 def employee_login(client):
-    client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+    client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
 
 
 def finance_login(client):
-    return client.post(reverse('finance_login'), {'pin': settings.FINANCE_CODE})
+    return client.post(reverse('login'), {'pin': settings.FINANCE_CODE})
 
 
 @override_settings(MEDIA_ROOT=MEDIA)
@@ -42,7 +42,7 @@ class NonCoilEntryFormTests(TestCase):
         self.client.post(reverse('employee_logout'))
         response = self.client.get(reverse('non_coil_entry_form'))
         self.assertEqual(response.status_code, 302)
-        self.assertIn(reverse('employee_login'), response['Location'])
+        self.assertIn(reverse('login'), response['Location'])
 
     def test_saving_records_category_company_and_the_time_in_capitals(self):
         response = self.client.post(reverse('non_coil_entry_form'), {'category': ' dies ', 'company': 'abc tools'})
@@ -74,17 +74,21 @@ class NonCoilEntryFormTests(TestCase):
     def test_the_choice_page_needs_the_employee_pin(self):
         self.client.post(reverse('employee_logout'))
         response = self.client.get(reverse('gate_entry_choice'))
-        self.assertIn(reverse('employee_login'), response['Location'])
+        self.assertIn(reverse('login'), response['Location'])
 
 
 class FinanceLoginTests(TestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()   # the failure counter is shared across tests in this process
+
     def test_right_code_opens_the_finance_page(self):
         response = finance_login(self.client)
         self.assertRedirects(response, reverse('finance'))
         self.assertEqual(self.client.get(reverse('finance')).status_code, 200)
 
     def test_wrong_code_is_refused(self):
-        response = self.client.post(reverse('finance_login'), {'pin': 'nope'})
+        response = self.client.post(reverse('login'), {'pin': 'nope'})
         self.assertContains(response, 'Incorrect code.')
         self.assertEqual(self.client.get(reverse('finance')).status_code, 302)
 
@@ -92,17 +96,17 @@ class FinanceLoginTests(TestCase):
         from django.core.cache import cache
         cache.clear()
         for _ in range(settings.EMPLOYEE_LOGIN_MAX_FAILURES):
-            self.client.post(reverse('finance_login'), {'pin': 'nope'})
+            self.client.post(reverse('login'), {'pin': 'nope'})
         response = finance_login(self.client)
         self.assertContains(response, 'Too many incorrect attempts')
         cache.clear()
 
-    def test_finance_lockout_is_separate_from_the_employee_one(self):
+    def test_the_lockout_is_shared_with_the_employee_code_because_it_is_one_login_page(self):
         from django.core.cache import cache
         cache.clear()
         for _ in range(settings.EMPLOYEE_LOGIN_MAX_FAILURES):
-            self.client.post(reverse('employee_login'), {'pin': 'nope'})
-        self.assertRedirects(finance_login(self.client), reverse('finance'))
+            self.client.post(reverse('login'), {'pin': 'nope'})
+        self.assertContains(finance_login(self.client), 'Too many incorrect attempts')
         cache.clear()
 
     def test_logout_clears_only_the_finance_flag(self):
@@ -116,8 +120,8 @@ class FinanceLoginTests(TestCase):
         self.assertEqual(self.client.get(reverse('finance')).status_code, 200)
 
     def test_offsite_next_is_ignored(self):
-        response = self.client.post(reverse('finance_login'), {'pin': settings.FINANCE_CODE, 'next': 'https://evil.example.com/'})
-        self.assertEqual(response.url, reverse('finance'))
+        response = self.client.post(reverse('login'), {'pin': settings.FINANCE_CODE, 'next': 'https://evil.example.com/'})
+        self.assertEqual(response['Location'], reverse('finance'))
 
 
 class FinanceAccessSeparationTests(TestCase):
@@ -132,7 +136,7 @@ class FinanceAccessSeparationTests(TestCase):
             with self.subTest(url=url):
                 response = self.client.get(url)
                 self.assertEqual(response.status_code, 302)
-                self.assertIn(reverse('finance_login'), response['Location'])
+                self.assertIn(reverse('login'), response['Location'])
 
     def test_finance_code_does_not_open_employee_or_staff_pages(self):
         finance_login(self.client)
@@ -248,3 +252,103 @@ class FinanceDashboardTests(FinanceTestCase):
         entry = NonCoilEntry.objects.create(category='DIES', company='ABC', bill=bill_file())
         response = self.client.get(f'/media/{entry.bill.name}')
         self.assertEqual(response.status_code, 302)   # a finance session is not staff
+
+
+class CommonLoginPageTests(TestCase):
+    """One login page: the code typed decides which dashboard opens."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+
+    def _post(self, code, **extra):
+        return self.client.post(reverse('login'), {'pin': code, **extra})
+
+    def test_the_employee_code_opens_the_employee_portal(self):
+        self.assertRedirects(self._post(settings.EMPLOYEE_PIN), reverse('employee'))
+        self.assertTrue(self.client.session.get('employee_auth'))
+        self.assertFalse(self.client.session.get('finance_auth'))
+
+    def test_the_finance_code_opens_the_finance_page(self):
+        self.assertRedirects(self._post(settings.FINANCE_CODE), reverse('finance'))
+        self.assertTrue(self.client.session.get('finance_auth'))
+        self.assertFalse(self.client.session.get('employee_auth'))
+
+    def test_a_wrong_code_gets_one_message_for_every_role(self):
+        self.assertContains(self._post('0000'), 'Incorrect code.')
+        self.assertFalse(self.client.session.get('employee_auth') or self.client.session.get('finance_auth'))
+
+    def test_the_page_offers_the_admin_login(self):
+        page = self.client.get(reverse('login'))
+        self.assertContains(page, 'Login as admin instead')
+        self.assertContains(page, reverse('admin_login'))
+
+    def test_next_is_followed_only_when_the_role_may_open_it(self):
+        # an employee heading for an employee page goes there
+        r = self._post(settings.EMPLOYEE_PIN, next=reverse('select_order'))
+        self.assertEqual(r['Location'], reverse('select_order'))
+        self.client.post(reverse('employee_logout'))
+        # an employee code with a finance page as `next`: lands on the employee dashboard instead
+        r = self._post(settings.EMPLOYEE_PIN, next=reverse('finance'))
+        self.assertEqual(r['Location'], reverse('employee'))
+        self.client.post(reverse('employee_logout'))
+        # a finance code with an employee page as `next`: lands on the finance page
+        r = self._post(settings.FINANCE_CODE, next=reverse('select_order'))
+        self.assertEqual(r['Location'], reverse('finance'))
+
+    def test_an_already_signed_in_browser_skips_the_page(self):
+        self._post(settings.FINANCE_CODE)
+        self.assertRedirects(self.client.get(reverse('login')), reverse('finance'))
+
+    def test_the_old_addresses_show_the_same_page(self):
+        for name in ('employee_login', 'finance_login'):
+            with self.subTest(old_address=name):
+                self.assertContains(self.client.get(reverse(name)), 'Login as admin instead')
+        self.assertRedirects(self.client.post(reverse('finance_login'), {'pin': settings.FINANCE_CODE}), reverse('finance'))
+
+    def test_the_two_codes_must_differ(self):
+        import os
+        import subprocess
+        import sys
+        env = {k: v for k, v in os.environ.items() if k not in ('EMPLOYEE_PIN', 'FINANCE_CODE')}
+        env.update({'DJANGO_DEBUG': 'True', 'EMPLOYEE_PIN': '4321', 'FINANCE_CODE': '4321'})
+        result = subprocess.run([sys.executable, '-c', 'import inventory.settings'],
+                                cwd=settings.BASE_DIR, env=env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('must be different', result.stderr)
+
+
+class WelcomeAndStaffDashboardTests(TestCase):
+    def test_the_main_address_is_the_welcome_page(self):
+        response = self.client.get('/')
+        self.assertContains(response, 'Matta Drawing Works')
+        self.assertContains(response, reverse('login'))
+
+    def test_welcome_signs_out_both_shared_codes_but_not_a_staff_login(self):
+        User.objects.create_user('boss', password='pw', is_staff=True)
+        self.client.login(username='boss', password='pw')
+        session = self.client.session
+        session['employee_auth'] = True
+        session['finance_auth'] = True
+        session.save()
+        self.client.get(reverse('welcome'))
+        self.assertFalse(self.client.session.get('employee_auth'))
+        self.assertFalse(self.client.session.get('finance_auth'))
+        self.assertEqual(self.client.get(reverse('staff_home')).status_code, 200)   # still signed in as staff
+
+    def test_admin_login_lands_on_the_staff_dashboard(self):
+        User.objects.create_user('boss', password='pw', is_staff=True)
+        response = self.client.post(reverse('admin_login'), {'username': 'boss', 'password': 'pw'})
+        self.assertRedirects(response, reverse('staff_home'))
+
+    def test_the_staff_dashboard_links_to_orders_queries_and_the_django_admin_without_another_login(self):
+        User.objects.create_user('boss', password='pw', is_staff=True)
+        self.client.login(username='boss', password='pw')
+        page = self.client.get(reverse('staff_home'))
+        for url in (reverse('order_dashboard'), reverse('query_dashboard'), '/admin/'):
+            self.assertContains(page, f'href="{url}"')
+            self.assertEqual(self.client.get(url).status_code, 200)   # opens straight away: no login page in between
+
+    def test_the_staff_dashboard_is_staff_only(self):
+        response = self.client.get(reverse('staff_home'))
+        self.assertIn(reverse('admin_login'), response['Location'])

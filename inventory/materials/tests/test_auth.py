@@ -20,14 +20,14 @@ from ..models import (
 
 class EmployeeLogoutTests(TestCase):
     def test_post_clears_session_and_requires_relogin(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.client.post(reverse('employee_logout'))
         response = self.client.get(reverse('employee'))
         self.assertEqual(response.status_code, 302)
-        self.assertIn(reverse('employee_login'), response.url)
+        self.assertIn(reverse('login'), response.url)
 
     def test_get_does_not_log_out(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.client.get(reverse('employee_logout'))
         response = self.client.get(reverse('employee'))
         self.assertEqual(response.status_code, 200)
@@ -38,7 +38,7 @@ class EmployeeLoginRedirectTests(TestCase):
 
     def test_offsite_next_is_ignored(self):
         response = self.client.post(
-            reverse('employee_login'),
+            reverse('login'),
             {'pin': settings.EMPLOYEE_PIN, 'next': 'https://evil.example.com/phish'},
         )
         self.assertEqual(response.status_code, 302)
@@ -46,7 +46,7 @@ class EmployeeLoginRedirectTests(TestCase):
 
     def test_internal_next_is_followed(self):
         response = self.client.post(
-            reverse('employee_login'),
+            reverse('login'),
             {'pin': settings.EMPLOYEE_PIN, 'next': reverse('select_gate_entry')},
         )
         self.assertEqual(response.status_code, 302)
@@ -59,7 +59,7 @@ class PublicPageTests(TestCase):
     def test_home_page_loads(self):
         response = self.client.get(reverse('home'))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Management System')
+        self.assertContains(response, 'Welcome to')
 
     def test_admin_login_rejects_bad_credentials(self):
         User.objects.create_user('realstaff', password='correct-pw', is_staff=True)
@@ -86,7 +86,7 @@ class PublicPageTests(TestCase):
             {'username': 'realstaff3', 'password': 'correct-pw', 'next': 'https://evil.example.com/'},
         )
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.url, '/admin/')  # falls back to the default, not the unsafe URL
+        self.assertEqual(response.url, reverse('staff_home'))  # falls back to the default, not the unsafe URL
 
 
 class EmployeePortalPageTests(TestCase):
@@ -94,12 +94,12 @@ class EmployeePortalPageTests(TestCase):
     selection list, coil QR tag, and production board."""
 
     def setUp(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
 
     def test_employee_landing_requires_login(self):
         self.client.post(reverse('employee_logout'))
         response = self.client.get(reverse('employee'))
-        self.assertRedirects(response, f"{reverse('employee_login')}?next={reverse('employee')}")
+        self.assertRedirects(response, f"{reverse('login')}?next={reverse('employee')}")
 
     def test_employee_landing_loads_when_logged_in(self):
         response = self.client.get(reverse('employee'))
@@ -169,7 +169,7 @@ class EmployeeLoginThrottleTests(TestCase):
         from django.core.cache import cache
         cache.clear()
         self.addCleanup(cache.clear)
-        self.url = reverse('employee_login')
+        self.url = reverse('login')
 
     def _fail(self, times, **extra):
         for _ in range(times):
@@ -249,12 +249,10 @@ class MaterialsRouteGuardTests(TestCase):
     in PUBLIC below with the reason it's open."""
 
     PUBLIC = {
-        'home',               # landing page, no data
-        'welcome',            # the tablet app's first screen, static text
+        'welcome',            # the first screen for everyone (/ and /welcome/), static text
         'admin_login',        # login form itself
-        'employee_login',     # PIN form itself
+        'code_login',         # the employee/finance code form itself (/login/ and its two old addresses)
         'employee_logout',    # only clears this browser's own session
-        'finance_login',      # finance code form itself
         'finance_logout',     # only clears this browser's own finance flag
         'quote_form',         # customer-facing; the unguessable UUID token is the credential
         'whatsapp_webhook',   # Meta calls it directly; HMAC signature is checked in the view
@@ -335,7 +333,7 @@ class WelcomePageTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'Welcome to')
         self.assertContains(response, 'Matta Drawing Works')
-        self.assertContains(response, reverse('employee_login'))
+        self.assertContains(response, reverse('login'))
 
     def test_opening_the_welcome_page_asks_for_the_pin_again(self):
         session = self.client.session
@@ -345,7 +343,7 @@ class WelcomePageTests(TestCase):
         self.client.get(reverse('welcome'))
         response = self.client.get(reverse('employee'))
         self.assertEqual(response.status_code, 302)
-        self.assertIn('/employee-login/', response['Location'])
+        self.assertIn('/login/', response['Location'])
 
 
 class CoilTagForStaffTests(TestCase):

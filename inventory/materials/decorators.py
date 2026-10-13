@@ -31,11 +31,11 @@ def redirect_to_admin_login(request):
 
 def employee_required(view_func):
     """Only a browser that has entered the shared employee PIN may reach the
-    view (session flag set by `employee_login`)."""
+    view (session flag set by the code login)."""
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
         if not request.session.get('employee_auth'):
-            return redirect(f"{reverse('employee_login')}?next={request.path}")
+            return redirect(f"{reverse('login')}?next={request.path}")
         return view_func(request, *args, **kwargs)
     return _tag(wrapper, 'employee')
 
@@ -47,18 +47,18 @@ def employee_or_staff_required(view_func):
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
         if not (request.session.get('employee_auth') or request.user.is_staff):
-            return redirect(f"{reverse('employee_login')}?next={request.path}")
+            return redirect(f"{reverse('login')}?next={request.path}")
         return view_func(request, *args, **kwargs)
     return _tag(wrapper, 'employee')
 
 
 def finance_required(view_func):
-    """Only a browser that has entered the shared finance code (session flag set by `finance_login`), or a
-    logged-in staff user (the owners), may reach the view. Anyone else is sent to the finance login page.
+    """Only a browser that has entered the shared finance code (session flag set by the code login), or a
+    logged-in staff user (the owners), may reach the view. Anyone else is sent to the login page.
     The employee PIN does not open it, and the finance code opens nothing else."""
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
         if not (request.session.get('finance_auth') or request.user.is_staff):
-            return redirect(f"{reverse('finance_login')}?next={request.path}")
+            return redirect(f"{reverse('login')}?next={request.path}")
         return view_func(request, *args, **kwargs)
     return _tag(wrapper, 'finance')

@@ -207,4 +207,4 @@ class ScreenOffReturnsToWelcomeTests(TestCase):
         page = self.client.get(reverse('employee')).content.decode()
         self.assertIn('window.location.replace("/welcome/")', page)
         self.assertNotIn('window.location.replace', self.client.get(reverse('welcome')).content.decode())
-        self.assertNotIn('window.location.replace', self.client.get(reverse('employee_login')).content.decode())
+        self.assertNotIn('window.location.replace', self.client.get(reverse('login')).content.decode())

@@ -74,7 +74,7 @@ class MaterialUsedStatusTests(TestCase):
     def test_fully_legacy_used_coil_excluded_from_order_coil_selection(self):
         """A coil imported with legacy_used_weight already covering its full
         quantity has no weight left to offer, same as one used up via the app."""
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         customer = Customer.objects.create(name='Legacy Test Co')
         order = Order.objects.create(customer=customer, quantity=100, status='confirmed', grade='EN8D')
         Material.objects.create(quantity=500, grade='EN8D', legacy_used_weight=500)
@@ -152,7 +152,7 @@ class MaterialArchivingTests(TestCase):
         self.assertFalse(coil.is_archived())
 
     def test_archived_coil_excluded_from_order_coil_selection(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         customer = Customer.objects.create(name='Archive Test Co')
         order = Order.objects.create(customer=customer, quantity=100, status='confirmed', grade='EN8D')
         Material.objects.create(quantity=500, grade='EN8D', archived_at=timezone.now())
@@ -164,7 +164,7 @@ class MaterialArchivingTests(TestCase):
         self.assertEqual(len(coil_ids), 1)
 
     def test_cannot_pick_an_archived_coil(self):
-        self.client.post(reverse('employee_login'), {'pin': settings.EMPLOYEE_PIN})
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         coil = Material.objects.create(quantity=500, archived_at=timezone.now())
         product_type = ProductType.objects.create(item_code='Bar', grade='EN8D')
         customer = Customer.objects.create(name='Archive Pick Co')
