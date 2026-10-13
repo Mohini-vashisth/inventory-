@@ -11,10 +11,26 @@ from ..decorators import employee_required
 from .common import _safe_next
 
 
-def _employee_login_cache_key(request):
+def _check_shared_code(request, *, flag, code, key_prefix, wrong_message="Incorrect PIN."):
+    """The shared-code login used by the employee PIN and the finance code: throttled per client IP (a wrong
+    code counts; too many locks that IP out, even for the right code), and a right code sets the session flag.
+    Returns an error message, or None when the code was right."""
     # REMOTE_ADDR only: X-Forwarded-For is client-supplied, so keying on it
     # would let an attacker dodge the lockout by rotating the header.
-    return f"employee-login-failures:{request.META.get('REMOTE_ADDR', '')}"
+    key = f"{key_prefix}:{request.META.get('REMOTE_ADDR', '')}"
+    if cache.get(key, 0) >= settings.EMPLOYEE_LOGIN_MAX_FAILURES:
+        minutes = settings.EMPLOYEE_LOGIN_LOCKOUT_SECONDS // 60
+        return f"Too many incorrect attempts. Try again in {minutes} minutes."
+    if constant_time_compare(request.POST.get('pin', ''), code):
+        cache.delete(key)
+        request.session[flag] = True
+        return None
+    cache.add(key, 0, settings.EMPLOYEE_LOGIN_LOCKOUT_SECONDS)
+    try:
+        cache.incr(key)
+    except ValueError:
+        cache.set(key, 1, settings.EMPLOYEE_LOGIN_LOCKOUT_SECONDS)
+    return wrong_message
 
 
 def employee_login(request):
@@ -23,22 +39,31 @@ def employee_login(request):
         return redirect(next_url)
     error = None
     if request.method == 'POST':
-        key = _employee_login_cache_key(request)
-        if cache.get(key, 0) >= settings.EMPLOYEE_LOGIN_MAX_FAILURES:
-            minutes = settings.EMPLOYEE_LOGIN_LOCKOUT_SECONDS // 60
-            error = f"Too many incorrect attempts. Try again in {minutes} minutes."
-        elif constant_time_compare(request.POST.get('pin', ''), settings.EMPLOYEE_PIN):
-            cache.delete(key)
-            request.session['employee_auth'] = True
+        error = _check_shared_code(request, flag='employee_auth', code=settings.EMPLOYEE_PIN,
+                                   key_prefix='employee-login-failures')
+        if error is None:
             return redirect(next_url)
-        else:
-            cache.add(key, 0, settings.EMPLOYEE_LOGIN_LOCKOUT_SECONDS)
-            try:
-                cache.incr(key)
-            except ValueError:
-                cache.set(key, 1, settings.EMPLOYEE_LOGIN_LOCKOUT_SECONDS)
-            error = "Incorrect PIN."
     return render(request, 'materials/employee_login.html', {'error': error, 'next': next_url})
+
+
+def finance_login(request):
+    """The finance team's page is behind its own shared code, separate from the employee PIN."""
+    next_url = _safe_next(request, request.GET.get('next') or request.POST.get('next'), reverse('finance'))
+    if request.session.get('finance_auth'):
+        return redirect(next_url)
+    error = None
+    if request.method == 'POST':
+        error = _check_shared_code(request, flag='finance_auth', code=settings.FINANCE_CODE,
+                                   key_prefix='finance-login-failures', wrong_message="Incorrect code.")
+        if error is None:
+            return redirect(next_url)
+    return render(request, 'materials/finance_login.html', {'error': error, 'next': next_url})
+
+
+def finance_logout(request):
+    if request.method == 'POST':
+        request.session.pop('finance_auth', None)   # only the finance flag; a staff login is untouched
+    return redirect('finance_login')
 
 
 def employee_logout(request):

@@ -1,0 +1,113 @@
+{% extends "materials/base.html" %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}Finance{% endblock %}
+
+{% block css %}
+  .ds .page { max-width: 1000px; }
+  .section { margin-bottom: 1.75rem; }
+  .section-head { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 0.6rem; }
+  .section-head h2 { font-size: 1.1rem; color: var(--ds-text); }
+  .waiting-count { font-size: 0.8rem; font-weight: 600; color: #92400e; }
+  .table-wrap { overflow-x: auto; padding: 0; }
+  .badge-waiting { background: #fef3c7; color: #92400e; }
+  .badge-done { background: #dcfce7; color: #166534; }
+  .bill-cell form { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0; }
+  .bill-cell input[type="file"] { font-size: 0.8rem; max-width: 210px; }
+  .upload-btn {
+    background: var(--ds-accent); color: #fff; border: none; border-radius: 8px;
+    padding: 0.45rem 0.9rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  }
+  .upload-btn:hover { background: var(--ds-accent-dark); }
+  .view-link { font-size: 0.85rem; font-weight: 600; color: var(--ds-accent); margin-right: 0.5rem; }
+  .logout-form { display: inline; margin: 0; }
+  .logout-form button { background: none; border: none; padding: 0; font: inherit; cursor: pointer; }
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="ds-top">
+    <form method="POST" action="{% url 'finance_logout' %}" class="logout-form">{% csrf_token %}<button type="submit" class="back-link">Log out</button></form>
+  </div>
+  <h1>Finance</h1>
+  <p class="subtitle">Upload the supplier's bill for every arrival. Entries still waiting for a bill are at the top.</p>
+
+  {% for msg in messages %}
+  <div class="alert {% if msg.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ msg }}</div>
+  {% endfor %}
+
+  <div class="section">
+    <div class="section-head">
+      <h2>Coil gate entries</h2>
+      {% if coil_waiting_count %}<span class="waiting-count">{{ coil_waiting_count }} waiting for a bill</span>{% endif %}
+    </div>
+    <div class="card table-wrap">
+      <table>
+        <thead><tr><th>Arrived</th><th>Vendor</th><th>Invoice no.</th><th>Vehicle</th><th>Coils</th><th>Bill</th></tr></thead>
+        <tbody>
+          {% for entry in coil_entries %}
+          <tr>
+            <td>{{ entry.created_at|date:"d M Y, H:i" }}</td>
+            <td>{{ entry.vendor|default:"—" }}</td>
+            <td>{{ entry.invoice_no|default:"—" }}</td>
+            <td>{{ entry.vehicle_no|default:"—" }}</td>
+            <td>{{ entry.no_of_coils }}</td>
+            <td class="bill-cell">
+              {% if entry.has_bill %}
+                <span class="badge badge-done">Bill uploaded</span>
+                <a class="view-link" href="{% url 'finance_coil_bill' entry.pk %}" target="_blank">View</a>
+              {% else %}
+                <span class="badge badge-waiting">No bill yet</span>
+              {% endif %}
+              <form method="POST" action="{% url 'finance_upload_coil_bill' entry.pk %}" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="file" name="bill" accept="image/*,application/pdf" required>
+                <button type="submit" class="upload-btn">{% if entry.has_bill %}Replace bill{% else %}Enter bill{% endif %}</button>
+              </form>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="muted">No coil gate entries yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <h2>Other arrivals</h2>
+      {% if other_waiting_count %}<span class="waiting-count">{{ other_waiting_count }} waiting for a bill</span>{% endif %}
+    </div>
+    <div class="card table-wrap">
+      <table>
+        <thead><tr><th>Arrived</th><th>What</th><th>Company</th><th>Bill</th></tr></thead>
+        <tbody>
+          {% for entry in other_entries %}
+          <tr>
+            <td>{{ entry.arrived_at|date:"d M Y, H:i" }}</td>
+            <td>{{ entry.category }}</td>
+            <td>{{ entry.company }}</td>
+            <td class="bill-cell">
+              {% if entry.has_bill %}
+                <span class="badge badge-done">Bill uploaded</span>
+                <a class="view-link" href="{% url 'finance_other_bill' entry.pk %}" target="_blank">View</a>
+              {% else %}
+                <span class="badge badge-waiting">No bill yet</span>
+              {% endif %}
+              <form method="POST" action="{% url 'finance_upload_other_bill' entry.pk %}" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="file" name="bill" accept="image/*,application/pdf" required>
+                <button type="submit" class="upload-btn">{% if entry.has_bill %}Replace bill{% else %}Enter bill{% endif %}</button>
+              </form>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="muted">Nothing other than coils has arrived yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}
