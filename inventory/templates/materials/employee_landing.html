@@ -80,14 +80,6 @@
       line-height: 1.4;
     }
 
-    .back-link {
-      display: inline-block;
-      margin-top: 1.5rem;
-      color: #6b7280;
-      font-size: 0.9rem;
-      text-decoration: none;
-    }
-
     .logout-form {
       display: inline;
     }
@@ -95,7 +87,6 @@
     .logout-link {
       display: inline-block;
       margin-top: 1.5rem;
-      margin-left: 1.5rem;
       color: #6b7280;
       font-size: 0.9rem;
       background: none;
@@ -126,7 +117,7 @@
     }
 
     @media (display-mode: standalone) {
-      .back-link, .logout-form { display: none; }
+      .logout-form { display: none; }
       /* The page fits the screen, so lock it: no drag-scroll, bounce or pull-to-refresh. */
       html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
       body { min-height: 0; }
@@ -176,7 +167,6 @@
 
   </div>
 
-  <a href="{% url 'home' %}" class="back-link">← Back to home</a>
   <form method="POST" action="{% url 'employee_logout' %}" class="logout-form">
     {% csrf_token %}
     <button type="submit" class="logout-link">Log out</button>
