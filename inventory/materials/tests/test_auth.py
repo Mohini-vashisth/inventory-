@@ -212,10 +212,10 @@ class EmployeePinSettingTests(SimpleTestCase):
         import subprocess
         import sys
         base_env = {k: v for k, v in os.environ.items()
-                    if k not in ('EMPLOYEE_PIN', 'DJANGO_DEBUG', 'DJANGO_SECRET_KEY')}
+                    if k not in ('EMPLOYEE_PIN', 'FINANCE_CODE', 'DJANGO_DEBUG', 'DJANGO_SECRET_KEY')}
         # Explicit empty values, not absent ones: load_dotenv fills in absent
         # vars from a developer's real .env, but never overrides a set one.
-        base_env.update({'EMPLOYEE_PIN': '', 'DJANGO_SECRET_KEY': ''})
+        base_env.update({'EMPLOYEE_PIN': '', 'FINANCE_CODE': '', 'DJANGO_SECRET_KEY': ''})
         base_env.update(env)
         return subprocess.run(
             [sys.executable, '-c', 'import inventory.settings as s; print(s.EMPLOYEE_PIN)'],
@@ -228,9 +228,14 @@ class EmployeePinSettingTests(SimpleTestCase):
         self.assertIn("EMPLOYEE_PIN must be set", result.stderr)
 
     def test_production_starts_with_an_employee_pin(self):
-        result = self._import_settings(DJANGO_DEBUG='False', DJANGO_SECRET_KEY='x' * 50, EMPLOYEE_PIN='4821')
+        result = self._import_settings(DJANGO_DEBUG='False', DJANGO_SECRET_KEY='x' * 50, EMPLOYEE_PIN='4821', FINANCE_CODE='9090')
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), '4821')
+
+    def test_production_refuses_to_start_without_a_finance_code(self):
+        result = self._import_settings(DJANGO_DEBUG='False', DJANGO_SECRET_KEY='x' * 50, EMPLOYEE_PIN='4821')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("FINANCE_CODE must be set", result.stderr)
 
     def test_debug_falls_back_to_the_dev_pin(self):
         result = self._import_settings(DJANGO_DEBUG='True')
@@ -249,6 +254,8 @@ class MaterialsRouteGuardTests(TestCase):
         'admin_login',        # login form itself
         'employee_login',     # PIN form itself
         'employee_logout',    # only clears this browser's own session
+        'finance_login',      # finance code form itself
+        'finance_logout',     # only clears this browser's own finance flag
         'quote_form',         # customer-facing; the unguessable UUID token is the credential
         'whatsapp_webhook',   # Meta calls it directly; HMAC signature is checked in the view
     }

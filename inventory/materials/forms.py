@@ -1,8 +1,9 @@
 import re
 
 from django import forms
+from django.core.validators import FileExtensionValidator
 from django.forms import formset_factory, inlineformset_factory
-from .models import GSTIN_PATTERN, GateEntry, Material, GradeOption, SizeOption, Order, Query, QueryItem
+from .models import BILL_EXTENSIONS, GSTIN_PATTERN, GateEntry, NonCoilEntry, validate_bill_size, Material, GradeOption, SizeOption, Order, Query, QueryItem
 
 
 class GateEntryForm(forms.ModelForm):
@@ -31,6 +32,25 @@ class GateEntryForm(forms.ModelForm):
         if total_weight <= 0:
             raise forms.ValidationError("Total weight must be greater than zero.")
         return total_weight
+
+
+class NonCoilEntryForm(forms.ModelForm):
+    """What the gate person types when something other than coils arrives: what it is and who sent it."""
+    class Meta:
+        model = NonCoilEntry
+        fields = ['category', 'company']
+
+    # Capitals, like the rest of the gate entry pages, so one company is never stored under two spellings.
+    def clean_category(self):
+        return self.cleaned_data['category'].strip().upper()
+
+    def clean_company(self):
+        return self.cleaned_data['company'].strip().upper()
+
+
+class BillUploadForm(forms.Form):
+    """The finance team's bill upload: a photo or scan (pdf, png, jpg, jpeg, webp), at most 10 MB."""
+    bill = forms.FileField(validators=[FileExtensionValidator(BILL_EXTENSIONS), validate_bill_size])
 
 
 class GateEntryLotForm(forms.Form):

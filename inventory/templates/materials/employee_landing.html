@@ -32,7 +32,7 @@
       margin-bottom: 1.5rem;
     }
 
-    /* All four buttons share one row at any width from a landscape tablet up; they only wrap on a phone. */
+    /* The buttons share one row at any width from a landscape tablet up; they only wrap on a phone. */
     .cards {
       display: flex;
       gap: 1rem;
@@ -119,8 +119,9 @@
       .subtitle { font-size: 1.15rem; margin-bottom: 2rem; }
       .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
       .card-link { max-width: none; }
-      .card { padding: 2.5rem 1.25rem; display: flex; flex-direction: column; justify-content: center; }
-      .icon { font-size: 3.6rem; margin-bottom: 0.9rem; }
+      .card-link-wide { grid-column: 1 / -1; }
+      .card { padding: 1.8rem 1.25rem; display: flex; flex-direction: column; justify-content: center; }
+      .icon { font-size: 3rem; margin-bottom: 0.7rem; }
       .card h2 { font-size: 1.4rem; margin-bottom: 0.6rem; }
       .card p { font-size: 1rem; line-height: 1.45; }
     }
@@ -171,6 +172,14 @@
         <div class="icon">🔄</div>
         <h2>Update Progress</h2>
         <p>Scan a coil to update its manufacturing step status</p>
+      </div>
+    </a>
+
+    <a href="{% url 'non_coil_entry_form' %}" class="card-link card-link-wide">
+      <div class="card">
+        <div class="icon">🧰</div>
+        <h2>Non-Coil Entry</h2>
+        <p>Something other than coils arrived: dies, machine parts, anything</p>
       </div>
     </a>
 

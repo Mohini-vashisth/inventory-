@@ -22,6 +22,16 @@ def validate_drawing_size(upload):
         raise ValidationError(f"The drawing is too large ({upload.size // (1024 * 1024)} MB): the limit is {DRAWING_MAX_BYTES // (1024 * 1024)} MB.")
 
 
+BILL_EXTENSIONS = ['pdf', 'png', 'jpg', 'jpeg', 'webp']
+BILL_MAX_BYTES = 10 * 1024 * 1024
+
+
+def validate_bill_size(upload):
+    """A supplier's bill is a photo or scan uploaded by the finance team; cap its size."""
+    if upload.size > BILL_MAX_BYTES:
+        raise ValidationError(f"The bill is too large ({upload.size // (1024 * 1024)} MB): the limit is {BILL_MAX_BYTES // (1024 * 1024)} MB.")
+
+
 def normalize_grade(value):
     """The one spelling of a grade: capital letters and digits only — no hyphens, spaces
     or other punctuation ("EN-8D", "en 8d" and "EN8D" are all "EN8D"; "EN-8D CR" is
@@ -63,6 +73,15 @@ class GateEntry(models.Model):
     invoice_no = models.CharField(max_length=30, null=True, blank=True)
     total_weight = models.DecimalField(max_digits=10, decimal_places=3)
     created_at = models.DateTimeField(auto_now_add=True)
+    # The supplier's bill for this delivery (photo or scan), uploaded by the finance team.
+    bill = models.FileField(
+        upload_to='bills/gate_entries/%Y/%m/', blank=True,
+        validators=[FileExtensionValidator(BILL_EXTENSIONS), validate_bill_size],
+    )
+    bill_uploaded_at = models.DateTimeField(null=True, blank=True)
+
+    def has_bill(self):
+        return bool(self.bill)
 
     def no_of_coils(self):
         return self.lots.aggregate(total=models.Sum('no_of_coils'))['total'] or 0
@@ -116,6 +135,31 @@ class GateEntryLot(models.Model):
 
     def __str__(self):
         return f"{self.gate_entry} — {self.grade}, {self.size} mm ({self.no_of_coils} coils)"
+
+
+class NonCoilEntry(models.Model):
+    """Something other than a truck of coils arriving at the gate (dies, machine parts, anything): the gate
+    person records only what kind of thing it is and which company sent it; the time is recorded
+    automatically. The finance team later uploads the supplier's bill for it (one bill per entry)."""
+    category = models.CharField(max_length=100, help_text="What arrived, e.g. dies, machine parts.")
+    company = models.CharField(max_length=100, help_text="The company it came from.")
+    arrived_at = models.DateTimeField(default=timezone.now)
+    bill = models.FileField(
+        upload_to='bills/other/%Y/%m/', blank=True,
+        validators=[FileExtensionValidator(BILL_EXTENSIONS), validate_bill_size],
+    )
+    bill_uploaded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "non-coil entry"
+        verbose_name_plural = "non-coil entries"
+        ordering = ['-arrived_at']
+
+    def has_bill(self):
+        return bool(self.bill)
+
+    def __str__(self):
+        return f"{self.category} from {self.company}"
 
 
 class Material(models.Model):

@@ -4,13 +4,14 @@ import base64
 import io
 import qrcode
 
+from django.contrib import messages
 from django.shortcuts import render, redirect, get_object_or_404
 from django.db import transaction
 from django.db.models import Count
 from django.http import JsonResponse
 
 from ..models import GateEntry, GateEntryLot, Material, GradeOption, SizeOption
-from ..forms import GateEntryForm, GateEntryLotForm, GateEntryLotFormSet, MaterialForm
+from ..forms import NonCoilEntryForm, GateEntryForm, GateEntryLotForm, GateEntryLotFormSet, MaterialForm
 from ..decorators import employee_required, employee_or_staff_required
 from .common import _GateEntryOverCommitted, _first_form_error, _first_formset_error
 
@@ -36,6 +37,22 @@ def material_field_autocomplete(request):
         .distinct()[:8]
     )
     return JsonResponse(list(values), safe=False)
+
+
+@employee_required
+def non_coil_entry_form(request):
+    """Something other than a truck of coils arrived (dies, machine parts, anything): the gate person types what
+    it is and which company sent it, and the arrival time is recorded automatically. The finance team's page
+    then lists it so they can upload the supplier's bill. Saving returns to the same page, ready for the next."""
+    if request.method == 'POST':
+        form = NonCoilEntryForm(request.POST)
+        if form.is_valid():
+            entry = form.save()
+            messages.success(request, f"Saved: {entry.category} from {entry.company}.")
+            return redirect('non_coil_entry_form')
+    else:
+        form = NonCoilEntryForm()
+    return render(request, 'materials/non_coil_entry_form.html', {'form': form})
 
 
 @employee_required

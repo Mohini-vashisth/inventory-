@@ -10,7 +10,7 @@ from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django import forms
 from .product_codes import canonical_grade, item_code_for, reserve_grade_number
-from .models import QueryItem, GateEntry, GateEntryLot, Material, OrderCoilPick, GradeOption, SizeOption, ProductCategory, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, ProductionPart, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
+from .models import QueryItem, GateEntry, GateEntryLot, NonCoilEntry, Material, OrderCoilPick, GradeOption, SizeOption, ProductCategory, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, ProductionPart, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
 
 
 class GateEntryLotInline(admin.TabularInline):
@@ -22,16 +22,31 @@ class GateEntryLotInline(admin.TabularInline):
         return False  # lots are added via the employee portal, one at a time
 
 
+@admin.register(NonCoilEntry)
+class NonCoilEntryAdmin(admin.ModelAdmin):
+    list_display = ['id', 'category', 'company', 'arrived_at', 'bill_status']
+    search_fields = ['category', 'company']
+    ordering = ['-arrived_at']
+
+    def bill_status(self, obj):
+        return 'Uploaded' if obj.has_bill() else 'Waiting for bill'
+    bill_status.short_description = 'Bill'
+
+
 @admin.register(GateEntry)
 class GateEntryAdmin(admin.ModelAdmin):
     list_display = [
         'id', 'date', 'vehicle_no', 'vendor', 'invoice_no',
-        'total_weight', 'no_of_coils', 'weight_per_coil', 'coils_registered', 'status_badge',
+        'total_weight', 'no_of_coils', 'weight_per_coil', 'coils_registered', 'status_badge', 'bill_status',
     ]
     list_filter = ['vendor']
     search_fields = ['vehicle_no', 'vendor', 'invoice_no']
     ordering = ['-created_at']
     inlines = [GateEntryLotInline]
+
+    def bill_status(self, obj):
+        return 'Uploaded' if obj.has_bill() else 'Waiting for bill'
+    bill_status.short_description = 'Bill'
 
     def status_badge(self, obj):
         if obj.is_complete():

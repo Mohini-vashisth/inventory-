@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import auth, gate_entry, media, orders, picking, production, queries, quotations, whatsapp
+from .views import auth, finance, gate_entry, media, orders, picking, production, queries, quotations, whatsapp
 
 urlpatterns = [
     path("", auth.home, name="home"),
@@ -11,7 +11,15 @@ urlpatterns = [
     path("gate-entry/<int:gate_entry_pk>/add-lot/", gate_entry.gate_entry_lot_form, name="gate_entry_lot_form"),
     path("gate-entry/lot/<int:lot_pk>/delete/", gate_entry.gate_entry_lot_delete, name="gate_entry_lot_delete"),
     path("gate-entry/lot/<int:lot_pk>/coil/", gate_entry.material_form, name="material_form"),
+    path("non-coil-entry/", gate_entry.non_coil_entry_form, name="non_coil_entry_form"),
     path("admin-login/", auth.admin_login, name="admin_login"),
+    path("finance/", finance.finance_dashboard, name="finance"),
+    path("finance-login/", auth.finance_login, name="finance_login"),
+    path("finance-logout/", auth.finance_logout, name="finance_logout"),
+    path("finance/upload/coil/<int:pk>/", finance.finance_upload_coil_bill, name="finance_upload_coil_bill"),
+    path("finance/upload/other/<int:pk>/", finance.finance_upload_other_bill, name="finance_upload_other_bill"),
+    path("finance/bill/coil/<int:pk>/", finance.finance_coil_bill, name="finance_coil_bill"),
+    path("finance/bill/other/<int:pk>/", finance.finance_other_bill, name="finance_other_bill"),
     path("employee/", auth.employee_landing, name="employee"),
     path("welcome/", auth.welcome, name="welcome"),
     path("employee-login/", auth.employee_login, name="employee_login"),

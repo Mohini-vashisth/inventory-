@@ -243,6 +243,15 @@ if not EMPLOYEE_PIN:
         )
     EMPLOYEE_PIN = '1234'
 
+# Shared code for the finance team's page (bills). Same fail-closed rule as EMPLOYEE_PIN.
+FINANCE_CODE = os.environ.get('FINANCE_CODE')
+if not FINANCE_CODE:
+    if not DEBUG:
+        raise ImproperlyConfigured(
+            "FINANCE_CODE must be set in the environment when DJANGO_DEBUG is False."
+        )
+    FINANCE_CODE = '5678'
+
 # Wrong PINs allowed per client IP before employee login locks that IP out.
 EMPLOYEE_LOGIN_MAX_FAILURES = 5
 EMPLOYEE_LOGIN_LOCKOUT_SECONDS = 15 * 60
