@@ -154,10 +154,10 @@
       <div class="form-row cols-2">
         <div class="form-group">
           <label>Product Type</label>
-          <select name="product_category">
+          <select name="product_type">
             <option value="">— select —</option>
-            {% for category in categories %}
-            <option value="{{ category.pk }}" {% if post.product_category|stringformat:"s" == category.pk|stringformat:"s" %}selected{% endif %}>{{ category.name }}</option>
+            {% for product_type in product_types %}
+            <option value="{{ product_type.pk }}" {% if post.product_type|stringformat:"s" == product_type.pk|stringformat:"s" %}selected{% endif %}>{{ product_type.name }}</option>
             {% endfor %}
           </select>
         </div>

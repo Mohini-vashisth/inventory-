@@ -6,9 +6,9 @@ from ..models import ProductCode
 from ..product_codes import grade_key
 
 
-def _match_product_code(grade, category=None):
+def _match_product_code(grade, product_type=None):
     """The catalogue product code (ProductCode) for this product type + grade, or
-    None. A code depends on both: with a `category` (product type) given it must
+    None. A code depends on both: with a `product_type` (product type) given it must
     match that too; without one, the grade alone only counts when exactly one code
     has it — the same grade under two product types is ambiguous, so it matches
     nothing rather than guessing. Grade ignores case, spaces and punctuation (a
@@ -16,8 +16,8 @@ def _match_product_code(grade, category=None):
     if not grade or not grade.strip():
         return None
     candidates = ProductCode.objects.all()
-    if category is not None:
-        candidates = candidates.filter(category=category)
+    if product_type is not None:
+        candidates = candidates.filter(product_type=product_type)
     key = grade_key(grade)
     matches = [c for c in candidates if grade_key(c.grade) == key]
     return matches[0] if len(matches) == 1 else None

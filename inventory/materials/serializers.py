@@ -12,7 +12,8 @@ class ProcessStepSerializer(serializers.ModelSerializer):
 
 class ProductCodeSerializer(serializers.ModelSerializer):
     steps = ProcessStepSerializer(many=True, read_only=True)
-    category = serializers.StringRelatedField()  # the product type's name, e.g. "Round Bright Bar"
+    # The product type's name, e.g. "Round Bright Bar". The API keeps its original output name `category`.
+    category = serializers.StringRelatedField(source='product_type')
 
     class Meta:
         model = ProductCode

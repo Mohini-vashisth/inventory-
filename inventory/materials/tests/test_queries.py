@@ -9,7 +9,7 @@ from django.urls import reverse
 from django.utils import timezone
 from unittest.mock import patch
 
-from ..models import Customer, Order, ProductCategory, ProductCode, Query, QueryItem, Quotation
+from ..models import Customer, Order, ProductType, ProductCode, Query, QueryItem, Quotation
 from ..views.whatsapp import (
     WhatsAppSendError,
     WHATSAPP_QUERY_INTAKE_TEMPLATE,
@@ -247,40 +247,40 @@ class QueryDashboardTests(TestCase):
         return self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), query_edit_data(query, rows=rows))
 
     def test_editing_type_and_grade_fills_in_the_matching_product_code(self):
-        from ..models import ProductCategory
-        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        from ..models import ProductType
+        flat = ProductType.objects.get(name='Flat Bright Bar')
         from ..models import GradeOption
         GradeOption.objects.create(name='EN8D')
-        code = ProductCode.objects.create(item_code='FBB00100120', category=flat, grade='EN8D')
+        code = ProductCode.objects.create(item_code='FBB00100120', product_type=flat, grade='EN8D')
         query = Query.objects.create(source='call', contact_phone='9123456780')
         self.client.force_login(self.staff)
-        self._edit(query, product_category=str(flat.pk), grade='en8d', width='50', thickness='6')
+        self._edit(query, product_type=str(flat.pk), grade='en8d', width='50', thickness='6')
         item = query.items.get()
         self.assertEqual(item.product_code, code)
         self.assertEqual(item.grade, 'EN8D')   # tidied to the listed spelling too
 
     def test_a_code_picked_by_hand_is_not_replaced_by_the_match(self):
-        from ..models import ProductCategory
-        flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        ProductCode.objects.create(item_code='FBB00100120', category=flat, grade='EN8D')
+        from ..models import ProductType
+        flat = ProductType.objects.get(name='Flat Bright Bar')
+        ProductCode.objects.create(item_code='FBB00100120', product_type=flat, grade='EN8D')
         picked = ProductCode.objects.create(item_code='HAND', grade='SS304')
         query = Query.objects.create(source='call', contact_phone='9123456780')
         self.client.force_login(self.staff)
-        self._edit(query, product_category=str(flat.pk), grade='EN8D', width='50', thickness='6', product_code=str(picked.pk))
+        self._edit(query, product_type=str(flat.pk), grade='EN8D', width='50', thickness='6', product_code=str(picked.pk))
         self.assertEqual(query.items.get().product_code, picked)
 
     def test_no_match_leaves_the_code_empty(self):
-        from ..models import ProductCategory
-        flat = ProductCategory.objects.get(name='Flat Bright Bar')
+        from ..models import ProductType
+        flat = ProductType.objects.get(name='Flat Bright Bar')
         query = Query.objects.create(source='call', contact_phone='9123456780')
         self.client.force_login(self.staff)
-        self._edit(query, product_category=str(flat.pk), grade='EN8D', width='50', thickness='6')
+        self._edit(query, product_type=str(flat.pk), grade='EN8D', width='50', thickness='6')
         self.assertIsNone(query.items.get().product_code)
 
     def test_the_edit_page_carries_the_code_map_and_grade_suggestions_for_live_fill(self):
-        from ..models import GradeOption, ProductCategory
-        flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        code = ProductCode.objects.create(item_code='FBB00100120', category=flat, grade='EN8D')
+        from ..models import GradeOption, ProductType
+        flat = ProductType.objects.get(name='Flat Bright Bar')
+        code = ProductCode.objects.create(item_code='FBB00100120', product_type=flat, grade='EN8D')
         GradeOption.objects.create(name='EN8D')
         query = Query.objects.create(source='call', contact_phone='9123456780')
         self.client.force_login(self.staff)
@@ -686,31 +686,31 @@ class QueryProductTypeTests(TestCase):
     def setUp(self):
         self.staff = User.objects.create_user('type_staff', password='pw', is_staff=True)
         self.client.force_login(self.staff)
-        self.round_bar = ProductCategory.objects.get(name='Square Bright Bar')
+        self.round_bar = ProductType.objects.get(name='Square Bright Bar')
         self.query = Query.objects.create(source='indiamart', contact_phone='9123456780', company_name='Type Co')
 
-    def _edit(self, product_category=''):
+    def _edit(self, product_type=''):
         existing = list(self.query.item_list())
-        row = {**item_row(existing[0]), 'product_category': product_category} if existing else {'product_category': product_category}
+        row = {**item_row(existing[0]), 'product_type': product_type} if existing else {'product_type': product_type}
         return self.client.post(reverse('query_edit', kwargs={'pk': self.query.pk}), query_edit_data(self.query, rows=[row]))
 
     def test_edit_page_offers_all_the_product_types_in_each_product_row(self):
-        create_query(source='call', contact_phone='9123456799', product_category=self.round_bar)
+        create_query(source='call', contact_phone='9123456799', product_type=self.round_bar)
         html = self.client.get(reverse('query_edit', kwargs={'pk': Query.objects.latest('pk').pk})).content.decode()
-        self.assertIn('name="item-0-product_category"', html)
-        for name in ProductCategory.objects.values_list('name', flat=True):
+        self.assertIn('name="item-0-product_type"', html)
+        for name in ProductType.objects.values_list('name', flat=True):
             with self.subTest(name=name):
                 self.assertIn(f'>{name}</option>', html)
 
     def test_edit_saves_and_clears_the_product_type(self):
-        self._edit(product_category=str(self.round_bar.pk))
-        self.assertEqual(self.query.items.get().product_category, self.round_bar)
-        self._edit(product_category='')
-        self.assertIsNone(self.query.items.get().product_category)
+        self._edit(product_type=str(self.round_bar.pk))
+        self.assertEqual(self.query.items.get().product_type, self.round_bar)
+        self._edit(product_type='')
+        self.assertIsNone(self.query.items.get().product_type)
 
     def test_detail_page_shows_the_product_type(self):
         from ..models import QueryItem
-        QueryItem.objects.create(query=self.query, product_category=self.round_bar)
+        QueryItem.objects.create(query=self.query, product_type=self.round_bar)
         html = self.client.get(reverse('query_detail', kwargs={'pk': self.query.pk})).content.decode()
         self.assertIn('Product type', html)
         self.assertIn('Square Bright Bar', html)
@@ -722,25 +722,25 @@ class QueryProductCodeLinkTests(TestCase):
     def setUp(self):
         self.staff = User.objects.create_user('code_link_staff', password='pw', is_staff=True)
         self.client.force_login(self.staff)
-        from ..models import ProductCategory
-        self.flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        self.code = ProductCode.objects.create(item_code='FBB009', category=self.flat, grade='EN8D')
+        from ..models import ProductType
+        self.flat = ProductType.objects.get(name='Flat Bright Bar')
+        self.code = ProductCode.objects.create(item_code='FBB009', product_type=self.flat, grade='EN8D')
 
     def test_the_detail_page_shows_the_code_for_the_type_and_grade_even_if_not_linked(self):
-        query = create_query(source='call', contact_phone='9123456780', product_category=self.flat, grade='en-8d')
+        query = create_query(source='call', contact_phone='9123456780', product_type=self.flat, grade='en-8d')
         self.assertIsNone(query.items.get().product_code)
         html = self.client.get(reverse('query_detail', kwargs={'pk': query.pk})).content.decode()
         self.assertIn('FBB009', html)
 
     def test_no_code_is_shown_when_none_matches(self):
-        query = create_query(source='call', contact_phone='9123456781', product_category=self.flat, grade='SS304')
+        query = create_query(source='call', contact_phone='9123456781', product_type=self.flat, grade='SS304')
         self.assertIsNone(query.items.get().effective_product_code())
         html = self.client.get(reverse('query_detail', kwargs={'pk': query.pk})).content.decode()
         self.assertNotIn('FBB009', html)
 
     def test_a_linked_code_wins_over_the_match(self):
         other = ProductCode.objects.create(item_code='HAND', grade='SS304')
-        query = create_query(source='call', contact_phone='9123456782', product_category=self.flat,
+        query = create_query(source='call', contact_phone='9123456782', product_type=self.flat,
                                      grade='EN8D', product_code=other)
         self.assertEqual(query.items.get().effective_product_code(), other)
 

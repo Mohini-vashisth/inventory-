@@ -15,7 +15,7 @@ from django.utils import timezone
 from .helpers import create_query
 from ..models import (
     QueryItem,
-    AllowedCoilSpec, Customer, Material, Order, OrderCoilPick, ProductCategory, ProductCode, Query, Quotation,
+    AllowedCoilSpec, Customer, Material, Order, OrderCoilPick, ProductType, ProductCode, Query, Quotation,
     QuotationLineItem,
 )
 
@@ -205,14 +205,14 @@ class StockOutlookTests(TestCase):
         self.assertEqual(outlook['held'], Decimal('0'))
 
     def test_orders_using_different_coil_sizes_do_not_compete(self):
-        other_code = ProductCode.objects.create(item_code='OUT2', grade='EN8D', category=ProductCategory.objects.create(name='Outlook Type 2', code='OT2'))
+        other_code = ProductCode.objects.create(item_code='OUT2', grade='EN8D', product_type=ProductType.objects.create(name='Outlook Type 2', code='OT2'))
         AllowedCoilSpec.objects.create(product_code=other_code, size='3.000')
         self._order(300, 'confirmed', product_code=other_code)
         outlook = self._order(100, 'pending').stock_outlook()
         self.assertEqual(outlook['rivals'], [])
 
     def test_order_with_no_size_restriction_competes_with_any_size(self):
-        no_specs = ProductCode.objects.create(item_code='OUT3', grade='EN8D', category=ProductCategory.objects.create(name='Outlook Type 3', code='OT3'))
+        no_specs = ProductCode.objects.create(item_code='OUT3', grade='EN8D', product_type=ProductType.objects.create(name='Outlook Type 3', code='OT3'))
         self._order(300, 'confirmed', product_code=no_specs)
         outlook = self._order(100, 'pending').stock_outlook()
         self.assertEqual(outlook['held'], Decimal('300'))
@@ -491,21 +491,21 @@ class CustomerOrderFormTests(TestCase):
                 self.assertNotIn(f'-{name}"', html)  # no item-N-product_code / -grade / -width / -thickness inputs either
 
     def test_each_item_shows_its_product_type(self):
-        flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        square = ProductCategory.objects.get(name='Square Bright Bar')
-        self.item_a.category = flat
+        flat = ProductType.objects.get(name='Flat Bright Bar')
+        square = ProductType.objects.get(name='Square Bright Bar')
+        self.item_a.product_type = flat
         self.item_a.save()
-        self.code_b.category = square   # item B has no type of its own: it is shown from its product code
+        self.code_b.product_type = square   # item B has no type of its own: it is shown from its product code
         self.code_b.save()
         html = self.client.get(self.url).content.decode()
         self.assertIn('<b>Product type</b> Flat Bright Bar', html)
         self.assertIn('<b>Product type</b> Square Bright Bar', html)
 
     def test_the_product_code_is_shown_even_when_the_quote_line_has_none_stored(self):
-        flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        code = ProductCode.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        flat = ProductType.objects.get(name='Flat Bright Bar')
+        code = ProductCode.objects.create(item_code='FBB009', product_type=flat, grade='EN8D')
         self.item_a.product_code = None
-        self.item_a.category = flat
+        self.item_a.product_type = flat
         self.item_a.save()
         html = self.client.get(self.url).content.decode()
         self.assertIn('<b>Product code</b> FBB009', html)
@@ -660,14 +660,14 @@ class CustomerOrderFormWithoutAQuoteTests(TestCase):
         self.assertEqual(Order.objects.get(customer=self.customer).product_code, self.code)
 
     def test_the_form_has_a_product_type_choice_that_helps_match_the_code(self):
-        flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        square = ProductCategory.objects.get(name='Square Bright Bar')
-        flat_code = ProductCode.objects.create(item_code='FBB-X', category=flat, grade='SS304')
-        ProductCode.objects.create(item_code='SQB-X', category=square, grade='SS304')   # same grade, other type
+        flat = ProductType.objects.get(name='Flat Bright Bar')
+        square = ProductType.objects.get(name='Square Bright Bar')
+        flat_code = ProductCode.objects.create(item_code='FBB-X', product_type=flat, grade='SS304')
+        ProductCode.objects.create(item_code='SQB-X', product_type=square, grade='SS304')   # same grade, other type
         html = self.client.get(self.url).content.decode()
-        self.assertIn('name="product_category"', html)
+        self.assertIn('name="product_type"', html)
         self.assertIn('Flat Bright Bar', html)
-        self.client.post(self.url, {'quantity': '10', 'grade': 'ss304', 'product_category': str(flat.pk)})
+        self.client.post(self.url, {'quantity': '10', 'grade': 'ss304', 'product_type': str(flat.pk)})
         self.assertEqual(Order.objects.get(customer=self.customer).product_code, flat_code)
 
     def test_no_match_leaves_the_code_to_be_assigned_at_confirmation(self):
@@ -741,17 +741,17 @@ class OrderFormPrefillFromQueryTests(TestCase):
 class OrderFormShowsTheProductTypeTests(TestCase):
     def test_the_quoted_items_product_type_is_shown_with_its_code_locked(self):
         customer = Customer.objects.create(name='Type Show Co')
-        category = ProductCategory.objects.get(name='Cold Rolled Strip')
-        code = ProductCode.objects.create(item_code='FW-1', category=category, grade='SS304')
+        product_type = ProductType.objects.get(name='Cold Rolled Strip')
+        code = ProductCode.objects.create(item_code='FW-1', product_type=product_type, grade='SS304')
         quotation = Quotation.objects.create(customer=customer, status='sent')
-        QuotationLineItem.objects.create(quotation=quotation, order=1, description='Wire', category=category,
+        QuotationLineItem.objects.create(quotation=quotation, order=1, description='Wire', product_type=product_type,
                                          product_code=code, grade='SS304', width=Decimal('2.000'),
                                          quantity=Decimal('100'), rate_per_kg=1)
         html = self.client.get(reverse('quote_form', kwargs={'token': customer.quote_token})).content.decode()
         self.assertIn('Product type', html)
         self.assertIn('Cold Rolled Strip', html)
         self.assertIn('FW-1', html)
-        self.assertNotIn('name="item-0-category"', html)   # shown, not editable
+        self.assertNotIn('name="item-0-product_type"', html)   # shown, not editable
 
 
 class PublicQuoteFormCsrfTests(TestCase):
@@ -809,8 +809,8 @@ class OrderDashboardShowsProductTypeTests(TestCase):
     def test_the_order_row_shows_the_product_type_under_the_code(self):
         staff = User.objects.create_user('dash_type_staff', password='pw', is_staff=True)
         self.client.force_login(staff)
-        flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        code = ProductCode.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        flat = ProductType.objects.get(name='Flat Bright Bar')
+        code = ProductCode.objects.create(item_code='FBB009', product_type=flat, grade='EN8D')
         Order.objects.create(customer=Customer.objects.create(name='Row Co'), product_code=code, quantity=10, grade='EN8D')
         html = self.client.get(reverse('order_dashboard')).content.decode()
         self.assertIn('FBB009', html)
@@ -827,8 +827,8 @@ class OrderConfirmationEmailTests(TestCase):
         self.mail = mail
         self.staff = User.objects.create_user('confirm_staff', password='pw', is_staff=True)
         self.client.force_login(self.staff)
-        flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        self.code = ProductCode.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        flat = ProductType.objects.get(name='Flat Bright Bar')
+        self.code = ProductCode.objects.create(item_code='FBB009', product_type=flat, grade='EN8D')
         self.customer = Customer.objects.create(name='Confirm Co', email='buyer@example.com')
 
     def _order(self, **fields):
@@ -976,7 +976,7 @@ class OrderDrawingAndToleranceTests(TestCase):
         self.addCleanup(override.disable)
         self.addCleanup(self._tmp.cleanup)
         self.customer = Customer.objects.create(name='Tol Co', email='tol@example.com')
-        self.code = ProductCode.objects.create(item_code='FBB009', category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='EN8D')
+        self.code = ProductCode.objects.create(item_code='FBB009', product_type=ProductType.objects.get(name='Flat Bright Bar'), grade='EN8D')
         quotation = Quotation.objects.create(customer=self.customer, status='sent')
         self.item = QuotationLineItem.objects.create(
             quotation=quotation, order=1, description='Flat bar', product_code=self.code, grade='EN8D',
@@ -1099,7 +1099,7 @@ class BarLengthAndCoilWeightTests(TestCase):
 
     def setUp(self):
         self.customer = Customer.objects.create(name='Delivery Co', email='d@example.com')
-        self.code = ProductCode.objects.create(item_code='FBB009', category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='EN8D')
+        self.code = ProductCode.objects.create(item_code='FBB009', product_type=ProductType.objects.get(name='Flat Bright Bar'), grade='EN8D')
         quotation = Quotation.objects.create(customer=self.customer, status='sent')
         self.items = [QuotationLineItem.objects.create(
             quotation=quotation, order=n, description=f'Bar {n}', product_code=self.code, grade='EN8D',
@@ -1239,8 +1239,8 @@ class OrderDetailPageTests(TestCase):
         self.staff = User.objects.create_user('detail_staff', password='pw', is_staff=True)
         self.client.force_login(self.staff)
         self.customer = Customer.objects.create(name='Detail Co', email='detail@example.com', phone='9990001111')
-        flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        self.code = ProductCode.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        flat = ProductType.objects.get(name='Flat Bright Bar')
+        self.code = ProductCode.objects.create(item_code='FBB009', product_type=flat, grade='EN8D')
         self.query = Query.objects.create(source='whatsapp', contact_phone='919876500060', company_name='Detail Co', customer=self.customer)
         quotation = Quotation.objects.create(customer=self.customer, source_query=self.query, status='sent')
         self.quotation = quotation

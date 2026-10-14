@@ -144,14 +144,14 @@
     }
 
     function match(row) {
-      var category = field(row, 'product_category').value;
+      var product_type = field(row, 'product_type').value;
       var grade = gradeKey(field(row, 'grade').value);
       var select = field(row, 'product_code');
       if (select.value && select.dataset.auto !== '1') return;   // chosen by hand: leave it
       var found = null;
-      if (grade && category) {
+      if (grade && product_type) {
         codes.forEach(function (c) {
-          if (String(c.category) === category && c.grade === grade) { found = c; }
+          if (String(c.product_type) === product_type && c.grade === grade) { found = c; }
         });
       }
       select.value = found ? String(found.pk) : '';
@@ -160,7 +160,7 @@
 
     rows.addEventListener('input', function (event) {
       var row = event.target.closest('[data-item-row]');
-      if (row && /-(grade|product_category)$/.test(event.target.name || '')) match(row);
+      if (row && /-(grade|product_type)$/.test(event.target.name || '')) match(row);
     });
     rows.addEventListener('change', function (event) {
       var row = event.target.closest('[data-item-row]');
@@ -171,7 +171,7 @@
         match(row);
       }
       if (/-product_code$/.test(event.target.name || '')) { event.target.dataset.auto = ''; }
-      if (/-product_category$/.test(event.target.name || '')) { match(row); }
+      if (/-product_type$/.test(event.target.name || '')) { match(row); }
     });
     rows.addEventListener('click', function (event) {
       var button = event.target.closest('[data-remove-item]');

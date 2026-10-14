@@ -10,7 +10,7 @@ from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django import forms
 from .product_codes import canonical_grade, item_code_for, reserve_grade_number
-from .models import QueryItem, GateEntry, GateEntryLot, NonCoilEntry, Material, OrderCoilPick, GradeOption, SizeOption, ProductCategory, ProductCode, AllowedCoilSpec, ProcessStep, ProductionJob, ProductionPart, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
+from .models import QueryItem, GateEntry, GateEntryLot, NonCoilEntry, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, ProductCode, AllowedCoilSpec, ProcessStep, ProductionJob, ProductionPart, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
 
 
 class GateEntryLotInline(admin.TabularInline):
@@ -110,8 +110,8 @@ class AllowedCoilSpecInline(admin.TabularInline):
 
 # ── ProductCode ──────────────────────────────────────────────
 
-@admin.register(ProductCategory)
-class ProductCategoryAdmin(admin.ModelAdmin):
+@admin.register(ProductType)
+class ProductTypeAdmin(admin.ModelAdmin):
     """The product types (Round Bright Bar, Key Steel, ...): a product code is one of
     these in a particular grade and size."""
     list_display = ['name', 'code', 'position', 'code_count']
@@ -128,7 +128,7 @@ class ProductCodeAdminForm(forms.ModelForm):
 
     class Meta:
         model = ProductCode
-        fields = ['item_code', 'category', 'grade', 'description']
+        fields = ['item_code', 'product_type', 'grade', 'description']
 
     # The grade is picked from the grade list (add a new one with the + beside it), like the product type.
     grade = forms.ModelChoiceField(queryset=GradeOption.objects.order_by('name'), label='Grade')
@@ -140,7 +140,7 @@ class ProductCodeAdminForm(forms.ModelForm):
         if self.instance.pk and self.instance.grade and not self.is_bound:
             option = GradeOption.objects.filter(name=self.instance.grade).first()
             self.initial['grade'] = option.pk if option else None
-        for name in ('category', 'grade'):   # optional on the model only for older codes
+        for name in ('product_type', 'grade'):   # optional on the model only for older codes
             self.fields[name].required = True
         item_code = self.fields['item_code']
         item_code.required = False
@@ -156,7 +156,7 @@ class ProductCodeAdminForm(forms.ModelForm):
         cleaned = super().clean()
         if not cleaned.get('item_code'):
             code, reason = item_code_for(
-                cleaned.get('category'), cleaned.get('grade') or '', self.instance.pk)
+                cleaned.get('product_type'), cleaned.get('grade') or '', self.instance.pk)
             if reason:
                 raise forms.ValidationError(reason)
             cleaned['item_code'] = code
@@ -168,9 +168,9 @@ class ProductCodeAdminForm(forms.ModelForm):
 class ProductCodeAdmin(admin.ModelAdmin):
     form = ProductCodeAdminForm
     inlines = [ProcessStepInline, AllowedCoilSpecInline]
-    list_display = ['item_code', 'category', 'grade', 'step_count', 'allowed_spec_summary']
-    list_filter = ['category']
-    fields = ['item_code', 'category', 'grade', 'description']
+    list_display = ['item_code', 'product_type', 'grade', 'step_count', 'allowed_spec_summary']
+    list_filter = ['product_type']
+    fields = ['item_code', 'product_type', 'grade', 'description']
 
     class Media:
         js = ('materials/admin_product_code.js',)
@@ -590,7 +590,7 @@ class QueryItemInline(admin.TabularInline):
     """The products a query asks about — one row each."""
     model = QueryItem
     extra = 0
-    fields = ['position', 'product_category', 'product_code', 'grade', 'width', 'thickness', 'quantity', 'delivery_form',
+    fields = ['position', 'product_type', 'product_code', 'grade', 'width', 'thickness', 'quantity', 'delivery_form',
               'drawing', 'drawing_notes', 'technical_requirements', 'end_use']
 
 
@@ -618,10 +618,10 @@ class QueryAdmin(admin.ModelAdmin):
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     list_display  = ['order_number', 'customer', 'product_type_label', 'item_code_column', 'grade', 'quantity', 'delivery_form', 'frequency', 'delivery_date', 'status_badge', 'created_at']
-    list_filter   = ['status', 'product_code__category', 'delivery_form', 'frequency', 'customer']
+    list_filter   = ['status', 'product_code__product_type', 'delivery_form', 'frequency', 'customer']
     search_fields = ['customer__name', 'grade', 'mill_make', 'product_code__item_code']
     ordering      = ['-created_at']
-    list_select_related = ['customer', 'product_code__category']
+    list_select_related = ['customer', 'product_code__product_type']
     readonly_fields = ['product_type_label', 'purchase_order_link', 'drawing_link']
     fieldsets = (
         ('Order Info', {
