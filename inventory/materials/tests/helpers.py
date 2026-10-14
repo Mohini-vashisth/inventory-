@@ -18,7 +18,7 @@ def quotation_item_post_data(**overrides):
     return data
 
 
-ITEM_FIELDS = ('product_category', 'product_code', 'grade', 'width', 'thickness', 'quantity', 'delivery_form',
+ITEM_FIELDS = ('product_type', 'product_code', 'grade', 'width', 'thickness', 'quantity', 'delivery_form',
                'drawing', 'drawing_notes', 'technical_requirements', 'end_use')
 
 
@@ -46,7 +46,7 @@ def item_formset(rows=(), initial=0):
 
 def item_row(item):
     """An existing QueryItem as a posted row, unchanged."""
-    return {'id': item.pk, 'product_category': item.product_category_id or '', 'product_code': item.product_code_id or '',
+    return {'id': item.pk, 'product_type': item.product_type_id or '', 'product_code': item.product_code_id or '',
             'grade': item.grade, 'width': item.width if item.width is not None else '',
             'thickness': item.thickness if item.thickness is not None else '',
             'quantity': item.quantity if item.quantity is not None else '', 'delivery_form': item.delivery_form,

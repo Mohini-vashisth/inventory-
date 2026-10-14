@@ -115,11 +115,11 @@
           <div class="form-row cols-3">
             <div class="form-group">
               <label>{% if query_items|length > 1 %}Product {{ forloop.counter }} — {% endif %}Product Type (from the query)</label>
-              <div class="readonly-value">{{ item.product_category.name|default:"—" }}</div>
+              <div class="readonly-value">{{ item.product_type.name|default:"—" }}</div>
             </div>
             <div class="form-group">
               <label>Product Code</label>
-              <div class="readonly-value">{% with code=item.effective_product_code %}{% if code %}{{ code.item_code }}{% else %}<span class="muted">{% if item.product_category and item.grade %}none in the catalogue yet{% else %}—{% endif %}</span>{% endif %}{% endwith %}</div>
+              <div class="readonly-value">{% with code=item.effective_product_code %}{% if code %}{{ code.item_code }}{% else %}<span class="muted">{% if item.product_type and item.grade %}none in the catalogue yet{% else %}—{% endif %}</span>{% endif %}{% endwith %}</div>
             </div>
             <div class="form-group">
               <label>Grade · Width × Thickness</label>
@@ -184,10 +184,10 @@
               </div>
               <div class="form-group">
                 <label>Product Type</label>
-                <select name="item-{{ forloop.counter0 }}-category">
+                <select name="item-{{ forloop.counter0 }}-product_type">
                   <option value="">— select —</option>
-                  {% for category in item_form.fields.category.queryset %}
-                  <option value="{{ category.pk }}" {% if item_form.category.value|stringformat:"s" == category.pk|stringformat:"s" %}selected{% endif %}>{{ category.name }}</option>
+                  {% for product_type in item_form.fields.product_type.queryset %}
+                  <option value="{{ product_type.pk }}" {% if item_form.product_type.value|stringformat:"s" == product_type.pk|stringformat:"s" %}selected{% endif %}>{{ product_type.name }}</option>
                   {% endfor %}
                 </select>
               </div>
@@ -412,7 +412,7 @@
         '<div class="form-group"><label>Description *</label>' +
           '<input type="text" name="item-' + index + '-description" placeholder="e.g. Steel Chamfer 10x10x14 mm"></div>' +
         '<div class="form-group"><label>Product Type</label>' +
-          '<select name="item-' + index + '-category">' + document.querySelector('[name="item-0-category"]').innerHTML + '</select></div>' +
+          '<select name="item-' + index + '-product_type">' + document.querySelector('[name="item-0-product_type"]').innerHTML + '</select></div>' +
         '<div class="form-group"><label>Product Code</label>' +
           '<select name="item-' + index + '-product_code">' + document.querySelector('[name="item-0-product_code"]').innerHTML + '</select></div>' +
       '</div>' +
@@ -434,7 +434,7 @@
 
     // The copied options carry row 1's selected="selected"; a new row starts with no code.
     row.querySelector('select[name$="-product_code"]').value = '';
-    row.querySelector('select[name$="-category"]').value = '';
+    row.querySelector('select[name$="-product_type"]').value = '';
     document.getElementById('items-container').appendChild(row);
     totalInput.value = index + 1;
     updateRemoveButtonsVisibility();
@@ -456,7 +456,7 @@
     var timers = new WeakMap();
 
     // No existing code fits: show the one sending the quote will create (or why none can be).
-    function previewNewCode(row, select, category, grade) {
+    function previewNewCode(row, select, product_type, grade) {
       var hint = row.querySelector('.code-hint');
       if (!hint) {
         hint = document.createElement('div');
@@ -464,9 +464,9 @@
         select.closest('.form-group').appendChild(hint);
       }
       clearTimeout(timers.get(row));
-      if (select.value || !category || !grade) { hint.textContent = ''; return; }
+      if (select.value || !product_type || !grade) { hint.textContent = ''; return; }
       timers.set(row, setTimeout(function () {
-        var query = '?category=' + encodeURIComponent(category) + '&grade=' + encodeURIComponent(grade);
+        var query = '?product_type=' + encodeURIComponent(product_type) + '&grade=' + encodeURIComponent(grade);
         fetch(lookupUrl + query, {credentials: 'same-origin'})
           .then(function (response) { return response.json(); })
           .then(function (data) {
@@ -495,23 +495,23 @@
 
     function matchRow(row) {
       var grade = gradeKey(row.querySelector('[name$="-grade"]').value);
-      var category = row.querySelector('select[name$="-category"]').value;
+      var product_type = row.querySelector('select[name$="-product_type"]').value;
       var select = row.querySelector('select[name$="-product_code"]');
       if (select.value && select.dataset.auto !== '1') return;
       var found = null;
       if (grade) {
         var matches = codes.filter(function (c) {
-          return c.grade === grade && (!category || String(c.category) === category);
+          return c.grade === grade && (!product_type || String(c.product_type) === product_type);
         });
         if (matches.length === 1) found = matches[0];
       }
       select.value = found ? String(found.pk) : '';
       select.dataset.auto = found ? '1' : '';
-      previewNewCode(row, select, category, row.querySelector('[name$="-grade"]').value.trim());
+      previewNewCode(row, select, product_type, row.querySelector('[name$="-grade"]').value.trim());
     }
 
     container.addEventListener('input', function (event) {
-      if (/-(grade|category)$/.test(event.target.name || '')) matchRow(event.target.closest('.item-row'));
+      if (/-(grade|product_type)$/.test(event.target.name || '')) matchRow(event.target.closest('.item-row'));
     });
     // "en-8d" settles on "EN8D", so one grade isn't written several ways (each would get its own
     // grade number in product codes).
@@ -527,7 +527,7 @@
       var name = event.target.name || '';
       if (/-grade$/.test(name)) canonicalGrade(event.target);
       if (/-product_code$/.test(name)) event.target.dataset.auto = '';
-      if (/-category$/.test(name)) matchRow(event.target.closest('.item-row'));
+      if (/-product_type$/.test(name)) matchRow(event.target.closest('.item-row'));
     });
     document.querySelectorAll('.item-row').forEach(matchRow);
   })();

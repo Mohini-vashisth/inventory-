@@ -2,10 +2,10 @@
 // as soon as both are chosen (size plays no part in a code). The format lives in Python (product_codes.py);
 // this just asks the lookup endpoint. A code typed by hand is never overwritten.
 (function () {
-  var category = document.getElementById('id_category');
+  var product_type = document.getElementById('id_product_type');
   var grade = document.getElementById('id_grade');
   var code = document.getElementById('id_item_code');
-  if (!category || !grade || !code || !code.dataset.lookupUrl) return;
+  if (!product_type || !grade || !code || !code.dataset.lookupUrl) return;
 
   var autoFilled = false;
   var timer = null;
@@ -29,9 +29,9 @@
   function update() {
     clearTimeout(timer);
     if (code.value && !autoFilled) { hint.textContent = ''; return; }
-    if (!category.value || !gradeName()) { clearAuto(); hint.textContent = ''; return; }
+    if (!product_type.value || !gradeName()) { clearAuto(); hint.textContent = ''; return; }
     timer = setTimeout(function () {
-      var query = '?category=' + encodeURIComponent(category.value) +
+      var query = '?product_type=' + encodeURIComponent(product_type.value) +
         '&grade=' + encodeURIComponent(gradeName());
       fetch(code.dataset.lookupUrl + query, {credentials: 'same-origin'})
         .then(function (response) { return response.json(); })
@@ -57,7 +57,7 @@
   }
 
   code.addEventListener('input', function () { autoFilled = false; hint.textContent = ''; });
-  [category, grade].forEach(function (field) {
+  [product_type, grade].forEach(function (field) {
     field.addEventListener('input', update);
     field.addEventListener('change', update);
   });

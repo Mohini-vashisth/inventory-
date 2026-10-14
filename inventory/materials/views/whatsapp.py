@@ -23,7 +23,7 @@ from django.views.decorators.http import require_http_methods
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
-from ..models import GSTIN_PATTERN, ProductCategory, Query, QueryItem, WhatsAppMessage
+from ..models import GSTIN_PATTERN, ProductType, Query, QueryItem, WhatsAppMessage
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,7 @@ def _question_text(field, count=1):
     """The question as sent: the plain one for a single product, the comma-list version for several."""
     if count <= 1 or field not in _LIST_QUESTIONS:
         return WHATSAPP_QUERY_QUESTIONS[field]
-    types = ', '.join(ProductCategory.objects.values_list('name', flat=True))
+    types = ', '.join(ProductType.objects.values_list('name', flat=True))
     example = ', '.join(_LIST_EXAMPLES.get(field, [])[:count])
     return _LIST_QUESTIONS[field].format(n=count, example=example, types=types)
 
@@ -216,6 +216,9 @@ def _send_whatsapp_buttons_message(phone, text, choices):
 # and the opening button up to 20.
 WHATSAPP_LIST_MAX_ROWS = 10
 WHATSAPP_LIST_TITLE_MAX = 24
+# NAMING: the product type used to be called "category" in the code. These two strings are saved in conversations
+# in progress and sent to WhatsApp (the bot's field key 'product_category' in Query.last_asked_field / edit_field,
+# and the 'category:' list-row ids a customer taps), so they keep their old spelling; the code's names changed.
 WHATSAPP_CATEGORY_ROW_PREFIX = 'category:'
 
 
@@ -237,18 +240,18 @@ def _send_whatsapp_list_message(phone, text, button_label, rows):
     })
 
 
-def _product_category_rows():
+def _product_type_rows():
     """The product types as list rows — the title is cut to fit Meta's limit, the
     description carries the full name. None when there are too many for one list
     (the customer is then asked to type the name instead)."""
-    categories = list(ProductCategory.objects.all())
-    if not categories or len(categories) > WHATSAPP_LIST_MAX_ROWS:
+    product_types = list(ProductType.objects.all())
+    if not product_types or len(product_types) > WHATSAPP_LIST_MAX_ROWS:
         return None
     return [
         (f"{WHATSAPP_CATEGORY_ROW_PREFIX}{c.pk}",
          c.name if len(c.name) <= WHATSAPP_LIST_TITLE_MAX else c.name[:WHATSAPP_LIST_TITLE_MAX - 1] + '…',
          c.name)
-        for c in categories
+        for c in product_types
     ]
 
 
@@ -328,7 +331,7 @@ def _send_whatsapp_question(phone, field, count=1, lead=''):
     if field == 'item_count':
         return _send_whatsapp_list_message_background(phone, text, "Choose number", _item_count_rows())
     if field == 'product_category':
-        rows = _product_category_rows()
+        rows = _product_type_rows()
         if rows:
             return _send_whatsapp_list_message_background(phone, text, "Choose type", rows)
         return _send_whatsapp_text_message_background(phone, lead + "Which product type do you need? Please type its name.")
@@ -340,7 +343,7 @@ def _send_whatsapp_question(phone, field, count=1, lead=''):
 
 def _item_value_missing(item, field):
     if field == 'product_category':
-        return not item.product_category_id
+        return not item.product_type_id
     if field in ('width', 'thickness', 'quantity'):
         return getattr(item, field) is None
     if field == 'drawing':   # a FileField alone can't tell "not asked yet" from "asked, none": drawing_notes does
@@ -412,7 +415,7 @@ def _parse_whatsapp_gst_details(text):
     return None
 
 
-def _detect_product_category(text):
+def _detect_product_type(text):
     """The product type (Flat Bright Bar, Cold Rolled Strip, ...) a customer's answer
     names, or None. A type counts when its full name appears in the text (a name
     written "Profile/Shaped Bright Bar" is also matched as "profile bright bar" or
@@ -425,7 +428,7 @@ def _detect_product_category(text):
         name = name.lower()
         return {name, re.sub(r'(\w+)/(\w+)', r'\1', name), re.sub(r'(\w+)/(\w+)', r'\2', name)}
 
-    found = [c for c in ProductCategory.objects.all() if any(p in lowered for p in phrases(c.name))]
+    found = [c for c in ProductType.objects.all() if any(p in lowered for p in phrases(c.name))]
     names = [c.name.lower() for c in found]
     kept = [c for c in found if not any(c.name.lower() != other and c.name.lower() in other for other in names)]
     return kept[0] if len(kept) == 1 else None
@@ -649,9 +652,9 @@ def _handle_whatsapp_message(msg, phone, profile_name, sent_at, send_next):
         title = (reply.get("title") or "").strip()
         reply_id = reply.get("id") or ""
         if reply_id.startswith(WHATSAPP_CATEGORY_ROW_PREFIX):   # a product type row: its title may be cut short
-            category = ProductCategory.objects.filter(pk=reply_id[len(WHATSAPP_CATEGORY_ROW_PREFIX):] or 0).first() \
+            product_type = ProductType.objects.filter(pk=reply_id[len(WHATSAPP_CATEGORY_ROW_PREFIX):] or 0).first() \
                 if reply_id[len(WHATSAPP_CATEGORY_ROW_PREFIX):].isdigit() else None
-            title = category.name if category else title
+            title = product_type.name if product_type else title
         if reply_id.startswith(WHATSAPP_FIELD_ROW_PREFIX) or reply_id.startswith(WHATSAPP_ITEM_ROW_PREFIX) or reply_id in ('more', 'back'):
             title = f"@{reply_id}"   # a row of the "what would you like to change?" lists
         elif reply_id.startswith('count:'):
@@ -1019,7 +1022,7 @@ def _parse_answer(field, text, count=1, index=None):
         number, address = parsed
         return {'gst_number': number, **({'gst_address': address} if address else {})}
     if field == 'product_category':
-        detected = _detect_product_category(text)
+        detected = _detect_product_type(text)
         if detected is None:
             raise _InvalidAnswer(ask='product_category')
         return {'_items': {'product_category': [detected.pk]}, '_item_only': index if index is not None else 0}
@@ -1058,17 +1061,19 @@ def _apply_item_updates(query, values_by_field, only=None, editing=False):
         for field, values in values_by_field.items():
             value = values[value_index]
             if field == 'product_category':
-                value = ProductCategory.objects.get(pk=value)
-                item.product_category = value
+                value = ProductType.objects.get(pk=value)
+                item.product_type = value
             elif field in ('width', 'thickness', 'quantity'):
                 setattr(item, field, Decimal(value))
             else:
                 setattr(item, field, value)
-            touched.append(field)
+            # The bot's stored key for the product type is still 'product_category' (saved in conversations in
+            # progress); the database field it writes is `product_type`.
+            touched.append('product_type' if field == 'product_category' else field)
         if editing and 'drawing_notes' in touched and item.drawing:
             item.drawing = ''   # replaced by a text answer: the old file no longer stands
             touched.append('drawing')
-        if 'grade' in touched or 'product_category' in touched:
+        if 'grade' in touched or 'product_type' in touched:
             code = item.matching_product_code()   # link the catalogue code as soon as type + grade are known
             if editing or (code and not item.product_code_id):
                 item.product_code = code
@@ -1166,7 +1171,7 @@ def _review_value(query, key):
 def _item_field_value(item, field):
     """What the summary shows for one detail of one product ('—' when empty)."""
     if field == 'product_category':
-        value = item.product_category.name if item.product_category_id else ''
+        value = item.product_type.name if item.product_type_id else ''
     elif field in ('width', 'thickness'):
         number = getattr(item, field)
         value = f"{_trim_number(number)} mm" if number is not None else ''
@@ -1245,7 +1250,7 @@ def _pending_display(query, updates):
         (field, values), = updates['_items'].items()
         value = values[0]
         if field == 'product_category':
-            return ProductCategory.objects.get(pk=value).name
+            return ProductType.objects.get(pk=value).name
         if field in ('width', 'thickness'):
             return f"{_trim_number(Decimal(value))} mm"
         if field == 'quantity':
@@ -1454,7 +1459,7 @@ def _question_step(field, count=1):
     if field == 'item_count':
         return ('list', text, "Choose number", _item_count_rows())
     if field == 'product_category':
-        rows = _product_category_rows()
+        rows = _product_type_rows()
         if rows:
             return ('list', text, "Choose type", rows)
         return ('text', "Which product type do you need? Please type its name.")

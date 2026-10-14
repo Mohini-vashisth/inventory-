@@ -260,12 +260,11 @@ class SizeOption(models.Model):
         return f"{self.value} mm"
 
 
-class ProductCategory(models.Model):
+class ProductType(models.Model):
     """What the business calls a *product type*: Round Bright Bar, Key Steel,
-    Flat Wire, ... (the menu on its website). A product code is one of these in
-    a particular grade and size. NAMING: on screen this is "Product Type"; the
-    model that holds product codes is `ProductCode` (an older name kept so as
-    not to rename every table, field and URL) — see CLAUDE.md."""
+    Flat Wire, ... (the menu on its website). A product code (`ProductCode`) is one of
+    these in a particular grade. The model names match the screens: "Product Type"
+    is `ProductType`, "Product Code" is `ProductCode`."""
     name     = models.CharField(max_length=100, unique=True)
     # The 3 letters this type starts every product code with (FBB = Flat Bright Bar).
     # Explicit rather than initials, because initials clash (Square vs Shaped Bright Bar).
@@ -280,6 +279,7 @@ class ProductCategory(models.Model):
         ordering = ['position', 'name']
         verbose_name = 'product type'
         verbose_name_plural = 'product types'
+        db_table = 'materials_productcategory'   # the table keeps the model's old name: only the code names changed
 
     def __str__(self):
         return self.name
@@ -289,14 +289,14 @@ class ProductCode(models.Model):
     """A **product code** (that's what the screens call it): e.g. FBB009 — Flat Bright
     Bar in EN-8D — defines the product, its grade, and which steps apply.
 
-    A product code depends on two things: its product type (`category`: Round
+    A product code depends on two things: its product type (`product_type`: Round
     Bright Bar, Key Steel, ...) and grade. Those two identify exactly one code — a
     round and a hexagonal bar in the same grade are different codes. **Size is not
     part of it:** width and thickness vary per order, so they live on the query,
     quote line and order, not here.
     """
-    category    = models.ForeignKey(
-        ProductCategory, on_delete=models.PROTECT, null=True, related_name='product_codes',
+    product_type    = models.ForeignKey(
+        ProductType, db_column='category_id', on_delete=models.PROTECT, null=True, related_name='product_codes',
         verbose_name="Product Type",
     )
     item_code   = models.CharField(max_length=100, verbose_name="Item Code")
@@ -306,11 +306,11 @@ class ProductCode(models.Model):
     class Meta:
         constraints = [
             # type + grade identify one code ...
-            models.UniqueConstraint(fields=['category', 'grade'], name='unique_code_per_type_grade'),
+            models.UniqueConstraint(fields=['product_type', 'grade'], name='unique_code_per_type_grade'),
             # ... and a database treats NULLs as distinct, so codes that don't have a type yet
             # (older rows) still can't repeat a grade.
             models.UniqueConstraint(
-                fields=['grade'], condition=models.Q(category__isnull=True),
+                fields=['grade'], condition=models.Q(product_type__isnull=True),
                 name='unique_untyped_code_per_grade',
             ),
         ]
@@ -711,7 +711,7 @@ class QueryItem(models.Model):
     query            = models.ForeignKey(Query, on_delete=models.CASCADE, related_name='items')
     position         = models.PositiveSmallIntegerField(default=1)
     # The product type (family) — chosen from the bot's list, or set by staff.
-    product_category = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
+    product_type = models.ForeignKey(ProductType, db_column='product_category_id', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
     product_code     = models.ForeignKey(ProductCode, db_column='product_type_id', on_delete=models.SET_NULL, null=True, blank=True)   # the product code
     grade            = GradeField(max_length=100, blank=True)
     width            = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
@@ -741,10 +741,10 @@ class QueryItem(models.Model):
     def matching_product_code(self):
         """The catalogue product code for this item's product type + grade, or None
         (size plays no part in a code)."""
-        if not (self.product_category_id and self.grade):
+        if not (self.product_type_id and self.grade):
             return None
         from .product_codes import find_product_code
-        return find_product_code(self.product_category, self.grade)
+        return find_product_code(self.product_type, self.grade)
 
     def effective_product_code(self):
         """The code linked to the item, else the one its type + grade point to."""
@@ -753,7 +753,7 @@ class QueryItem(models.Model):
     def summary_text(self):
         """"Flat Bright Bar · EN8D · 50 x 6.5 mm · 500 kg · Coil" — whatever is known about it."""
         quantity = f"{format(self.quantity.normalize(), 'f')} kg" if self.quantity is not None else ''
-        parts = [self.product_category.name if self.product_category_id else '', self.grade, self.dimensions_text(),
+        parts = [self.product_type.name if self.product_type_id else '', self.grade, self.dimensions_text(),
                  quantity, self.delivery_form]
         return ' · '.join(part for part in parts if part)
 
@@ -950,7 +950,7 @@ class QuotationLineItem(models.Model):
     quotation    = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name='line_items')
     order        = models.PositiveIntegerField(default=1, help_text="Display order (Sr. No.) within the quotation.")
     description  = models.CharField(max_length=255)
-    category     = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
+    product_type     = models.ForeignKey(ProductType, db_column='category_id', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
     product_code = models.ForeignKey(ProductCode, db_column='product_type_id', on_delete=models.SET_NULL, null=True, blank=True)
     grade        = GradeField(max_length=100, blank=True)
     width        = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
@@ -975,8 +975,8 @@ class QuotationLineItem(models.Model):
 
     def product_type_name(self):
         """The product type (e.g. Flat Bright Bar): the line's own, else its product code's."""
-        category = self.category or (self.product_code.category if self.product_code else None)
-        return category.name if category else ''
+        product_type = self.product_type or (self.product_code.product_type if self.product_code else None)
+        return product_type.name if product_type else ''
 
     def spec_text(self):
         """"Flat Bright Bar / EN8D / 50 x 6.5 mm" — product type, grade and width x thickness,
@@ -1227,8 +1227,8 @@ class Order(models.Model):
 
     def product_type_name(self):
         """The product type (e.g. Flat Bright Bar), taken from the order's product code."""
-        category = self.product_code.category if self.product_code_id else None
-        return category.name if category else ''
+        product_type = self.product_code.product_type if self.product_code_id else None
+        return product_type.name if product_type else ''
 
     def spec_text(self):
         """"Flat Bright Bar / EN8D / 50 x 6.5 mm": product type, grade and width x thickness,

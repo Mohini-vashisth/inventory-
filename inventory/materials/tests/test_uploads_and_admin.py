@@ -9,7 +9,7 @@ from pathlib import Path
 from ..models import (
     QueryItem,
     AllowedCoilSpec,
-    ProductCategory,
+    ProductType,
     Customer,
     GateEntry,
     GateEntryLot,
@@ -150,8 +150,8 @@ class OrderAdminShowsTypeAndCodeTests(TestCase):
         from django.contrib.auth import get_user_model
         get_user_model().objects.create_superuser('root', 'r@example.com', 'pw')
         self.client.login(username='root', password='pw')
-        category = ProductCategory.objects.get(name='Flat Bright Bar')
-        code = ProductCode.objects.create(item_code='ZZ-FBB9', category=category, grade='EN8D')
+        product_type = ProductType.objects.get(name='Flat Bright Bar')
+        code = ProductCode.objects.create(item_code='ZZ-FBB9', product_type=product_type, grade='EN8D')
         order = Order.objects.create(customer=Customer.objects.create(name='Admin Co'), product_code=code, grade='EN8D', quantity=10)
         listing = self.client.get(reverse('admin:materials_order_changelist')).content.decode()
         self.assertIn('Product type', listing)

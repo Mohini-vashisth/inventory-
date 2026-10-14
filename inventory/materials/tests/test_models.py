@@ -10,7 +10,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from ..models import (
-    Customer, GateEntry, GateEntryLot, Material, Order, OrderCoilPick, ProductCategory, ProductCode,
+    Customer, GateEntry, GateEntryLot, Material, Order, OrderCoilPick, ProductType, ProductCode,
 )
 
 
@@ -206,22 +206,22 @@ class ProductCodeUniquenessTests(TestCase):
                 ProductCode.objects.create(item_code='Bar B', grade='EN8D')
 
     def test_the_same_grade_and_size_is_allowed_in_different_product_types(self):
-        round_bar = ProductCategory.objects.get(name='Square Bright Bar')
-        hex_bar = ProductCategory.objects.get(name='Triangle Bright Bar')
-        ProductCode.objects.create(item_code='RB-EN8D-12', category=round_bar, grade='EN8D')
-        ProductCode.objects.create(item_code='HB-EN8D-12', category=hex_bar, grade='EN8D')
+        round_bar = ProductType.objects.get(name='Square Bright Bar')
+        hex_bar = ProductType.objects.get(name='Triangle Bright Bar')
+        ProductCode.objects.create(item_code='RB-EN8D-12', product_type=round_bar, grade='EN8D')
+        ProductCode.objects.create(item_code='HB-EN8D-12', product_type=hex_bar, grade='EN8D')
         self.assertEqual(ProductCode.objects.filter(grade='EN8D').count(), 2)
 
     def test_the_same_type_and_grade_is_rejected(self):
-        round_bar = ProductCategory.objects.get(name='Square Bright Bar')
-        ProductCode.objects.create(item_code='RB-1', category=round_bar, grade='EN8D')
+        round_bar = ProductType.objects.get(name='Square Bright Bar')
+        ProductCode.objects.create(item_code='RB-1', product_type=round_bar, grade='EN8D')
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
-                ProductCode.objects.create(item_code='RB-2', category=round_bar, grade='EN8D')
+                ProductCode.objects.create(item_code='RB-2', product_type=round_bar, grade='EN8D')
 
     def test_the_seven_product_types_are_in_place_with_their_codes_in_order(self):
         self.assertEqual(
-            list(ProductCategory.objects.values_list('name', 'code')),
+            list(ProductType.objects.values_list('name', 'code')),
             [('Flat Bright Bar', 'FBB'), ('Square Bright Bar', 'SQB'), ('Profile/Shaped Bright Bar', 'PSB'),
              ('Cold Rolled Strip', 'CRS'), ('Cold Rolled Profile', 'CRP'), ('Chamfer Steel', 'CHS'),
              ('Triangle Bright Bar', 'TBB')])

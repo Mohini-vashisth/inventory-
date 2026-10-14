@@ -17,10 +17,10 @@ from django.urls import reverse
 from unittest.mock import patch, MagicMock
 
 from .helpers import create_query
-from ..models import ProductCategory, ProductCode, Query, QueryItem, WhatsAppMessage
+from ..models import ProductType, ProductCode, Query, QueryItem, WhatsAppMessage
 from ..views import whatsapp
 from ..views.whatsapp import (
-    WhatsAppSendError, WHATSAPP_CLOSING_MESSAGE, WHATSAPP_GST_INVALID_MESSAGE, _detect_product_category,
+    WhatsAppSendError, WHATSAPP_CLOSING_MESSAGE, WHATSAPP_GST_INVALID_MESSAGE, _detect_product_type,
     WHATSAPP_QUERY_CHOICES, WHATSAPP_QUERY_FIELDS, WHATSAPP_QUERY_QUESTIONS, WHATSAPP_DIMENSION_INVALID_MESSAGES,
     _parse_whatsapp_quantity_kg, _parse_whatsapp_dimension, WHATSAPP_QUANTITY_INVALID_MESSAGE,
     WHATSAPP_SUMMARY_CHOICES, WHATSAPP_SUMMARY_QUESTION,
@@ -43,7 +43,9 @@ ANSWERS = {
 
 
 def _answered_field(field):
-    return 'drawing_notes' if field == 'drawing' else field
+    """The model field a bot question's answer is stored in (the bot's own key for the product type is
+    still 'product_category', kept so conversations in progress carry on)."""
+    return {'drawing': 'drawing_notes', 'product_category': 'product_type'}.get(field, field)
 
 
 ITEM_FIELDS = ('product_category', 'drawing', 'grade', 'width', 'thickness', 'technical_requirements', 'end_use',
@@ -68,7 +70,7 @@ def _item_values(field):
         if name == field:
             break
         if name in ITEM_FIELDS:
-            values[_answered_field(name)] = (ProductCategory.objects.get_or_create(name=ANSWERS[name])[0]
+            values[_answered_field(name)] = (ProductType.objects.get_or_create(name=ANSWERS[name])[0]
                                              if name == 'product_category' else ANSWERS[name])
     return values
 
@@ -225,12 +227,12 @@ class WhatsAppWebhookTests(TestCase):
         }
         for text, expected in cases.items():
             with self.subTest(text=text):
-                self.assertEqual(_detect_product_category(text).name, expected)
+                self.assertEqual(_detect_product_type(text).name, expected)
 
     def test_an_unclear_requirements_answer_detects_nothing(self):
         for text in ('need steel', 'square bar', 'square bright bar and flat bright bar', '', None):
             with self.subTest(text=text):
-                self.assertIsNone(_detect_product_category(text))
+                self.assertIsNone(_detect_product_type(text))
 
     def test_the_bot_no_longer_asks_a_free_text_requirements_question(self):
         self.assertNotIn('product_description', WHATSAPP_QUERY_FIELDS)
@@ -240,7 +242,7 @@ class WhatsAppWebhookTests(TestCase):
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_the_catalogue_code_is_linked_once_type_and_grade_are_known(self, mock_send):
-        ProductCode.objects.create(item_code='FBB009', category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='EN8D')
+        ProductCode.objects.create(item_code='FBB009', product_type=ProductType.objects.get(name='Flat Bright Bar'), grade='EN8D')
         _query_awaiting('grade')   # type (Flat Bright Bar) already chosen
         self._post_payload(self._message_payload('919876543210', 'en-8d'))
         item = _item_of('919876543210')
@@ -255,7 +257,7 @@ class WhatsAppWebhookTests(TestCase):
 
     def test_a_product_type_staff_already_set_skips_the_question(self):
         query = create_query(source='call', contact_phone='919876543299', **_answered_values('product_category'))
-        QueryItem.objects.create(query=query, position=1, product_category=ProductCategory.objects.get(name='Chamfer Steel'))
+        QueryItem.objects.create(query=query, position=1, product_type=ProductType.objects.get(name='Chamfer Steel'))
         self.assertEqual(whatsapp._next_expected_query_field(query), 'drawing')
 
     def test_choice_questions_fit_whatsapp_reply_button_limits(self):
@@ -334,7 +336,7 @@ class WhatsAppWebhookTests(TestCase):
         mock_send.assert_not_called()
         phone, text, button, rows = mock_list.call_args[0]
         self.assertEqual((phone, text, button), ('919876543210', WHATSAPP_QUERY_QUESTIONS['product_category'], 'Choose type'))
-        self.assertEqual([r[2] for r in rows], list(ProductCategory.objects.values_list('name', flat=True)))
+        self.assertEqual([r[2] for r in rows], list(ProductType.objects.values_list('name', flat=True)))
         for row_id, title, description in rows:
             self.assertTrue(row_id.startswith('category:'))
             self.assertLessEqual(len(title), 24)   # Meta's limit on a row title
@@ -342,7 +344,7 @@ class WhatsAppWebhookTests(TestCase):
         self.assertLessEqual(len('Choose type'), 20)
 
     def test_a_long_type_name_is_cut_to_fit_a_row_title_but_kept_in_the_description(self):
-        rows = {r[2]: r[1] for r in whatsapp._product_category_rows()}
+        rows = {r[2]: r[1] for r in whatsapp._product_type_rows()}
         self.assertEqual(rows['Flat Bright Bar'], 'Flat Bright Bar')
         self.assertEqual(rows['Profile/Shaped Bright Bar'], 'Profile/Shaped Bright B…')
 
@@ -364,18 +366,18 @@ class WhatsAppWebhookTests(TestCase):
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_tapping_a_type_row_saves_the_full_type_even_when_its_title_was_cut(self, mock_send):
         _query_awaiting('product_category')
-        category = ProductCategory.objects.get(name='Profile/Shaped Bright Bar')
-        reply = {'type': 'list_reply', 'list_reply': {'id': f'category:{category.pk}', 'title': 'Profile/Shaped Bright B…'}}
+        product_type = ProductType.objects.get(name='Profile/Shaped Bright Bar')
+        reply = {'type': 'list_reply', 'list_reply': {'id': f'category:{product_type.pk}', 'title': 'Profile/Shaped Bright B…'}}
         self._post_payload({'entry': [{'changes': [{'value': {'messages': [
             {'from': '919876543210', 'type': 'interactive', 'interactive': reply}]}}]}]})
-        self.assertEqual(_item_of('919876543210').product_category, category)
+        self.assertEqual(_item_of('919876543210').product_type, product_type)
         mock_send.assert_called_once_with('919876543210', WHATSAPP_QUERY_QUESTIONS['drawing'])
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_typing_a_type_name_instead_of_tapping_works(self, mock_send):
         _query_awaiting('product_category')
         self._post_payload(self._message_payload('919876543210', 'cold rolled strip please'))
-        self.assertEqual(_item_of('919876543210').product_category.name, 'Cold Rolled Strip')
+        self.assertEqual(_item_of('919876543210').product_type.name, 'Cold Rolled Strip')
 
     @patch('materials.views.whatsapp._send_whatsapp_list_message_background')
     def test_an_unrecognised_or_ambiguous_type_re_sends_the_list_without_advancing(self, mock_list):
@@ -385,14 +387,14 @@ class WhatsAppWebhookTests(TestCase):
                 phone = f'9198400000{index:02d}'
                 _query_awaiting('product_category', phone=phone)
                 self._post_payload(self._message_payload(phone, reply))
-                self.assertIsNone(_item_of(phone).product_category)
+                self.assertIsNone(_item_of(phone).product_type)
                 self.assertEqual(mock_list.call_count, 1)
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_with_more_types_than_a_list_can_hold_the_customer_is_asked_to_type_it(self, mock_send):
         for index in range(4):
-            ProductCategory.objects.create(name=f'Extra Type {index}')
-        self.assertIsNone(whatsapp._product_category_rows())
+            ProductType.objects.create(name=f'Extra Type {index}')
+        self.assertIsNone(whatsapp._product_type_rows())
         whatsapp._send_whatsapp_question('919876543210', 'product_category')
         self.assertIn('type its name', mock_send.call_args[0][1])
 
@@ -1248,7 +1250,7 @@ class WhatsAppReviewTests(WhatsAppReviewBase):
             ('item:0', 'field:thickness'): ('8', lambda q, i: i.thickness == Decimal('8')),
             ('item:0', 'field:quantity'): ('12000', lambda q, i: i.quantity == Decimal('12000')),
             ('item:0', 'field:delivery_form'): ('Bar', lambda q, i: i.delivery_form == 'Bar'),
-            ('item:0', 'field:product_category'): ('square bright bar', lambda q, i: i.product_category.name == 'Square Bright Bar'),
+            ('item:0', 'field:product_category'): ('square bright bar', lambda q, i: i.product_type.name == 'Square Bright Bar'),
             ('item:0', 'field:grade'): ('ss-304', lambda q, i: i.grade == 'SS304'),
         }
         for route, (answer, check) in cases.items():
@@ -1268,9 +1270,9 @@ class WhatsAppReviewTests(WhatsAppReviewBase):
         self.assertEqual((query.gst_number, query.gst_address), ('06AAAAA0000A1Z5', '12 Industrial Area, Faridabad'))
 
     def test_changing_the_grade_relinks_the_product_code(self):
-        flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        old = ProductCode.objects.create(item_code='FBB001', category=flat, grade='EN8D')
-        new = ProductCode.objects.create(item_code='FBB002', category=flat, grade='SS304')
+        flat = ProductType.objects.get(name='Flat Bright Bar')
+        old = ProductCode.objects.create(item_code='FBB001', product_type=flat, grade='EN8D')
+        new = ProductCode.objects.create(item_code='FBB002', product_type=flat, grade='SS304')
         QueryItem.objects.filter(query=self.query).update(product_code=old)
         self._start_editing('item:0', 'field:grade')
         self._text('SS304')
@@ -1342,8 +1344,8 @@ class WhatsAppMultiProductReviewTests(WhatsAppReviewBase):
         self.assertEqual((query.bot_stage, query.edit_field), ('pick_item_field', 'item:2'))
 
     def test_the_grade_of_one_product_relinks_only_that_products_code(self):
-        flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        codes = {grade: ProductCode.objects.create(item_code=f'FBB-{grade}', category=flat, grade=grade) for grade in ('EN8D', 'SS304')}
+        flat = ProductType.objects.get(name='Flat Bright Bar')
+        codes = {grade: ProductCode.objects.create(item_code=f'FBB-{grade}', product_type=flat, grade=grade) for grade in ('EN8D', 'SS304')}
         QueryItem.objects.filter(query=self.query).update(product_code=codes['EN8D'])
         self._start_editing('item:2', 'field:grade')
         self._text('SS304')
@@ -1448,7 +1450,7 @@ class WhatsAppMultiProductIntakeTests(WhatsAppReviewBase):
             self._reply('Square Bright Bar')
             second = asked.call_args[0]
             self._reply('Flat Bright Bar')
-        self.assertEqual([i.product_category.name for i in self._items()],
+        self.assertEqual([i.product_type.name for i in self._items()],
                          ['Flat Bright Bar', 'Square Bright Bar', 'Flat Bright Bar'])
         self.assertEqual(asked.call_count, 2)   # a list for product 2 and for product 3; product 1's was asked before
         self.assertTrue(first[1].startswith('Product 2 of 3: '))
@@ -1459,7 +1461,7 @@ class WhatsAppMultiProductIntakeTests(WhatsAppReviewBase):
         self._awaiting('product_category')
         with patch('materials.views.whatsapp._send_whatsapp_list_message_background') as asked:
             self._reply('something odd')
-        self.assertEqual([i.product_category_id for i in self._items()], [None, None, None])
+        self.assertEqual([i.product_type_id for i in self._items()], [None, None, None])
         self.assertTrue(asked.call_args[0][1].startswith('Product 1 of 3: '))
 
     def test_coil_or_bar_is_asked_once_per_product_with_buttons(self):

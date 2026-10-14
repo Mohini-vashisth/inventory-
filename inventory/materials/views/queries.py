@@ -117,7 +117,7 @@ def query_detail(request, pk):
     query = get_object_or_404(Query.objects.select_related('customer'), pk=pk)
     return render(request, 'materials/query_detail.html', {
         'query': query,
-        'items': list(query.items.select_related('product_category', 'product_code').order_by('position', 'pk')),
+        'items': list(query.items.select_related('product_type', 'product_code').order_by('position', 'pk')),
         'history': query.quotation_history(),
         'quote_base_url': _public_quote_base_url(request),
     })
@@ -167,7 +167,7 @@ def query_edit(request, pk):
                         removed.delete()
                     for item in items:
                         if not item.product_code_id:   # no code picked by hand: look it up from type + grade
-                            item.product_code = _match_product_code(item.grade, item.product_category)
+                            item.product_code = _match_product_code(item.grade, item.product_type)
                         item.save()
                     for position, item in enumerate(query.items.order_by('position', 'pk'), start=1):   # keep 1..n
                         if item.position != position:
@@ -180,7 +180,7 @@ def query_edit(request, pk):
         'intake_fields': [(f, label, getattr(query, f)) for f, label in Query.INTAKE_TEXT_FIELDS],
         # type + grade -> product code, for the form's live auto-match (same as the quote form)
         'product_code_map': [
-            {'pk': pt.pk, 'category': pt.category_id, 'grade': grade_key(pt.grade)}
+            {'pk': pt.pk, 'product_type': pt.product_type_id, 'grade': grade_key(pt.grade)}
             for pt in ProductCode.objects.all()
         ],
         'grade_options': list(GradeOption.objects.values_list('name', flat=True)),

@@ -105,7 +105,7 @@
     <div class="card-header"><span>{% if items|length > 1 %}Product {{ forloop.counter }} of {{ items|length }}{% else %}Product{% endif %}</span></div>
     <div class="card-body">
       <dl class="rows">
-        <dt>Product type</dt><dd>{% if item.product_category %}{{ item.product_category.name }}{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Product type</dt><dd>{% if item.product_type %}{{ item.product_type.name }}{% else %}<span class="blank">—</span>{% endif %}</dd>
         <dt>Product code</dt><dd>{% with code=item.effective_product_code %}{% if code %}{{ code.item_code }}{% else %}<span class="blank">—</span>{% endif %}{% endwith %}</dd>
         <dt>Grade</dt><dd>{{ item.grade|default:"—" }}</dd>
         <dt>Width</dt><dd>{% if item.width %}{{ item.width }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>

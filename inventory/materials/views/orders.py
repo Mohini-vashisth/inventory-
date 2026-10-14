@@ -15,7 +15,7 @@ from django.db import transaction
 from django.db.models import Sum
 from django.http import JsonResponse
 
-from ..models import ProductCategory, ProductCode, Customer, Query, Order
+from ..models import ProductType, ProductCode, Customer, Query, Order
 from ..forms import CustomerOrderForm, OrderForm, OrderItemFormSet
 from ..order_pdf import generate_order_summary_pdf
 from ..decorators import redirect_to_admin_login, staff_required
@@ -80,7 +80,7 @@ def order_detail(request, pk):
     requirements and attachments, the quote and query it came from, and the coils picked for it —
     with the same Confirm / Reject / Dispatch actions as the Orders list."""
     order = get_object_or_404(
-        Order.objects.select_related('customer', 'product_code__category', 'source_query'), pk=pk)
+        Order.objects.select_related('customer', 'product_code__product_type', 'source_query'), pk=pk)
     picks = list(order.coil_picks.select_related('coil').order_by('pk'))
     weight_picked = sum((pick.weight_allocated for pick in picks), Decimal('0'))
     low_stock = False
@@ -103,7 +103,7 @@ def order_detail(request, pk):
 def order_dashboard(request):
 
     orders = (Order.objects
-              .select_related('customer', 'product_code__category')
+              .select_related('customer', 'product_code__product_type')
               .annotate(weight_cut=Sum('coil_picks__weight_allocated'))
               .order_by('-created_at'))
     customers = Customer.objects.order_by('name')
@@ -260,12 +260,12 @@ def quote_form(request, token):
     # The query (if any) that led to this quote being sent.
     query = Query.objects.filter(customer=customer, status='quote_sent').order_by('-created_at').first()
     quotation = customer.quotations.filter(status='sent').order_by('-quotation_no').first()
-    items = list(quotation.line_items.select_related('product_code__category', 'category').order_by('order')) if quotation else []
+    items = list(quotation.line_items.select_related('product_code__product_type', 'product_type').order_by('order')) if quotation else []
     for item in items:
         # What the customer is shown (and what the order gets): the quoted code, else the catalogue's
         # code for the item's type + grade; the type from the line, else from that code.
-        item.shown_code = item.product_code or _match_product_code(item.grade, item.category)
-        item.shown_type = item.category or (item.shown_code.category if item.shown_code else None)
+        item.shown_code = item.product_code or _match_product_code(item.grade, item.product_type)
+        item.shown_type = item.product_type or (item.shown_code.product_type if item.shown_code else None)
     error = None
 
     def _finish(created_orders_query):
@@ -341,7 +341,7 @@ def quote_form(request, token):
             order.customer = customer
             order.source_query = query
             order.product_code = _match_product_code(
-                order.grade, ProductCategory.objects.filter(pk=request.POST.get('product_category') or 0).first())
+                order.grade, ProductType.objects.filter(pk=request.POST.get('product_type') or 0).first())
             order.status = 'pending'
             order.save()
             return _finish(query)
@@ -352,7 +352,7 @@ def quote_form(request, token):
         initial = {
             **from_query,
             'delivery_form': first.delivery_form.lower() if first else '',
-            'product_category': str(first.product_category_id or '') if first else '',
+            'product_type': str(first.product_type_id or '') if first else '',
             'grade': first.grade if first else '',
             'end_usage': first.end_use if first else '',
             'width': str(first.width) if first and first.width is not None else '',
@@ -363,7 +363,7 @@ def quote_form(request, token):
 
     return render(request, 'materials/quote_form.html', {
         'customer': customer,
-        'categories': ProductCategory.objects.all(),
+        'product_types': ProductType.objects.all(),
         'error': error,
         'post': request.POST if error else initial,
     })
