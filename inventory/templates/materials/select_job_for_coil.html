@@ -72,7 +72,7 @@
   <a href="{% url 'job_detail' job.pk %}" class="job-card">
     <div>
       <div class="job-no">{{ job.job_no }}</div>
-      <div class="job-meta">{{ job.order.customer.name }} · {{ job.product_type.item_code }} · {{ job.get_status_display }}</div>
+      <div class="job-meta">{{ job.order.customer.name }} · {{ job.product_code.item_code }} · {{ job.get_status_display }}</div>
     </div>
     <div class="arrow">›</div>
   </a>

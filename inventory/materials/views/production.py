@@ -15,14 +15,14 @@ from .common import _parse_coil_no, _safe_get
 
 
 def _job_queryset():
-    return (ProductionJob.objects.select_related('pick__coil', 'product_type', 'order__customer')
-            .prefetch_related('product_type__steps'))
+    return (ProductionJob.objects.select_related('pick__coil', 'product_code', 'order__customer')
+            .prefetch_related('product_code__steps'))
 
 
 def _step_rows(job, part):
     """What the step list of one part shows: each step with its latest log, whether it can be worked on now,
     and, for an "all parts together" step, which other parts are holding it up."""
-    steps = list(job.product_type.steps.all())
+    steps = list(job.product_code.steps.all())
     latest = part.latest_logs_by_step()
     unlocked = parts_service.unlocked_step_ids(part, steps)
     rows = []
@@ -86,7 +86,7 @@ def job_detail(request, pk):
                 return response
         return _render_part(request, job, part, error)
 
-    steps = list(job.product_type.steps.all())
+    steps = list(job.product_code.steps.all())
     tree = []
 
     def walk(part, depth):
@@ -113,7 +113,7 @@ def job_detail(request, pk):
 @employee_required
 def part_detail(request, pk):
     """One part's step list: start / complete steps, split the material at a step that divides it."""
-    part = get_object_or_404(ProductionPart.objects.select_related('job__product_type', 'job__pick__coil', 'job__order'), pk=pk)
+    part = get_object_or_404(ProductionPart.objects.select_related('job__product_code', 'job__pick__coil', 'job__order'), pk=pk)
     job = part.job
     error = None
     if request.method == 'POST':
@@ -164,7 +164,7 @@ def select_job_for_coil(request):
             jobs = list(
                 ProductionJob.objects
                 .filter(pick__coil=coil)
-                .select_related('order', 'product_type')
+                .select_related('order', 'product_code')
                 .order_by('-created_at')
             )
             if not jobs:
@@ -184,10 +184,10 @@ def select_job_for_coil(request):
 def production_board(request):
     orders = (Order.objects
               .filter(status='in_production')
-              .select_related('customer', 'product_type')
+              .select_related('customer', 'product_code')
               .prefetch_related(
                   'jobs__pick__coil',
-                  'jobs__product_type__steps',
+                  'jobs__product_code__steps',
                   'jobs__parts__step_logs__step',
               )
               .order_by('delivery_date'))
@@ -196,7 +196,7 @@ def production_board(request):
     for order in orders:
         jobs_data = []
         for job in order.jobs.all():
-            steps = list(job.product_type.steps.all())
+            steps = list(job.product_code.steps.all())
             total = len(steps)
             rows = []
             for part in (job.active_parts() or [job.root_part()]):

@@ -17,7 +17,7 @@ from django.urls import reverse
 from unittest.mock import patch, MagicMock
 
 from .helpers import create_query
-from ..models import ProductCategory, ProductType, Query, QueryItem, WhatsAppMessage
+from ..models import ProductCategory, ProductCode, Query, QueryItem, WhatsAppMessage
 from ..views import whatsapp
 from ..views.whatsapp import (
     WhatsAppSendError, WHATSAPP_CLOSING_MESSAGE, WHATSAPP_GST_INVALID_MESSAGE, _detect_product_category,
@@ -240,18 +240,18 @@ class WhatsAppWebhookTests(TestCase):
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_the_catalogue_code_is_linked_once_type_and_grade_are_known(self, mock_send):
-        ProductType.objects.create(item_code='FBB009', category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='EN8D')
+        ProductCode.objects.create(item_code='FBB009', category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='EN8D')
         _query_awaiting('grade')   # type (Flat Bright Bar) already chosen
         self._post_payload(self._message_payload('919876543210', 'en-8d'))
         item = _item_of('919876543210')
         self.assertEqual(item.grade, 'EN8D')
-        self.assertEqual(item.product_type.item_code, 'FBB009')
+        self.assertEqual(item.product_code.item_code, 'FBB009')
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_no_code_is_linked_when_the_catalogue_has_none(self, mock_send):
         _query_awaiting('grade')
         self._post_payload(self._message_payload('919876543210', 'SS304'))
-        self.assertIsNone(_item_of('919876543210').product_type)
+        self.assertIsNone(_item_of('919876543210').product_code)
 
     def test_a_product_type_staff_already_set_skips_the_question(self):
         query = create_query(source='call', contact_phone='919876543299', **_answered_values('product_category'))
@@ -603,12 +603,12 @@ class WhatsAppWebhookTests(TestCase):
         matched later, on the quote or the query's Edit page, where staff can
         see it. A catalogue code for the same grade is not linked behind
         their back."""
-        ProductType.objects.create(item_code='Catalogue Bar', grade='EN8D')
+        ProductCode.objects.create(item_code='Catalogue Bar', grade='EN8D')
         query = _query_awaiting('quantity')
         with patch('materials.views.whatsapp._send_whatsapp_steps_background'):
             self._post_payload(self._message_payload('919876543210', '2000'))
 
-        self.assertIsNone(query.items.get().product_type)
+        self.assertIsNone(query.items.get().product_code)
 
     @patch('materials.views.whatsapp._send_whatsapp_text_message_background')
     def test_message_after_sequence_complete_is_appended_to_notes(self, mock_send):
@@ -1269,18 +1269,18 @@ class WhatsAppReviewTests(WhatsAppReviewBase):
 
     def test_changing_the_grade_relinks_the_product_code(self):
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        old = ProductType.objects.create(item_code='FBB001', category=flat, grade='EN8D')
-        new = ProductType.objects.create(item_code='FBB002', category=flat, grade='SS304')
-        QueryItem.objects.filter(query=self.query).update(product_type=old)
+        old = ProductCode.objects.create(item_code='FBB001', category=flat, grade='EN8D')
+        new = ProductCode.objects.create(item_code='FBB002', category=flat, grade='SS304')
+        QueryItem.objects.filter(query=self.query).update(product_code=old)
         self._start_editing('item:0', 'field:grade')
         self._text('SS304')
         self._tap_button('Yes, save it')
-        self.assertEqual(self._items()[0].product_type, new)
+        self.assertEqual(self._items()[0].product_code, new)
         Query.objects.filter(pk=self.query.pk).update(bot_stage='summary')
         self._start_editing('item:0', 'field:grade')
         self._text('EN9')   # no code for this one: the link is dropped, not left pointing at the wrong code
         self._tap_button('Yes, save it')
-        self.assertIsNone(self._items()[0].product_type)
+        self.assertIsNone(self._items()[0].product_code)
 
     def test_a_text_answer_replaces_an_attached_drawing(self):
         item = self._items()[0]
@@ -1343,12 +1343,12 @@ class WhatsAppMultiProductReviewTests(WhatsAppReviewBase):
 
     def test_the_grade_of_one_product_relinks_only_that_products_code(self):
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        codes = {grade: ProductType.objects.create(item_code=f'FBB-{grade}', category=flat, grade=grade) for grade in ('EN8D', 'SS304')}
-        QueryItem.objects.filter(query=self.query).update(product_type=codes['EN8D'])
+        codes = {grade: ProductCode.objects.create(item_code=f'FBB-{grade}', category=flat, grade=grade) for grade in ('EN8D', 'SS304')}
+        QueryItem.objects.filter(query=self.query).update(product_code=codes['EN8D'])
         self._start_editing('item:2', 'field:grade')
         self._text('SS304')
         self._tap_button('Yes, save it')
-        self.assertEqual([item.product_type for item in self._items()], [codes['EN8D'], codes['EN8D'], codes['SS304']])
+        self.assertEqual([item.product_code for item in self._items()], [codes['EN8D'], codes['EN8D'], codes['SS304']])
 
 
 class QueryDetailShowsTheConfirmationTests(TestCase):

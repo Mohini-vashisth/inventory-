@@ -14,7 +14,7 @@ from ..models import (
     OrderCoilPick,
     ProcessStep,
     ProductionJob,
-    ProductType,
+    ProductCode,
 )
 
 
@@ -147,14 +147,14 @@ class EmployeePortalPageTests(TestCase):
 
     def test_production_board_shows_only_in_production_orders(self):
         customer = Customer.objects.create(name='Board Co')
-        product_type = ProductType.objects.create(item_code='Bar', grade='EN8D')
-        ProcessStep.objects.create(product_type=product_type, name='Cutting', order=1)
+        product_code = ProductCode.objects.create(item_code='Bar', grade='EN8D')
+        ProcessStep.objects.create(product_code=product_code, name='Cutting', order=1)
 
         in_prod_order = Order.objects.create(customer=customer, quantity=10, status='in_production')
         coil = Material.objects.create(quantity=500)
         pick = OrderCoilPick.objects.create(order=in_prod_order, coil=coil, weight_allocated=10)
         ProductionJob.objects.create(
-            pick=pick, product_type=product_type, job_no='BOARD-JOB-1', order=in_prod_order,
+            pick=pick, product_code=product_code, job_no='BOARD-JOB-1', order=in_prod_order,
         )
         Order.objects.create(customer=customer, quantity=10, status='confirmed')  # not shown
 

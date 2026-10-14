@@ -1,7 +1,7 @@
 from django.db.models import Sum
 from rest_framework import serializers
 
-from .models import Customer, Material, Order, ProcessStep, ProductionJob, ProductionPart, ProductType, StepLog
+from .models import Customer, Material, Order, ProcessStep, ProductionJob, ProductionPart, ProductCode, StepLog
 
 
 class ProcessStepSerializer(serializers.ModelSerializer):
@@ -10,12 +10,12 @@ class ProcessStepSerializer(serializers.ModelSerializer):
         fields = ['id', 'name', 'order']
 
 
-class ProductTypeSerializer(serializers.ModelSerializer):
+class ProductCodeSerializer(serializers.ModelSerializer):
     steps = ProcessStepSerializer(many=True, read_only=True)
     category = serializers.StringRelatedField()  # the product type's name, e.g. "Round Bright Bar"
 
     class Meta:
-        model = ProductType
+        model = ProductCode
         fields = ['id', 'item_code', 'category', 'grade', 'description', 'steps']
 
 
@@ -67,7 +67,9 @@ class ProductionPartSerializer(serializers.ModelSerializer):
 
 
 class ProductionJobSerializer(serializers.ModelSerializer):
-    product_type_item_code = serializers.CharField(source='product_type.item_code', read_only=True)
+    # The API keeps its original output name `product_type` (for the product code's id); only the code's own names changed.
+    product_type = serializers.PrimaryKeyRelatedField(source='product_code', read_only=True)
+    product_type_item_code = serializers.CharField(source='product_code.item_code', read_only=True)
     coil_no = serializers.CharField(source='pick.coil.formatted_coil', read_only=True)
     weight_allocated = serializers.DecimalField(source='pick.weight_allocated', max_digits=10, decimal_places=3, read_only=True)
     latest_logs = serializers.SerializerMethodField()
@@ -96,7 +98,8 @@ class CustomerSerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.name', read_only=True)
-    product_type_item_code = serializers.CharField(source='product_type.item_code', read_only=True)
+    product_type = serializers.PrimaryKeyRelatedField(source='product_code', read_only=True)   # API output name unchanged
+    product_type_item_code = serializers.CharField(source='product_code.item_code', read_only=True)
     weight_cut = serializers.SerializerMethodField()
 
     class Meta:

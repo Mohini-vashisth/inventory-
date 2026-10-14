@@ -48,7 +48,7 @@
       ⚠️ This coil's grade/size doesn't match this order's allowed raw material.
     {% elif fully_picked %}
       ✅ This order's raw material requirement has already been fully picked.
-    {% elif not order.product_type %}
+    {% elif not order.product_code %}
       ⚠️ This order has no product code set — ask admin to configure one first.
     {% endif %}
   </div>

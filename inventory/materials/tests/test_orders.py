@@ -15,7 +15,7 @@ from django.utils import timezone
 from .helpers import create_query
 from ..models import (
     QueryItem,
-    AllowedCoilSpec, Customer, Material, Order, OrderCoilPick, ProductCategory, ProductType, Query, Quotation,
+    AllowedCoilSpec, Customer, Material, Order, OrderCoilPick, ProductCategory, ProductCode, Query, Quotation,
     QuotationLineItem,
 )
 
@@ -90,7 +90,7 @@ class RawMaterialAvailabilityTests(TestCase):
 
     def setUp(self):
         self.customer = Customer.objects.create(name='Stock Check Co')
-        self.product_type = ProductType.objects.create(item_code='Stock Bar', grade='EN8D')
+        self.product_code = ProductCode.objects.create(item_code='Stock Bar', grade='EN8D')
 
     def test_none_without_a_product_type(self):
         order = Order.objects.create(customer=self.customer, quantity=100)
@@ -98,19 +98,19 @@ class RawMaterialAvailabilityTests(TestCase):
         self.assertIsNone(order.has_sufficient_raw_material())
 
     def test_sums_matching_coils_only(self):
-        AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
+        AllowedCoilSpec.objects.create(product_code=self.product_code, size='1.200')
         Material.objects.create(quantity=300, grade='EN8D', size='1.200')
         Material.objects.create(quantity=200, grade='EN8D', size='1.200')
         Material.objects.create(quantity=500, grade='SAE1008', size='6.000')  # doesn't match, excluded
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=400, grade='EN8D')
+        order = Order.objects.create(customer=self.customer, product_code=self.product_code, quantity=400, grade='EN8D')
 
         self.assertEqual(order.available_raw_material_output(), Decimal('500'))
         self.assertTrue(order.has_sufficient_raw_material())
 
     def test_insufficient_when_stock_falls_short(self):
-        AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
+        AllowedCoilSpec.objects.create(product_code=self.product_code, size='1.200')
         Material.objects.create(quantity=100, grade='EN8D', size='1.200')
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=400, grade='EN8D')
+        order = Order.objects.create(customer=self.customer, product_code=self.product_code, quantity=400, grade='EN8D')
 
         self.assertEqual(order.available_raw_material_output(), Decimal('100'))
         self.assertFalse(order.has_sufficient_raw_material())
@@ -118,11 +118,11 @@ class RawMaterialAvailabilityTests(TestCase):
     def test_ratio_reduces_available_output(self):
         """1.1 ratio means 110kg of raw material only yields 100kg of output."""
         AllowedCoilSpec.objects.create(
-            product_type=self.product_type, size='1.200',
+            product_code=self.product_code, size='1.200',
             raw_material_ratio=Decimal('1.100'),
         )
         Material.objects.create(quantity=110, grade='EN8D', size='1.200')
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100, grade='EN8D')
+        order = Order.objects.create(customer=self.customer, product_code=self.product_code, quantity=100, grade='EN8D')
 
         self.assertEqual(order.available_raw_material_output(), Decimal('100'))
         self.assertTrue(order.has_sufficient_raw_material())
@@ -131,22 +131,22 @@ class RawMaterialAvailabilityTests(TestCase):
         """Matches the wildcard fallback the picking flow already uses when
         a product type has no AllowedCoilSpecs configured."""
         Material.objects.create(quantity=250, grade='EN8D', size='3.000')
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100, grade='EN8D')
+        order = Order.objects.create(customer=self.customer, product_code=self.product_code, quantity=100, grade='EN8D')
 
         self.assertEqual(order.available_raw_material_output(), Decimal('250'))
 
     def test_archived_coils_excluded(self):
-        AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
+        AllowedCoilSpec.objects.create(product_code=self.product_code, size='1.200')
         Material.objects.create(quantity=300, grade='EN8D', size='1.200', archived_at=timezone.now())
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100, grade='EN8D')
+        order = Order.objects.create(customer=self.customer, product_code=self.product_code, quantity=100, grade='EN8D')
 
         self.assertEqual(order.available_raw_material_output(), Decimal('0'))
         self.assertFalse(order.has_sufficient_raw_material())
 
     def test_already_picked_weight_reduces_available_stock(self):
-        AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
+        AllowedCoilSpec.objects.create(product_code=self.product_code, size='1.200')
         coil = Material.objects.create(quantity=300, grade='EN8D', size='1.200')
-        order = Order.objects.create(customer=self.customer, product_type=self.product_type, quantity=100, grade='EN8D')
+        order = Order.objects.create(customer=self.customer, product_code=self.product_code, quantity=100, grade='EN8D')
         OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=250)
 
         self.assertEqual(order.available_raw_material_output(), Decimal('50'))
@@ -158,12 +158,12 @@ class StockOutlookTests(TestCase):
 
     def setUp(self):
         self.customer = Customer.objects.create(name='Outlook Co')
-        self.code = ProductType.objects.create(item_code='OUT1', grade='EN8D')
-        AllowedCoilSpec.objects.create(product_type=self.code, size='1.200')
+        self.code = ProductCode.objects.create(item_code='OUT1', grade='EN8D')
+        AllowedCoilSpec.objects.create(product_code=self.code, size='1.200')
         self.coil = Material.objects.create(quantity=1000, grade='EN8D', size='1.200')
 
     def _order(self, quantity, status, **fields):
-        fields.setdefault('product_type', self.code)
+        fields.setdefault('product_code', self.code)
         fields.setdefault('grade', 'EN8D')
         return Order.objects.create(customer=self.customer, quantity=quantity, status=status, **fields)
 
@@ -205,15 +205,15 @@ class StockOutlookTests(TestCase):
         self.assertEqual(outlook['held'], Decimal('0'))
 
     def test_orders_using_different_coil_sizes_do_not_compete(self):
-        other_code = ProductType.objects.create(item_code='OUT2', grade='EN8D', category=ProductCategory.objects.create(name='Outlook Type 2', code='OT2'))
-        AllowedCoilSpec.objects.create(product_type=other_code, size='3.000')
-        self._order(300, 'confirmed', product_type=other_code)
+        other_code = ProductCode.objects.create(item_code='OUT2', grade='EN8D', category=ProductCategory.objects.create(name='Outlook Type 2', code='OT2'))
+        AllowedCoilSpec.objects.create(product_code=other_code, size='3.000')
+        self._order(300, 'confirmed', product_code=other_code)
         outlook = self._order(100, 'pending').stock_outlook()
         self.assertEqual(outlook['rivals'], [])
 
     def test_order_with_no_size_restriction_competes_with_any_size(self):
-        no_specs = ProductType.objects.create(item_code='OUT3', grade='EN8D', category=ProductCategory.objects.create(name='Outlook Type 3', code='OT3'))
-        self._order(300, 'confirmed', product_type=no_specs)
+        no_specs = ProductCode.objects.create(item_code='OUT3', grade='EN8D', category=ProductCategory.objects.create(name='Outlook Type 3', code='OT3'))
+        self._order(300, 'confirmed', product_code=no_specs)
         outlook = self._order(100, 'pending').stock_outlook()
         self.assertEqual(outlook['held'], Decimal('300'))
 
@@ -258,13 +258,13 @@ class OrderConfirmStockWarningTests(TestCase):
     def setUp(self):
         self.staff = User.objects.create_user('stock_staff', password='pw', is_staff=True)
         self.customer = Customer.objects.create(name='Confirm Stock Co')
-        self.product_type = ProductType.objects.create(item_code='Confirm Bar', grade='EN8D')
-        AllowedCoilSpec.objects.create(product_type=self.product_type, size='1.200')
+        self.product_code = ProductCode.objects.create(item_code='Confirm Bar', grade='EN8D')
+        AllowedCoilSpec.objects.create(product_code=self.product_code, size='1.200')
 
     def test_confirming_with_insufficient_stock_shows_warning(self):
         Material.objects.create(quantity=50, grade='EN8D', size='1.200')
         order = Order.objects.create(
-            customer=self.customer, product_type=self.product_type, quantity=400, status='pending', grade='EN8D')
+            customer=self.customer, product_code=self.product_code, quantity=400, status='pending', grade='EN8D')
         self.client.force_login(self.staff)
         response = self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}), follow=True)
         messages = [str(m) for m in response.context['messages']]
@@ -273,7 +273,7 @@ class OrderConfirmStockWarningTests(TestCase):
     def test_confirming_with_sufficient_stock_shows_no_warning(self):
         Material.objects.create(quantity=500, grade='EN8D', size='1.200')
         order = Order.objects.create(
-            customer=self.customer, product_type=self.product_type, quantity=400, status='pending', grade='EN8D')
+            customer=self.customer, product_code=self.product_code, quantity=400, status='pending', grade='EN8D')
         self.client.force_login(self.staff)
         response = self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}), follow=True)
         messages = [str(m) for m in response.context['messages']]
@@ -282,7 +282,7 @@ class OrderConfirmStockWarningTests(TestCase):
     def test_dashboard_shows_persistent_low_stock_badge(self):
         Material.objects.create(quantity=50, grade='EN8D', size='1.200')
         Order.objects.create(
-            customer=self.customer, product_type=self.product_type, quantity=400, status='confirmed', grade='EN8D')
+            customer=self.customer, product_code=self.product_code, quantity=400, status='confirmed', grade='EN8D')
         self.client.force_login(self.staff)
         response = self.client.get(reverse('order_dashboard'))
         self.assertContains(response, 'Low stock')
@@ -292,7 +292,7 @@ class OrderConfirmStockWarningTests(TestCase):
         committed to production — a pending order hasn't been accepted yet."""
         Material.objects.create(quantity=50, grade='EN8D', size='1.200')
         Order.objects.create(
-            customer=self.customer, product_type=self.product_type, quantity=400, status='pending', grade='EN8D')
+            customer=self.customer, product_code=self.product_code, quantity=400, status='pending', grade='EN8D')
         self.client.force_login(self.staff)
         response = self.client.get(reverse('order_dashboard'))
         self.assertNotContains(response, 'Low stock')
@@ -300,7 +300,7 @@ class OrderConfirmStockWarningTests(TestCase):
     def test_dashboard_hides_badge_when_stock_is_sufficient(self):
         Material.objects.create(quantity=500, grade='EN8D', size='1.200')
         Order.objects.create(
-            customer=self.customer, product_type=self.product_type, quantity=400, status='confirmed', grade='EN8D')
+            customer=self.customer, product_code=self.product_code, quantity=400, status='confirmed', grade='EN8D')
         self.client.force_login(self.staff)
         response = self.client.get(reverse('order_dashboard'))
         self.assertNotContains(response, 'Low stock')
@@ -320,9 +320,9 @@ class OrderWorkflowTests(TestCase):
 
     def test_confirm_dispatch_reject_ignore_get_requests(self):
         """A bare GET must never confirm/dispatch/reject an order (CSRF via link/image)."""
-        product_type = ProductType.objects.create(item_code='Bar', grade='EN8D')
+        product_code = ProductCode.objects.create(item_code='Bar', grade='EN8D')
         order = Order.objects.create(
-            customer=self.customer, quantity=100, status='pending', product_type=product_type, grade='EN8D')
+            customer=self.customer, quantity=100, status='pending', product_code=product_code, grade='EN8D')
         self.client.force_login(self.staff)
 
         self.client.get(reverse('order_confirm', kwargs={'pk': order.pk}))
@@ -459,14 +459,14 @@ class CustomerOrderFormTests(TestCase):
 
     def setUp(self):
         self.customer = Customer.objects.create(name='Order Form Co', email='of@example.com')
-        self.code_a = ProductType.objects.create(item_code='CODE-A', grade='EN8D')
-        self.code_b = ProductType.objects.create(item_code='CODE-B', grade='SS304')
+        self.code_a = ProductCode.objects.create(item_code='CODE-A', grade='EN8D')
+        self.code_b = ProductCode.objects.create(item_code='CODE-B', grade='SS304')
         self.quotation = Quotation.objects.create(customer=self.customer, status='sent')
         self.item_a = QuotationLineItem.objects.create(
-            quotation=self.quotation, order=1, description='Bar A', product_type=self.code_a,
+            quotation=self.quotation, order=1, description='Bar A', product_code=self.code_a,
             grade='EN8D', width=Decimal('50'), thickness=Decimal('6'), quantity=Decimal('500'), rate_per_kg=90)
         self.item_b = QuotationLineItem.objects.create(
-            quotation=self.quotation, order=2, description='Bar B', product_type=self.code_b,
+            quotation=self.quotation, order=2, description='Bar B', product_code=self.code_b,
             grade='SS304', width=Decimal('60.5'), thickness=Decimal('8'), quantity=Decimal('300'), rate_per_kg=120)
         self.url = reverse('quote_form', kwargs={'token': self.customer.quote_token})
 
@@ -485,10 +485,10 @@ class CustomerOrderFormTests(TestCase):
         for text in ('CODE-A', 'EN8D', '50 mm', '6 mm', 'CODE-B', 'SS304', '60.5 mm', '8 mm', 'Bar A', 'Bar B'):
             with self.subTest(text=text):
                 self.assertIn(text, html)
-        for name in ('product_type', 'grade', 'width', 'thickness'):
+        for name in ('product_code', 'grade', 'width', 'thickness'):
             with self.subTest(field=name):
                 self.assertNotIn(f'name="{name}"', html)
-                self.assertNotIn(f'-{name}"', html)  # no item-N-product_type / -grade / -width / -thickness inputs either
+                self.assertNotIn(f'-{name}"', html)  # no item-N-product_code / -grade / -width / -thickness inputs either
 
     def test_each_item_shows_its_product_type(self):
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
@@ -503,17 +503,17 @@ class CustomerOrderFormTests(TestCase):
 
     def test_the_product_code_is_shown_even_when_the_quote_line_has_none_stored(self):
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        code = ProductType.objects.create(item_code='FBB009', category=flat, grade='EN8D')
-        self.item_a.product_type = None
+        code = ProductCode.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        self.item_a.product_code = None
         self.item_a.category = flat
         self.item_a.save()
         html = self.client.get(self.url).content.decode()
         self.assertIn('<b>Product code</b> FBB009', html)
         self.client.post(self.url, self._post_data())
-        self.assertEqual(Order.objects.filter(customer=self.customer).order_by('pk').first().product_type, code)
+        self.assertEqual(Order.objects.filter(customer=self.customer).order_by('pk').first().product_code, code)
 
     def test_an_item_with_no_code_says_it_is_to_be_assigned(self):
-        self.item_b.product_type = None
+        self.item_b.product_code = None
         self.item_b.grade = 'UNKNOWNGRADE'
         self.item_b.save()
         self.assertIn('<b>Product code</b> To be assigned', self.client.get(self.url).content.decode())
@@ -531,20 +531,20 @@ class CustomerOrderFormTests(TestCase):
         orders = Order.objects.filter(customer=self.customer).order_by('pk')
         self.assertEqual(orders.count(), 2)
         first, second = orders
-        self.assertEqual((first.product_type, first.grade, first.width, first.thickness, first.quantity),
+        self.assertEqual((first.product_code, first.grade, first.width, first.thickness, first.quantity),
                          (self.code_a, 'EN8D', Decimal('50'), Decimal('6'), Decimal('500')))
-        self.assertEqual((second.product_type, second.grade, second.width, second.thickness, second.quantity),
+        self.assertEqual((second.product_code, second.grade, second.width, second.thickness, second.quantity),
                          (self.code_b, 'SS304', Decimal('60.5'), Decimal('8'), Decimal('300')))
         self.assertTrue(all(o.status == 'pending' for o in orders))
 
     def test_posted_code_grade_width_and_thickness_are_ignored(self):
         data = self._post_data(**{
-            'item-0-product_type': str(self.code_b.pk), 'item-0-grade': 'HACKED', 'item-0-width': '9.999', 'item-0-thickness': '9.999',
-            'product_type': str(self.code_b.pk), 'grade': 'HACKED', 'width': '9.999', 'thickness': '9.999',
+            'item-0-product_code': str(self.code_b.pk), 'item-0-grade': 'HACKED', 'item-0-width': '9.999', 'item-0-thickness': '9.999',
+            'product_code': str(self.code_b.pk), 'grade': 'HACKED', 'width': '9.999', 'thickness': '9.999',
         })
         self.client.post(self.url, data)
         first = Order.objects.filter(customer=self.customer).order_by('pk').first()
-        self.assertEqual((first.product_type, first.grade, first.width, first.thickness),
+        self.assertEqual((first.product_code, first.grade, first.width, first.thickness),
                          (self.code_a, 'EN8D', Decimal('50'), Decimal('6')))
 
     def test_customer_can_change_quantity_and_add_details_per_item(self):
@@ -556,15 +556,15 @@ class CustomerOrderFormTests(TestCase):
         self.assertEqual((second.frequency, second.delivery_form), ('monthly', 'coil'))
 
     def test_an_item_with_no_catalogue_code_gets_none_and_one_matching_its_spec_is_matched(self):
-        self.item_a.product_type = None
+        self.item_a.product_code = None
         self.item_a.save()
         self.item_b.grade = 'UNKNOWN'
-        self.item_b.product_type = None
+        self.item_b.product_code = None
         self.item_b.save()
         self.client.post(self.url, self._post_data())
         first, second = Order.objects.filter(customer=self.customer).order_by('pk')
-        self.assertEqual(first.product_type, self.code_a)   # matched from its grade at order time
-        self.assertIsNone(second.product_type)              # no catalogue code: assigned at confirmation
+        self.assertEqual(first.product_code, self.code_a)   # matched from its grade at order time
+        self.assertIsNone(second.product_code)              # no catalogue code: assigned at confirmation
 
     def test_quantity_is_required_for_every_item_and_nothing_is_created_on_error(self):
         token_before = self.customer.quote_token
@@ -618,7 +618,7 @@ class CustomerOrderFormTests(TestCase):
 
     def test_the_latest_sent_quotation_is_used_and_drafts_are_ignored(self):
         newer = Quotation.objects.create(customer=self.customer, status='sent')
-        QuotationLineItem.objects.create(quotation=newer, order=1, description='Newer bar', product_type=self.code_b,
+        QuotationLineItem.objects.create(quotation=newer, order=1, description='Newer bar', product_code=self.code_b,
                                          grade='SS304', width=Decimal('2.500'), quantity=Decimal('42'), rate_per_kg=1)
         draft = Quotation.objects.create(customer=self.customer, status='draft')
         QuotationLineItem.objects.create(quotation=draft, order=1, description='Draft bar', quantity=1, rate_per_kg=1)
@@ -631,7 +631,7 @@ class CustomerOrderFormTests(TestCase):
         single = Customer.objects.create(name='Single Co')
         quote = Quotation.objects.create(customer=single, status='sent')
         item = QuotationLineItem.objects.create(quotation=quote, order=1, description='Only bar',
-                                                product_type=self.code_a, grade='EN8D', width=Decimal('50'), thickness=Decimal('6'),
+                                                product_code=self.code_a, grade='EN8D', width=Decimal('50'), thickness=Decimal('6'),
                                                 quantity=Decimal('100'), rate_per_kg=1)
         url = reverse('quote_form', kwargs={'token': single.quote_token})
         self.assertContains(self.client.get(url), 'Item 1', count=1)
@@ -646,38 +646,38 @@ class CustomerOrderFormWithoutAQuoteTests(TestCase):
     def setUp(self):
         self.customer = Customer.objects.create(name='Old Link Co')
         self.url = reverse('quote_form', kwargs={'token': self.customer.quote_token})
-        self.code = ProductType.objects.create(item_code='CODE-X', grade='EN8D')
+        self.code = ProductCode.objects.create(item_code='CODE-X', grade='EN8D')
 
     def test_there_is_no_product_code_dropdown(self):
         html = self.client.get(self.url).content.decode()
-        self.assertNotIn('name="product_type"', html)
+        self.assertNotIn('name="product_code"', html)
         self.assertIn('name="grade"', html)
         self.assertIn('name="width"', html)
         self.assertIn('name="thickness"', html)
 
     def test_the_code_is_matched_from_the_grade_typed(self):
         self.client.post(self.url, {'quantity': '250', 'grade': 'en8d', 'width': '50', 'thickness': '6'})
-        self.assertEqual(Order.objects.get(customer=self.customer).product_type, self.code)
+        self.assertEqual(Order.objects.get(customer=self.customer).product_code, self.code)
 
     def test_the_form_has_a_product_type_choice_that_helps_match_the_code(self):
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
         square = ProductCategory.objects.get(name='Square Bright Bar')
-        flat_code = ProductType.objects.create(item_code='FBB-X', category=flat, grade='SS304')
-        ProductType.objects.create(item_code='SQB-X', category=square, grade='SS304')   # same grade, other type
+        flat_code = ProductCode.objects.create(item_code='FBB-X', category=flat, grade='SS304')
+        ProductCode.objects.create(item_code='SQB-X', category=square, grade='SS304')   # same grade, other type
         html = self.client.get(self.url).content.decode()
         self.assertIn('name="product_category"', html)
         self.assertIn('Flat Bright Bar', html)
         self.client.post(self.url, {'quantity': '10', 'grade': 'ss304', 'product_category': str(flat.pk)})
-        self.assertEqual(Order.objects.get(customer=self.customer).product_type, flat_code)
+        self.assertEqual(Order.objects.get(customer=self.customer).product_code, flat_code)
 
     def test_no_match_leaves_the_code_to_be_assigned_at_confirmation(self):
         self.client.post(self.url, {'quantity': '250', 'grade': 'EN9', 'width': '30', 'thickness': '3'})
-        self.assertIsNone(Order.objects.get(customer=self.customer).product_type)
+        self.assertIsNone(Order.objects.get(customer=self.customer).product_code)
 
     def test_a_posted_product_type_is_ignored(self):
-        other = ProductType.objects.create(item_code='CODE-Y', grade='SS304')
-        self.client.post(self.url, {'quantity': '250', 'product_type': str(other.pk)})
-        self.assertIsNone(Order.objects.get(customer=self.customer).product_type)
+        other = ProductCode.objects.create(item_code='CODE-Y', grade='SS304')
+        self.client.post(self.url, {'quantity': '250', 'product_code': str(other.pk)})
+        self.assertIsNone(Order.objects.get(customer=self.customer).product_code)
 
 
 class OrderFormPrefillFromQueryTests(TestCase):
@@ -686,10 +686,10 @@ class OrderFormPrefillFromQueryTests(TestCase):
 
     def setUp(self):
         self.customer = Customer.objects.create(name='Prefill Order Co')
-        self.code = ProductType.objects.create(item_code='CODE-P', grade='EN8D')
+        self.code = ProductCode.objects.create(item_code='CODE-P', grade='EN8D')
         quotation = Quotation.objects.create(customer=self.customer, status='sent')
         self.item = QuotationLineItem.objects.create(
-            quotation=quotation, order=1, description='Bar', product_type=self.code,
+            quotation=quotation, order=1, description='Bar', product_code=self.code,
             grade='EN8D', width=Decimal('50'), thickness=Decimal('6'), quantity=Decimal('500'), rate_per_kg=90)
         self.query = create_query(
             source='whatsapp', contact_phone='9123456780', company_name='Prefill Order Co',
@@ -742,10 +742,10 @@ class OrderFormShowsTheProductTypeTests(TestCase):
     def test_the_quoted_items_product_type_is_shown_with_its_code_locked(self):
         customer = Customer.objects.create(name='Type Show Co')
         category = ProductCategory.objects.get(name='Cold Rolled Strip')
-        code = ProductType.objects.create(item_code='FW-1', category=category, grade='SS304')
+        code = ProductCode.objects.create(item_code='FW-1', category=category, grade='SS304')
         quotation = Quotation.objects.create(customer=customer, status='sent')
         QuotationLineItem.objects.create(quotation=quotation, order=1, description='Wire', category=category,
-                                         product_type=code, grade='SS304', width=Decimal('2.000'),
+                                         product_code=code, grade='SS304', width=Decimal('2.000'),
                                          quantity=Decimal('100'), rate_per_kg=1)
         html = self.client.get(reverse('quote_form', kwargs={'token': customer.quote_token})).content.decode()
         self.assertIn('Product type', html)
@@ -810,8 +810,8 @@ class OrderDashboardShowsProductTypeTests(TestCase):
         staff = User.objects.create_user('dash_type_staff', password='pw', is_staff=True)
         self.client.force_login(staff)
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        code = ProductType.objects.create(item_code='FBB009', category=flat, grade='EN8D')
-        Order.objects.create(customer=Customer.objects.create(name='Row Co'), product_type=code, quantity=10, grade='EN8D')
+        code = ProductCode.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        Order.objects.create(customer=Customer.objects.create(name='Row Co'), product_code=code, quantity=10, grade='EN8D')
         html = self.client.get(reverse('order_dashboard')).content.decode()
         self.assertIn('FBB009', html)
         self.assertIn('Flat Bright Bar', html)
@@ -828,11 +828,11 @@ class OrderConfirmationEmailTests(TestCase):
         self.staff = User.objects.create_user('confirm_staff', password='pw', is_staff=True)
         self.client.force_login(self.staff)
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        self.code = ProductType.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        self.code = ProductCode.objects.create(item_code='FBB009', category=flat, grade='EN8D')
         self.customer = Customer.objects.create(name='Confirm Co', email='buyer@example.com')
 
     def _order(self, **fields):
-        defaults = dict(customer=self.customer, product_type=self.code, grade='EN8D', width=Decimal('50'),
+        defaults = dict(customer=self.customer, product_code=self.code, grade='EN8D', width=Decimal('50'),
                         thickness=Decimal('6.5'), quantity=Decimal('500'), status='pending')
         defaults.update(fields)
         return Order.objects.create(**defaults)
@@ -951,7 +951,7 @@ class OrderConfirmationEmailTests(TestCase):
         self.assertContains(response, 'could not be sent')
 
     def test_an_order_that_cannot_be_confirmed_sends_nothing(self):
-        order = self._order(product_type=None)
+        order = self._order(product_code=None)
         self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}))
         order.refresh_from_db()
         self.assertEqual(order.status, 'pending')
@@ -976,10 +976,10 @@ class OrderDrawingAndToleranceTests(TestCase):
         self.addCleanup(override.disable)
         self.addCleanup(self._tmp.cleanup)
         self.customer = Customer.objects.create(name='Tol Co', email='tol@example.com')
-        self.code = ProductType.objects.create(item_code='FBB009', category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='EN8D')
+        self.code = ProductCode.objects.create(item_code='FBB009', category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='EN8D')
         quotation = Quotation.objects.create(customer=self.customer, status='sent')
         self.item = QuotationLineItem.objects.create(
-            quotation=quotation, order=1, description='Flat bar', product_type=self.code, grade='EN8D',
+            quotation=quotation, order=1, description='Flat bar', product_code=self.code, grade='EN8D',
             width=Decimal('50'), thickness=Decimal('6.5'), quantity=Decimal('500'), rate_per_kg=90)
         self.url = reverse('quote_form', kwargs={'token': self.customer.quote_token})
 
@@ -1099,10 +1099,10 @@ class BarLengthAndCoilWeightTests(TestCase):
 
     def setUp(self):
         self.customer = Customer.objects.create(name='Delivery Co', email='d@example.com')
-        self.code = ProductType.objects.create(item_code='FBB009', category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='EN8D')
+        self.code = ProductCode.objects.create(item_code='FBB009', category=ProductCategory.objects.get(name='Flat Bright Bar'), grade='EN8D')
         quotation = Quotation.objects.create(customer=self.customer, status='sent')
         self.items = [QuotationLineItem.objects.create(
-            quotation=quotation, order=n, description=f'Bar {n}', product_type=self.code, grade='EN8D',
+            quotation=quotation, order=n, description=f'Bar {n}', product_code=self.code, grade='EN8D',
             width=Decimal('50'), thickness=Decimal('6'), quantity=Decimal('500'), rate_per_kg=90) for n in (1, 2)]
         self.url = reverse('quote_form', kwargs={'token': self.customer.quote_token})
 
@@ -1240,12 +1240,12 @@ class OrderDetailPageTests(TestCase):
         self.client.force_login(self.staff)
         self.customer = Customer.objects.create(name='Detail Co', email='detail@example.com', phone='9990001111')
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        self.code = ProductType.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        self.code = ProductCode.objects.create(item_code='FBB009', category=flat, grade='EN8D')
         self.query = Query.objects.create(source='whatsapp', contact_phone='919876500060', company_name='Detail Co', customer=self.customer)
         quotation = Quotation.objects.create(customer=self.customer, source_query=self.query, status='sent')
         self.quotation = quotation
         self.order = Order.objects.create(
-            customer=self.customer, source_query=self.query, product_type=self.code, grade='EN8D', width=Decimal('50'),
+            customer=self.customer, source_query=self.query, product_code=self.code, grade='EN8D', width=Decimal('50'),
             thickness=Decimal('6.5'), quantity=Decimal('500'), status='pending', delivery_form='bar', bar_length=Decimal('3000'),
             length_tol_from=Decimal('-5'), length_tol_to=Decimal('5'), width_tol_from=Decimal('49.9'), width_tol_to=Decimal('50.1'),
             other_tolerances='Straightness 1 mm/m', delivery_date=datetime.date(2026, 11, 20), frequency='monthly',
@@ -1288,7 +1288,7 @@ class OrderDetailPageTests(TestCase):
         self.assertIn(reverse('order_dispatch', kwargs={'pk': self.order.pk}), self.client.get(self.url).content.decode())
 
     def test_an_order_without_a_product_code_says_why_it_cannot_be_confirmed(self):
-        Order.objects.filter(pk=self.order.pk).update(product_type=None)
+        Order.objects.filter(pk=self.order.pk).update(product_code=None)
         self.assertIn("can't be confirmed yet", self.client.get(self.url).content.decode())
 
     def test_picked_coils_are_listed(self):

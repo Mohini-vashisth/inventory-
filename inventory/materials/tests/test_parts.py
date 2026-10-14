@@ -9,7 +9,7 @@ from django.urls import reverse
 
 from .. import parts as parts_service
 from ..models import (
-    Customer, Material, Order, OrderCoilPick, ProcessStep, ProductionJob, ProductionPart, ProductType, StepLog,
+    Customer, Material, Order, OrderCoilPick, ProcessStep, ProductionJob, ProductionPart, ProductCode, StepLog,
 )
 from ..parts import PartError
 
@@ -20,17 +20,17 @@ class PartsTestBase(TestCase):
 
     def setUp(self):
         self.customer = Customer.objects.create(name='Parts Co')
-        self.code = ProductType.objects.create(item_code='PRT1', grade='EN8D')
-        self.drawing = ProcessStep.objects.create(product_type=self.code, name='Drawing', order=1)
-        self.cut1 = ProcessStep.objects.create(product_type=self.code, name='Cutting', order=2, splits_material=True)
-        self.polish = ProcessStep.objects.create(product_type=self.code, name='Polishing', order=3)
-        self.cut2 = ProcessStep.objects.create(product_type=self.code, name='Cutting again', order=4, splits_material=True)
-        self.pack = ProcessStep.objects.create(product_type=self.code, name='Packing', order=5, joins_parts=True)
-        self.order = Order.objects.create(customer=self.customer, product_type=self.code, grade='EN8D',
+        self.code = ProductCode.objects.create(item_code='PRT1', grade='EN8D')
+        self.drawing = ProcessStep.objects.create(product_code=self.code, name='Drawing', order=1)
+        self.cut1 = ProcessStep.objects.create(product_code=self.code, name='Cutting', order=2, splits_material=True)
+        self.polish = ProcessStep.objects.create(product_code=self.code, name='Polishing', order=3)
+        self.cut2 = ProcessStep.objects.create(product_code=self.code, name='Cutting again', order=4, splits_material=True)
+        self.pack = ProcessStep.objects.create(product_code=self.code, name='Packing', order=5, joins_parts=True)
+        self.order = Order.objects.create(customer=self.customer, product_code=self.code, grade='EN8D',
                                           quantity=Decimal('1800'), status='in_production')
         self.coil = Material.objects.create(grade='EN8D', quantity=Decimal('2000'))
         self.pick = OrderCoilPick.objects.create(order=self.order, coil=self.coil, weight_allocated=Decimal('2000'))
-        self.job = ProductionJob.objects.create(pick=self.pick, product_type=self.code, order=self.order, job_no='JOB-0001')
+        self.job = ProductionJob.objects.create(pick=self.pick, product_code=self.code, order=self.order, job_no='JOB-0001')
         self.root = self.job.root_part()
 
     def complete(self, part, *steps):
@@ -233,7 +233,7 @@ class PartViewTests(PartsTestBase):
         self.assertIn('JOB-0001-B', page)
 
     def test_picking_a_coil_creates_the_whole_coil_part_with_its_steps(self):
-        order = Order.objects.create(customer=self.customer, product_type=self.code, grade='EN8D', quantity=Decimal('100'), status='confirmed')
+        order = Order.objects.create(customer=self.customer, product_code=self.code, grade='EN8D', quantity=Decimal('100'), status='confirmed')
         coil = Material.objects.create(grade='EN8D', quantity=Decimal('500'))
         self.client.post(reverse('pick_coil_for_order', args=[order.pk, coil.pk]), {'weight_allocated': '300'})
         job = ProductionJob.objects.get(order=order)
@@ -246,7 +246,7 @@ class PartsAdminAndApiTests(PartsTestBase):
     def test_admin_shows_the_step_flags_the_parts_and_the_api_lists_them(self):
         get_user_model().objects.create_superuser('root', 'r@example.com', 'pw')
         self.client.login(username='root', password='pw')
-        change = self.client.get(reverse('admin:materials_producttype_change', args=[self.code.pk])).content.decode()
+        change = self.client.get(reverse('admin:materials_productcode_change', args=[self.code.pk])).content.decode()
         self.assertIn('splits_material', change)
         self.assertIn('joins_parts', change)
         self.split_first()

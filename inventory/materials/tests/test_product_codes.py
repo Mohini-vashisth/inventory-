@@ -11,7 +11,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
 
-from ..models import Customer, GradeOption, ProductCategory, ProductType, Quotation, QuotationLineItem
+from ..models import Customer, GradeOption, ProductCategory, ProductCode, Quotation, QuotationLineItem
 from ..product_codes import canonical_grade, describe_product_code, grade_key, item_code_for, reserve_grade_number
 from .helpers import create_query, quotation_item_post_data
 
@@ -44,20 +44,20 @@ class ItemCodeForTests(TestCase):
         self.assertEqual(GradeOption.objects.get(name='EN9').number, 1)
 
     def test_a_combination_that_already_has_a_code_is_refused(self):
-        existing = ProductType.objects.create(item_code='FBB-OLD', category=self.flat_bar, grade='EN8D')
+        existing = ProductCode.objects.create(item_code='FBB-OLD', category=self.flat_bar, grade='EN8D')
         code, reason = item_code_for(self.flat_bar, 'en8d')
         self.assertIsNone(code)
         self.assertIn(existing.item_code, reason)
 
     def test_the_code_being_edited_doesnt_count_as_its_own_duplicate(self):
-        existing = ProductType.objects.create(item_code='FBB-OLD', category=self.flat_bar, grade='EN8D')
+        existing = ProductCode.objects.create(item_code='FBB-OLD', category=self.flat_bar, grade='EN8D')
         self.assertEqual(item_code_for(self.flat_bar, 'EN8D', exclude_pk=existing.pk)[0], 'FBB001')
 
     def test_the_same_grade_in_another_type_is_a_different_code(self):
         self.assertNotEqual(item_code_for(self.flat_bar, 'EN8D')[0], item_code_for(self.square_bar, 'EN8D')[0])
 
     def test_a_hand_made_code_with_the_same_text_gets_a_suffix(self):
-        ProductType.objects.create(item_code='FBB001', grade='OTHER')   # no type
+        ProductCode.objects.create(item_code='FBB001', grade='OTHER')   # no type
         self.assertEqual(item_code_for(self.flat_bar, 'EN8D')[0], 'FBB001-2')
 
     def test_no_code_when_the_combination_cant_be_written(self):
@@ -96,10 +96,10 @@ class DescribeProductCodeTests(TestCase):
     def test_a_missing_code_previews_what_it_would_be_without_creating_anything(self):
         result = describe_product_code(self.flat_bar, 'EN8D')
         self.assertEqual(result, {'exists': False, 'item_code': 'FBB001', 'reason': ''})
-        self.assertEqual((ProductType.objects.count(), GradeOption.objects.count()), (0, 0))
+        self.assertEqual((ProductCode.objects.count(), GradeOption.objects.count()), (0, 0))
 
     def test_an_existing_code_is_reported_as_existing(self):
-        ProductType.objects.create(item_code='FBB001', category=self.flat_bar, grade='EN8D')
+        ProductCode.objects.create(item_code='FBB001', category=self.flat_bar, grade='EN8D')
         self.assertEqual(describe_product_code(self.flat_bar, 'en8d'),
                          {'exists': True, 'item_code': 'FBB001', 'reason': ''})
 
@@ -122,11 +122,11 @@ class ProductCodeLookupEndpointTests(TestCase):
         data = self._get(category=self.flat_bar.pk, grade='EN8D').json()
         self.assertEqual((data['exists'], data['item_code']), (False, 'FBB001'))
         link = urlparse(data['add_url'])
-        self.assertEqual(link.path, reverse('admin:materials_producttype_add'))
+        self.assertEqual(link.path, reverse('admin:materials_productcode_add'))
         self.assertEqual(parse_qs(link.query), {'category': [str(self.flat_bar.pk)], 'grade': ['EN8D']})
 
     def test_an_existing_code_has_no_add_link(self):
-        ProductType.objects.create(item_code='FBB001', category=self.flat_bar, grade='EN8D')
+        ProductCode.objects.create(item_code='FBB001', category=self.flat_bar, grade='EN8D')
         self.client.force_login(self.staff)
         data = self._get(category=self.flat_bar.pk, grade='EN8D').json()
         self.assertTrue(data['exists'])
@@ -148,7 +148,7 @@ class ProductCodeLookupEndpointTests(TestCase):
     def test_it_never_creates_anything(self):
         self.client.force_login(self.staff)
         self._get(category=self.flat_bar.pk, grade='EN8D')
-        self.assertEqual((ProductType.objects.count(), GradeOption.objects.count()), (0, 0))
+        self.assertEqual((ProductCode.objects.count(), GradeOption.objects.count()), (0, 0))
 
     def test_anonymous_requests_are_refused(self):
         self.assertEqual(self._get(category=self.flat_bar.pk, grade='EN8D').status_code, 403)
@@ -162,7 +162,7 @@ class AdminGeneratesTheCodeTests(TestCase):
         self.client.force_login(self.admin)
         self.flat_bar = ProductCategory.objects.get(name='Flat Bright Bar')
         self.square_bar = ProductCategory.objects.get(name='Square Bright Bar')
-        self.add_url = reverse('admin:materials_producttype_add')
+        self.add_url = reverse('admin:materials_productcode_add')
 
     def _grade(self, name):
         """The id of the grade-list entry the form's dropdown posts (created if the test hasn't yet)."""
@@ -183,7 +183,7 @@ class AdminGeneratesTheCodeTests(TestCase):
     def test_a_blank_item_code_is_generated_from_type_and_grade(self):
         response = self._add()
         self.assertEqual(response.status_code, 302)
-        code = ProductType.objects.get()
+        code = ProductCode.objects.get()
         self.assertEqual((code.item_code, code.category, code.grade), ('FBB001', self.flat_bar, 'EN8D'))
 
     def test_there_is_no_size_field_on_the_form(self):
@@ -194,11 +194,11 @@ class AdminGeneratesTheCodeTests(TestCase):
         self._add()
         self.assertEqual(GradeOption.objects.get(name='EN8D').number, 1)
         self._add(grade='SS304')
-        self.assertEqual(ProductType.objects.get(grade='SS304').item_code, 'FBB002')
+        self.assertEqual(ProductCode.objects.get(grade='SS304').item_code, 'FBB002')
 
     def test_a_code_typed_by_hand_is_kept_and_takes_no_grade_number(self):
         self._add(item_code='MY-OWN-CODE')
-        self.assertEqual(ProductType.objects.get().item_code, 'MY-OWN-CODE')
+        self.assertEqual(ProductCode.objects.get().item_code, 'MY-OWN-CODE')
         self.assertIsNone(GradeOption.objects.get(name='EN8D').number)   # a hand-typed code uses no grade number
 
     def test_type_and_grade_are_required_even_with_a_hand_typed_code(self):
@@ -207,7 +207,7 @@ class AdminGeneratesTheCodeTests(TestCase):
                 response = self._add(item_code='MY-CODE', **{field: ''})
                 self.assertEqual(response.status_code, 200)
                 self.assertContains(response, 'This field is required')
-                self.assertEqual(ProductType.objects.count(), 0)
+                self.assertEqual(ProductCode.objects.count(), 0)
 
     def test_item_code_is_the_first_field_on_the_form(self):
         html = self.client.get(self.add_url).content.decode()
@@ -221,17 +221,17 @@ class AdminGeneratesTheCodeTests(TestCase):
         self._add()
         response = self._add()
         self.assertContains(response, 'already exists: FBB001')
-        self.assertEqual(ProductType.objects.count(), 1)
+        self.assertEqual(ProductCode.objects.count(), 1)
 
     def test_the_same_grade_under_another_type_is_fine(self):
         self._add()
         self._add(category=str(self.square_bar.pk))
-        self.assertEqual(sorted(ProductType.objects.values_list('item_code', flat=True)), ['FBB001', 'SQB001'])
+        self.assertEqual(sorted(ProductCode.objects.values_list('item_code', flat=True)), ['FBB001', 'SQB001'])
 
     def test_editing_a_code_and_clearing_item_code_regenerates_it_without_calling_it_a_duplicate(self):
         self._add()
-        code = ProductType.objects.get()
-        response = self.client.post(reverse('admin:materials_producttype_change', args=[code.pk]),
+        code = ProductCode.objects.get()
+        response = self.client.post(reverse('admin:materials_productcode_change', args=[code.pk]),
                                     self._data(description='x'))
         self.assertEqual(response.status_code, 302)
         code.refresh_from_db()
@@ -290,13 +290,13 @@ class QuoteSendRequiresACodeTests(TestCase):
 
     def test_the_error_links_to_the_admin_add_page_with_the_values_filled_in(self):
         response, _ = self._post(category=str(self.flat_bar.pk), grade='EN8D')
-        link = f"{reverse('admin:materials_producttype_add')}?category={self.flat_bar.pk}&amp;grade=EN8D"
+        link = f"{reverse('admin:materials_productcode_add')}?category={self.flat_bar.pk}&amp;grade=EN8D"
         self.assertContains(response, f'href="{link}"')
         self.assertContains(response, 'Add product code: Flat Bright Bar · EN8D')
 
     def test_nothing_is_created_by_a_refused_send(self):
         self._post(category=str(self.flat_bar.pk), grade='EN8D')
-        self.assertEqual((ProductType.objects.count(), GradeOption.objects.count(), QuotationLineItem.objects.count()), (0, 0, 0))
+        self.assertEqual((ProductCode.objects.count(), GradeOption.objects.count(), QuotationLineItem.objects.count()), (0, 0, 0))
 
     def test_what_the_owner_typed_is_still_on_the_page_after_a_refusal(self):
         response, _ = self._post(category=str(self.flat_bar.pk), grade='EN8D', description='Flat bar for Rao')
@@ -304,31 +304,31 @@ class QuoteSendRequiresACodeTests(TestCase):
 
     def test_sending_works_once_the_admin_has_added_the_code(self):
         self._post(category=str(self.flat_bar.pk), grade='EN8D')
-        code = ProductType.objects.create(item_code='FBB001', category=self.flat_bar, grade='EN8D')
+        code = ProductCode.objects.create(item_code='FBB001', category=self.flat_bar, grade='EN8D')
         response, dispatch = self._post(category=str(self.flat_bar.pk), grade='en8d')
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(QuotationLineItem.objects.get().product_type, code)
+        self.assertEqual(QuotationLineItem.objects.get().product_code, code)
         dispatch.assert_called_once()
 
     def test_the_width_and_thickness_do_not_change_which_code_is_used(self):
-        code = ProductType.objects.create(item_code='FBB001', category=self.flat_bar, grade='EN8D')
+        code = ProductCode.objects.create(item_code='FBB001', category=self.flat_bar, grade='EN8D')
         for width, thickness in (('50', '6'), ('120', '10.5')):
             with self.subTest(width=width):
                 self._post(category=str(self.flat_bar.pk), grade='EN8D', width=width, thickness=thickness)
-        self.assertEqual({line.product_type for line in QuotationLineItem.objects.all()}, {code})
+        self.assertEqual({line.product_code for line in QuotationLineItem.objects.all()}, {code})
         self.assertEqual(QuotationLineItem.objects.count(), 2)
 
     def test_a_code_picked_by_hand_is_enough(self):
-        picked = ProductType.objects.create(item_code='HAND-1', category=self.flat_bar, grade='SS304')
-        response, _ = self._post(category=str(self.flat_bar.pk), grade='EN8D', product_type=str(picked.pk))
+        picked = ProductCode.objects.create(item_code='HAND-1', category=self.flat_bar, grade='SS304')
+        response, _ = self._post(category=str(self.flat_bar.pk), grade='EN8D', product_code=str(picked.pk))
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(QuotationLineItem.objects.get().product_type, picked)
+        self.assertEqual(QuotationLineItem.objects.get().product_code, picked)
 
     def test_saving_a_draft_is_never_blocked(self):
         response, _ = self._post(action='save_draft', category=str(self.flat_bar.pk), grade='EN8D')
         self.assertEqual(response.status_code, 302)
-        self.assertIsNone(QuotationLineItem.objects.get().product_type)
-        self.assertEqual(ProductType.objects.count(), 0)
+        self.assertIsNone(QuotationLineItem.objects.get().product_code)
+        self.assertEqual(ProductCode.objects.count(), 0)
 
     def test_an_item_without_a_type_and_grade_is_not_blocked(self):
         for index, spec in enumerate(({}, {'grade': 'EN8D'}, {'category': str(self.flat_bar.pk)})):
@@ -338,7 +338,7 @@ class QuoteSendRequiresACodeTests(TestCase):
                 self.assertEqual(Quotation.objects.filter(status='sent').count(), index + 1)
 
     def test_only_the_items_missing_a_code_are_listed(self):
-        ProductType.objects.create(item_code='HAS-ONE', category=self.flat_bar, grade='SS304')
+        ProductCode.objects.create(item_code='HAS-ONE', category=self.flat_bar, grade='SS304')
         data = quotation_item_post_data(**{
             'action': 'send', 'item-TOTAL_FORMS': '2', 'item-INITIAL_FORMS': '0',
             'item-0-category': str(self.flat_bar.pk), 'item-0-grade': 'SS304',
@@ -366,7 +366,7 @@ class GradeSpellingTests(TestCase):
         self.flat = ProductCategory.objects.get(name='Flat Bright Bar')
         GradeOption.objects.create(name='EN-8D', number=9)
         GradeOption.objects.create(name='EN-8D CR', number=10)
-        self.code = ProductType.objects.create(item_code='FBB009', category=self.flat, grade='EN-8D')
+        self.code = ProductCode.objects.create(item_code='FBB009', category=self.flat, grade='EN-8D')
 
     def test_the_key_ignores_case_spaces_and_punctuation(self):
         self.assertEqual({grade_key(g) for g in ('EN8D', 'en-8d', 'EN 8D', ' EN-8D ')}, {'en8d'})
@@ -387,12 +387,12 @@ class GradeSpellingTests(TestCase):
         self.assertEqual(GradeOption.objects.create(name='hc-1').name, 'HC1')
 
     def test_the_code_is_found_whichever_way_the_grade_is_spelled(self):
-        from ..views.common import _match_product_type
+        from ..views.common import _match_product_code
         for typed in ('EN8D', 'en-8d', 'EN 8D'):
             with self.subTest(typed=typed):
-                self.assertEqual(_match_product_type(typed, self.flat), self.code)
+                self.assertEqual(_match_product_code(typed, self.flat), self.code)
                 self.assertEqual(describe_product_code(self.flat, typed)['item_code'], 'FBB009')
-        self.assertIsNone(_match_product_type('EN8D CR', self.flat))
+        self.assertIsNone(_match_product_code('EN8D CR', self.flat))
 
     def test_a_differently_spelled_duplicate_is_refused_and_reuses_the_grade_number(self):
         code, reason = item_code_for(self.flat, 'EN8D')

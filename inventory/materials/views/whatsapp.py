@@ -1070,9 +1070,9 @@ def _apply_item_updates(query, values_by_field, only=None, editing=False):
             touched.append('drawing')
         if 'grade' in touched or 'product_category' in touched:
             code = item.matching_product_code()   # link the catalogue code as soon as type + grade are known
-            if editing or (code and not item.product_type_id):
-                item.product_type = code
-                touched.append('product_type')
+            if editing or (code and not item.product_code_id):
+                item.product_code = code
+                touched.append('product_code')
         item.save(update_fields=list(dict.fromkeys(touched)))
 
 

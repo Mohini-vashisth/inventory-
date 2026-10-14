@@ -6,9 +6,9 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from ..forms import QueryItemFormSet
-from ..models import GradeOption, ProductType, Query, QueryItem
+from ..models import GradeOption, ProductCode, Query, QueryItem
 from ..product_codes import grade_key
-from .common import _first_formset_error, _match_product_type
+from .common import _first_formset_error, _match_product_code
 from ..decorators import redirect_to_admin_login, staff_required
 from .quotations import _public_quote_base_url
 from . import whatsapp
@@ -117,7 +117,7 @@ def query_detail(request, pk):
     query = get_object_or_404(Query.objects.select_related('customer'), pk=pk)
     return render(request, 'materials/query_detail.html', {
         'query': query,
-        'items': list(query.items.select_related('product_category', 'product_type').order_by('position', 'pk')),
+        'items': list(query.items.select_related('product_category', 'product_code').order_by('position', 'pk')),
         'history': query.quotation_history(),
         'quote_base_url': _public_quote_base_url(request),
     })
@@ -166,8 +166,8 @@ def query_edit(request, pk):
                     for removed in formset.deleted_objects:
                         removed.delete()
                     for item in items:
-                        if not item.product_type_id:   # no code picked by hand: look it up from type + grade
-                            item.product_type = _match_product_type(item.grade, item.product_category)
+                        if not item.product_code_id:   # no code picked by hand: look it up from type + grade
+                            item.product_code = _match_product_code(item.grade, item.product_category)
                         item.save()
                     for position, item in enumerate(query.items.order_by('position', 'pk'), start=1):   # keep 1..n
                         if item.position != position:
@@ -181,7 +181,7 @@ def query_edit(request, pk):
         # type + grade -> product code, for the form's live auto-match (same as the quote form)
         'product_code_map': [
             {'pk': pt.pk, 'category': pt.category_id, 'grade': grade_key(pt.grade)}
-            for pt in ProductType.objects.all()
+            for pt in ProductCode.objects.all()
         ],
         'grade_options': list(GradeOption.objects.values_list('name', flat=True)),
         'error': error,

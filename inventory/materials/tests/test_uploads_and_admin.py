@@ -19,7 +19,7 @@ from ..models import (
     OrderCoilPick,
     ProcessStep,
     ProductionJob,
-    ProductType,
+    ProductCode,
     Query,
     Quotation,
     QuotationLineItem,
@@ -104,17 +104,17 @@ class AdminSmokeTests(TestCase):
         cls.addClassCleanup(cls._media.cleanup)
         with override_settings(MEDIA_ROOT=Path(cls._media.name)):
             customer = Customer.objects.create(name='Admin Smoke Co', email='a@example.com')
-            product = ProductType.objects.create(item_code='Smoke Bar', grade='EN8D')
-            ProcessStep.objects.create(product_type=product, name='Cutting', order=1)
-            AllowedCoilSpec.objects.create(product_type=product, size='1.200')
+            product = ProductCode.objects.create(item_code='Smoke Bar', grade='EN8D')
+            ProcessStep.objects.create(product_code=product, name='Cutting', order=1)
+            AllowedCoilSpec.objects.create(product_code=product, size='1.200')
             GradeOption.objects.create(name='EN8D')
             SizeOption.objects.create(value='1.200')
             gate = GateEntry.objects.create(vendor='V', vehicle_no='HR26AB1234', total_weight=1000)
             lot = GateEntryLot.objects.create(gate_entry=gate, company='Tata', grade='EN8D', size='1.200', no_of_coils=2)
             coil = Material.objects.create(quantity=500, grade='EN8D', size='1.2', lot=lot)
-            order = Order.objects.create(customer=customer, product_type=product, quantity=100, status='in_production')
+            order = Order.objects.create(customer=customer, product_code=product, quantity=100, status='in_production')
             pick = OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=50)
-            job = ProductionJob.objects.create(pick=pick, product_type=product, job_no='SMOKE-1', order=order)
+            job = ProductionJob.objects.create(pick=pick, product_code=product, job_no='SMOKE-1', order=order)
             StepLog.objects.create(job=job, step=product.steps.first(), status='completed')
             query = Query.objects.create(source='whatsapp', contact_phone='919876543210', company_name='Smoke Co')
             QueryItem.objects.create(query=query).drawing.save('d.pdf', ContentFile(b'%PDF-1.4'), save=True)
@@ -151,8 +151,8 @@ class OrderAdminShowsTypeAndCodeTests(TestCase):
         get_user_model().objects.create_superuser('root', 'r@example.com', 'pw')
         self.client.login(username='root', password='pw')
         category = ProductCategory.objects.get(name='Flat Bright Bar')
-        code = ProductType.objects.create(item_code='ZZ-FBB9', category=category, grade='EN8D')
-        order = Order.objects.create(customer=Customer.objects.create(name='Admin Co'), product_type=code, grade='EN8D', quantity=10)
+        code = ProductCode.objects.create(item_code='ZZ-FBB9', category=category, grade='EN8D')
+        order = Order.objects.create(customer=Customer.objects.create(name='Admin Co'), product_code=code, grade='EN8D', quantity=10)
         listing = self.client.get(reverse('admin:materials_order_changelist')).content.decode()
         self.assertIn('Product type', listing)
         self.assertIn('Product code', listing)

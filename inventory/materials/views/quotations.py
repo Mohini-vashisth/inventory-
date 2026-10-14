@@ -11,12 +11,12 @@ from django.db import transaction
 from django.http import HttpResponse, JsonResponse
 from decimal import Decimal, InvalidOperation
 
-from ..models import GradeOption, ProductCategory, ProductType, Customer, Query, Quotation, QuotationLineItem
+from ..models import GradeOption, ProductCategory, ProductCode, Customer, Query, Quotation, QuotationLineItem
 from ..forms import QuotationForm, QuotationLineItemFormSet
 from ..pdf import generate_quotation_pdf
 from ..product_codes import canonical_grade, describe_product_code, grade_key
 from ..decorators import staff_required
-from .common import _first_form_error, _first_formset_error, _match_product_type, _safe_get
+from .common import _first_form_error, _first_formset_error, _match_product_code, _safe_get
 
 
 def _resolve_quotation_customer(customer_name, query, existing_customer, email, phone):
@@ -85,14 +85,14 @@ def _autofill_product_codes(item_dicts):
     matched. A code picked by hand is never overridden. Quotes never create codes —
     a missing one is added by the admin first (see _items_missing_a_code)."""
     for item in item_dicts:
-        if not item.get('product_type'):
-            item['product_type'] = _match_product_type(item.get('grade'), item.get('category'))
+        if not item.get('product_code'):
+            item['product_code'] = _match_product_code(item.get('grade'), item.get('category'))
 
 
 def _admin_add_code_url(category, grade):
     """The admin's Add product code page with this type and grade already filled in
     (the page then generates the item code itself)."""
-    return reverse('admin:materials_producttype_add') + '?' + urlencode(
+    return reverse('admin:materials_productcode_add') + '?' + urlencode(
         {'category': category.pk, 'grade': grade})
 
 
@@ -105,7 +105,7 @@ def _items_missing_a_code(item_dicts):
     missing = []
     for item in item_dicts:
         category, grade = item.get('category'), (item.get('grade') or '').strip()
-        if item.get('product_type') or not (category and grade):
+        if item.get('product_code') or not (category and grade):
             continue
         missing.append({
             'label': f"{category.name} · {grade}",
@@ -137,14 +137,14 @@ def _parse_draft_line_items(post_data):
         description = post_data.get(prefix + 'description', '').strip()
         if not description:
             continue
-        product_type_id = post_data.get(prefix + 'product_type') or None
-        product_type = ProductType.objects.filter(pk=product_type_id).first() if product_type_id else None
+        product_code_id = post_data.get(prefix + 'product_code') or None
+        product_code = ProductCode.objects.filter(pk=product_code_id).first() if product_code_id else None
         category_id = post_data.get(prefix + 'category') or None
         category = ProductCategory.objects.filter(pk=category_id).first() if category_id else None
         items.append({
             'description': description,
             'category': category,
-            'product_type': product_type,
+            'product_code': product_code,
             'grade': canonical_grade(post_data.get(prefix + 'grade', '')),
             'width': _dec(post_data.get(prefix + 'width')),
             'thickness': _dec(post_data.get(prefix + 'thickness')),
@@ -164,8 +164,8 @@ def _query_item_description(item):
     """A quote line's description when it starts from one of a query's products: the product code if
     one is matched, else what is known — "Flat Bright Bar EN8D 50 x 6 mm". Never the old free-text
     "requirements" answer (the bot no longer asks it)."""
-    if item.product_type:
-        return item.product_type.item_code
+    if item.product_code:
+        return item.product_code.item_code
     parts = [item.product_category.name if item.product_category else '', item.grade, item.dimensions_text()]
     return ' '.join(part for part in parts if part) or 'Item'
 
@@ -289,7 +289,7 @@ def quotation_form(request, pk=None):
             form = QuotationForm(initial=model_to_dict(draft))
             item_initial = [
                 {
-                    'description': item.description, 'category': item.category_id, 'product_type': item.product_type_id,
+                    'description': item.description, 'category': item.category_id, 'product_code': item.product_code_id,
                     'grade': item.grade, 'width': item.width, 'thickness': item.thickness, 'quantity': item.quantity,
                     'unit': item.unit, 'rate_per_kg': item.rate_per_kg, 'discount_pct': item.discount_pct,
                     'hsn_sac': item.hsn_sac, 'gst_pct': item.gst_pct, 'tool_cost': item.tool_cost, 'moq': item.moq,
@@ -303,12 +303,12 @@ def quotation_form(request, pk=None):
                 item_initial = [{
                     'description': _query_item_description(item),
                     'category': item.product_category_id,
-                    'product_type': getattr(item.effective_product_code(), 'pk', None),   # also pre-selected without JavaScript
+                    'product_code': getattr(item.effective_product_code(), 'pk', None),   # also pre-selected without JavaScript
                     'grade': item.grade,
                     'width': item.width,
                     'thickness': item.thickness,
                     'quantity': item.quantity or Decimal('1'),
-                } for item in query.items.select_related('product_category', 'product_type').order_by('position', 'pk')] or [
+                } for item in query.items.select_related('product_category', 'product_code').order_by('position', 'pk')] or [
                     {'description': 'Item', 'quantity': Decimal('1')}]
             elif not existing_customer:
                 # A brand-new company — "Send Form to Them" on the Orders
@@ -339,14 +339,14 @@ def quotation_form(request, pk=None):
         # product type + grade -> product code, for the form's live auto-match (see _autofill_product_codes)
         'product_code_map': [
             {'pk': pt.pk, 'category': pt.category_id, 'grade': grade_key(pt.grade)}
-            for pt in ProductType.objects.all()
+            for pt in ProductCode.objects.all()
         ],
         'grade_options': list(GradeOption.objects.values_list('name', flat=True)),
         'form': form,
         'formset': formset,
         'query': query,
         'existing_customer': existing_customer,
-        'query_items': list(query.items.select_related('product_category', 'product_type').order_by('position', 'pk')) if query else [],
+        'query_items': list(query.items.select_related('product_category', 'product_code').order_by('position', 'pk')) if query else [],
         'new_customer_initial': new_customer_initial,
         'draft': draft,
         'error': error,
@@ -397,7 +397,7 @@ def _dispatch_quote_email(request, customer, quotation):
     quote_url = f"{_public_quote_base_url(request)}{quote_path}"
     try:
         pdf_bytes = generate_quotation_pdf(quotation)
-        items = list(quotation.line_items.select_related('category', 'product_type__category').order_by('order'))
+        items = list(quotation.line_items.select_related('category', 'product_code__category').order_by('order'))
         item_lines = ''.join(
             f"  {number}. {item.description}" + (f" — {item.spec_text()}" if item.spec_text() else '') + "\n"
             for number, item in enumerate(items, start=1))

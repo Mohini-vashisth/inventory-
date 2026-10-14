@@ -181,7 +181,7 @@
   </div>
   {% endif %}
 
-  {% if not order.product_type %}
+  {% if not order.product_code %}
   <div style="background:rgba(255,200,0,0.2); border:1px solid rgba(255,200,0,0.5);
               border-radius:10px; padding:0.85rem 1.1rem; margin-bottom:1.25rem;
               color:white; font-size:0.88rem;">
@@ -194,9 +194,9 @@
   {% endif %}
 
   <h2>
-    {% if order.product_type and order.product_type.allowed_specs.all %}
+    {% if order.product_code and order.product_code.allowed_specs.all %}
       Matching coils
-    {% elif order.product_type %}
+    {% elif order.product_code %}
       All coils with remaining weight (no coil specs configured)
     {% else %}
       All coils with remaining weight
@@ -232,7 +232,7 @@
   </a>
   {% empty %}
   <div class="empty">
-    {% if order.product_type and order.product_type.allowed_specs.all %}
+    {% if order.product_code and order.product_code.allowed_specs.all %}
       No coils in inventory match the allowed specs for this order.<br>
       Ask admin to update the allowed coil specs or add matching coils to inventory.
     {% else %}

@@ -27,7 +27,7 @@ def order_rows(order, show_order_number=True):
         ('Order no.', f"ORD-{order.order_no:04d}" if show_order_number and order.order_no else ''),
         ('Status', order.get_status_display()),
         ('Product type', order.product_type_name()),
-        ('Product code', order.product_type.item_code if order.product_type_id else 'To be assigned'),
+        ('Product code', order.product_code.item_code if order.product_code_id else 'To be assigned'),
         ('Grade', order.grade),
         ('Width', f"{_number(order.width)} mm" if order.width is not None else ''),
         ('Thickness', f"{_number(order.thickness)} mm" if order.thickness is not None else ''),

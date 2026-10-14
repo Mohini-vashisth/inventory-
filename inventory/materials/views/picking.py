@@ -16,11 +16,11 @@ from .common import _CoilOverCommitted, _parse_coil_no, _safe_get
 def select_order(request):
     not_started = (Order.objects
                    .filter(status='confirmed')
-                   .select_related('customer', 'product_type')
+                   .select_related('customer', 'product_code')
                    .order_by('delivery_date'))
     in_progress  = (Order.objects
                     .filter(status='in_production')
-                    .select_related('customer', 'product_type')
+                    .select_related('customer', 'product_code')
                     .order_by('delivery_date'))
     return render(request, 'materials/select_order.html', {
         'not_started': not_started,
@@ -35,9 +35,9 @@ def _coil_matches_order_specs(coil, order):
     required = order.required_grade()
     if not required or (coil.grade or '').lower() != required.lower():
         return False   # no grade on the order = nothing can be picked until admin sets one
-    if not order.product_type:
+    if not order.product_code:
         return True
-    if not order.product_type.allowed_specs.exists():
+    if not order.product_code.allowed_specs.exists():
         return True
     for spec in order.applicable_specs():
         if not spec.size or coil.size == spec.size:
@@ -55,7 +55,7 @@ def _ratio_for_coil(order, coil, specs=None):
     `specs` lets a caller looping over many coils for the same order (e.g.
     the best-fit sort in select_coil_for_order) pass an already-fetched
     list instead of re-querying allowed_specs on every single coil."""
-    if order.product_type:
+    if order.product_code:
         for spec in (specs if specs is not None else order.applicable_specs()):
             if not spec.size or spec.size == coil.size:
                 return spec.raw_material_ratio
@@ -68,7 +68,7 @@ def select_coil_for_order(request, order_pk):
     so far against how much the order needs, lists eligible coils to browse,
     and accepts a scanned/typed coil number to jump straight into picking it."""
     order = get_object_or_404(
-        Order.objects.select_related('customer', 'product_type'),
+        Order.objects.select_related('customer', 'product_code'),
         pk=order_pk,
     )
 
@@ -100,9 +100,9 @@ def select_coil_for_order(request, order_pk):
     required_grade = order.required_grade()
     coils_qs = coils_qs.filter(grade__iexact=required_grade) if required_grade else coils_qs.none()
     specs = []
-    if order.product_type:
+    if order.product_code:
         specs = order.applicable_specs()
-        if order.product_type.allowed_specs.exists():
+        if order.product_code.allowed_specs.exists():
             if not specs:
                 coils_qs = coils_qs.none()   # specs exist, but none is for this order's size
             elif all(spec.size for spec in specs):
@@ -151,7 +151,7 @@ def pick_coil_for_order(request, order_pk, coil_pk):
     """Confirm-and-allocate screen for one coil against one order — mirrors
     material_form's single-entity-confirm pattern. Product type comes from
     the order, never resubmitted, so a tampered/stale form can't override it."""
-    order = get_object_or_404(Order.objects.select_related('product_type', 'customer'), pk=order_pk)
+    order = get_object_or_404(Order.objects.select_related('product_code', 'customer'), pk=order_pk)
     coil = get_object_or_404(Material, pk=coil_pk)
 
     coil_total = coil.quantity or Decimal('0')
@@ -161,7 +161,7 @@ def pick_coil_for_order(request, order_pk, coil_pk):
     matches_specs = _coil_matches_order_specs(coil, order)
     fully_picked = order.is_fully_picked()
     no_grade = not order.required_grade()
-    blocked = exhausted or archived or not matches_specs or fully_picked or order.product_type is None or no_grade
+    blocked = exhausted or archived or not matches_specs or fully_picked or order.product_code is None or no_grade
 
     # Suggest a weight capped at both what's left on the coil and what the
     # order still needs (in this coil's raw-material terms), so an employee
@@ -191,7 +191,7 @@ def pick_coil_for_order(request, order_pk, coil_pk):
                 f"({coil_remaining:.3f} kg)."
             )
         else:
-            pt = order.product_type
+            pt = order.product_code
             try:
                 with transaction.atomic():
                     pick = OrderCoilPick.objects.create(
@@ -207,7 +207,7 @@ def pick_coil_for_order(request, order_pk, coil_pk):
                     if coil.quantity is not None and coil.weight_used() > coil.quantity:
                         raise _CoilOverCommitted
                     job = ProductionJob.objects.create(
-                        pick=pick, product_type=pt, order=order, job_no='PENDING',
+                        pick=pick, product_code=pt, order=order, job_no='PENDING',
                     )
                     job.job_no = f"JOB-{job.pk:04d}"
                     job.save(update_fields=['job_no'])

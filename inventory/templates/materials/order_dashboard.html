@@ -187,10 +187,10 @@
           <div class="form-row cols-pt">
             <div class="form-group">
               <label>Product Code</label>
-              <select name="product_type" id="dash-product-type">
+              <select name="product_code" id="dash-product-type">
                 <option value="">— select product code —</option>
-                {% for pt in product_types %}
-                <option value="{{ pt.pk }}" {% if post.product_type == pt.pk|stringformat:"s" %}selected{% endif %}>
+                {% for pt in product_codes %}
+                <option value="{{ pt.pk }}" {% if post.product_code == pt.pk|stringformat:"s" %}selected{% endif %}>
                   {{ pt.item_code }}
                 </option>
                 {% endfor %}
@@ -326,9 +326,9 @@
           <td class="muted" style="font-family:monospace;"><a href="{% url 'order_detail' order.pk %}" style="color:inherit; text-decoration:none;">ORD-{{ order.order_no|stringformat:"04d" }}</a></td>
           <td style="font-weight:600;"><a href="{% url 'order_detail' order.pk %}" style="color:inherit; text-decoration:none;">{{ order.customer.name }}</a></td>
           <td>
-            {% if order.product_type %}
-              <span style="font-size:0.82rem; font-weight:600; color:#2f7d5b;">{{ order.product_type.item_code }}</span>
-              {% if order.product_type.category %}<div class="muted" style="font-size:0.75rem;">{{ order.product_type.category.name }}</div>{% endif %}
+            {% if order.product_code %}
+              <span style="font-size:0.82rem; font-weight:600; color:#2f7d5b;">{{ order.product_code.item_code }}</span>
+              {% if order.product_code.category %}<div class="muted" style="font-size:0.75rem;">{{ order.product_code.category.name }}</div>{% endif %}
             {% else %}
               <span style="color:#f59e0b; font-size:0.78rem;">⚠ Not set</span>
             {% endif %}
@@ -435,14 +435,14 @@
 
 </div>
 
-{{ product_type_data|json_script:"product-type-data" }}
+{{ product_code_data|json_script:"product-type-data" }}
 <script>
   const autocompleteUrl = "{% url 'customer_autocomplete' %}";
-  const productTypeData = JSON.parse(document.getElementById('product-type-data').textContent);
+  const productCodeData = JSON.parse(document.getElementById('product-type-data').textContent);
 
   // ── Product type autofill ────────────────────────────────────
   document.getElementById('dash-product-type').addEventListener('change', function() {
-    const data = productTypeData[this.value];
+    const data = productCodeData[this.value];
     if (data) {
       document.getElementById('dash-grade').value = data.grade || '';
     }

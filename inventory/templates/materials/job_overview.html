@@ -29,7 +29,7 @@
 
   <h1>{{ job.job_no }}</h1>
   <p class="job-meta">
-    Product: <strong>{{ job.product_type.item_code }}</strong> &nbsp;|&nbsp;
+    Product: <strong>{{ job.product_code.item_code }}</strong> &nbsp;|&nbsp;
     Coil: <strong>{{ job.pick.coil.formatted_coil }}</strong> ({{ job.pick.weight_allocated }} kg) &nbsp;|&nbsp;
     {{ job.order.customer.name }}
   </p>
