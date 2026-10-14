@@ -146,7 +146,7 @@
     function match(row) {
       var category = field(row, 'product_category').value;
       var grade = gradeKey(field(row, 'grade').value);
-      var select = field(row, 'product_type');
+      var select = field(row, 'product_code');
       if (select.value && select.dataset.auto !== '1') return;   // chosen by hand: leave it
       var found = null;
       if (grade && category) {
@@ -170,7 +170,7 @@
         if (normalized !== event.target.value) { event.target.value = normalized; }
         match(row);
       }
-      if (/-product_type$/.test(event.target.name || '')) { event.target.dataset.auto = ''; }
+      if (/-product_code$/.test(event.target.name || '')) { event.target.dataset.auto = ''; }
       if (/-product_category$/.test(event.target.name || '')) { match(row); }
     });
     rows.addEventListener('click', function (event) {

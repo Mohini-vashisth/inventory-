@@ -128,7 +128,7 @@
 
   <h1>{{ part.label }}</h1>
   <p class="job-meta">
-    Product: <strong>{{ job.product_type.item_code }}</strong> &nbsp;|&nbsp;
+    Product: <strong>{{ job.product_code.item_code }}</strong> &nbsp;|&nbsp;
     {% if is_whole_coil %}
       Coil: <strong>{{ job.pick.coil.formatted_coil }}</strong> ({{ job.pick.weight_allocated }} kg)
     {% else %}

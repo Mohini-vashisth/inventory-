@@ -130,7 +130,7 @@ class QueryItemForm(forms.ModelForm):
 
     class Meta:
         model = QueryItem
-        fields = ['product_category', 'product_type', 'grade', 'width', 'thickness', 'quantity', 'delivery_form',
+        fields = ['product_category', 'product_code', 'grade', 'width', 'thickness', 'quantity', 'delivery_form',
                   'drawing_notes', 'technical_requirements', 'end_use']
         widgets = {
             'technical_requirements': forms.Textarea(attrs={'rows': 2}),
@@ -143,8 +143,8 @@ class QueryItemForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields['product_type'].queryset = self.fields['product_type'].queryset.order_by('item_code')
-        for name in ('product_category', 'product_type'):
+        self.fields['product_code'].queryset = self.fields['product_code'].queryset.order_by('item_code')
+        for name in ('product_category', 'product_code'):
             self.fields[name].empty_label = '— none —'
         self.fields['delivery_form'].choices = [('', '— none —')] + list(Query.DELIVERY_FORM_CHOICES)
 
@@ -243,7 +243,7 @@ class QuotationLineItemForm(forms.Form):
     gate entry's lots."""
     description  = forms.CharField(max_length=255)
     category     = forms.ModelChoiceField(queryset=None, required=False)   # product type
-    product_type = forms.ModelChoiceField(queryset=None, required=False)   # product code
+    product_code = forms.ModelChoiceField(queryset=None, required=False)   # product code
     grade        = forms.CharField(max_length=100, required=False)
     width        = forms.DecimalField(max_digits=10, decimal_places=3, min_value=0.001)
     thickness    = forms.DecimalField(max_digits=10, decimal_places=3, min_value=0.001)
@@ -259,11 +259,11 @@ class QuotationLineItemForm(forms.Form):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Imported here (not at module level) to dodge a circular-import
-        # headache with .models — ProductType is only needed for this one
+        # headache with .models — ProductCode is only needed for this one
         # queryset assignment.
-        from .models import ProductCategory, ProductType
+        from .models import ProductCategory, ProductCode
         self.fields['category'].queryset = ProductCategory.objects.all()
-        self.fields['product_type'].queryset = ProductType.objects.order_by('item_code')
+        self.fields['product_code'].queryset = ProductCode.objects.order_by('item_code')
 
     def clean_grade(self):
         from .product_codes import canonical_grade

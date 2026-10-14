@@ -16,15 +16,15 @@ from django.db.models import DecimalField, F, Sum, Value
 from django.db.models.functions import Coalesce
 from rest_framework import viewsets
 
-from .models import Material, Order, ProductionJob, ProductType
+from .models import Material, Order, ProductionJob, ProductCode
 from .serializers import (
-    MaterialSerializer, OrderSerializer, ProductionJobSerializer, ProductTypeSerializer,
+    MaterialSerializer, OrderSerializer, ProductionJobSerializer, ProductCodeSerializer,
 )
 
 
-class ProductTypeViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = ProductType.objects.prefetch_related('steps').order_by('item_code')
-    serializer_class = ProductTypeSerializer
+class ProductCodeViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = ProductCode.objects.prefetch_related('steps').order_by('item_code')
+    serializer_class = ProductCodeSerializer
 
 
 class MaterialViewSet(viewsets.ReadOnlyModelViewSet):
@@ -54,7 +54,7 @@ class ProductionJobViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         qs = (ProductionJob.objects
-              .select_related('product_type', 'pick__coil', 'order')
+              .select_related('product_code', 'pick__coil', 'order')
               .prefetch_related('step_logs__step')
               .order_by('-created_at'))
         status_param = self.request.query_params.get('status')
@@ -72,7 +72,7 @@ class OrderViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_queryset(self):
         qs = (Order.objects
-              .select_related('customer', 'product_type')
+              .select_related('customer', 'product_code')
               # Annotated so OrderSerializer.get_weight_cut can read this off
               # the row instead of issuing a fresh aggregate query per order.
               .annotate(_weight_cut=Coalesce(

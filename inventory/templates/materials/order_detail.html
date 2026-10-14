@@ -68,7 +68,7 @@
         <span class="muted">No action needed.</span>
         {% endif %}
       </div>
-      {% if not order.product_type %}<p class="warn">⚠ No product code is set, so this order can't be confirmed yet. Set one in the admin (Orders → this order).</p>{% endif %}
+      {% if not order.product_code %}<p class="warn">⚠ No product code is set, so this order can't be confirmed yet. Set one in the admin (Orders → this order).</p>{% endif %}
       {% if low_stock %}<p class="warn">⚠️ Low stock: the raw material in stock isn't enough to fulfil this order.</p>{% endif %}
       {% if outlook_unchecked %}
       <p class="muted">Stock: can't check yet (the order needs a grade and a product code).</p>
@@ -102,7 +102,7 @@
     <div class="card-body">
       <dl class="rows">
         <dt>Product type</dt><dd>{{ order.product_type_name|default:"—" }}</dd>
-        <dt>Product code</dt><dd>{% if order.product_type %}{{ order.product_type.item_code }}{% else %}<span class="blank">—</span>{% endif %}</dd>
+        <dt>Product code</dt><dd>{% if order.product_code %}{{ order.product_code.item_code }}{% else %}<span class="blank">—</span>{% endif %}</dd>
         <dt>Grade</dt><dd>{{ order.grade|default:"—" }}</dd>
         <dt>Width</dt><dd>{% if order.width is not None %}{{ order.width_text }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>
         <dt>Thickness</dt><dd>{% if order.thickness is not None %}{{ order.thickness_text }} mm{% else %}<span class="blank">—</span>{% endif %}</dd>

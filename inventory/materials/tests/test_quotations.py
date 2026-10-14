@@ -7,7 +7,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from unittest.mock import patch
 
-from ..models import Customer, ProductCategory, ProductType, Query, Quotation, QuotationLineItem
+from ..models import Customer, ProductCategory, ProductCode, Query, Quotation, QuotationLineItem
 from ..pdf import generate_quotation_pdf
 from .helpers import create_query, quotation_item_post_data
 
@@ -68,7 +68,7 @@ class QuotationFormDispatchTests(TestCase):
     def test_the_quote_email_lists_each_item_with_its_product_type(self):
         from ..models import ProductCategory
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        ProductType.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        ProductCode.objects.create(item_code='FBB009', category=flat, grade='EN8D')
         self.client.force_login(self.staff)
         self.client.post(f"{reverse('quotation_form')}?customer={self.customer.pk}",
                          self._item_data(**{'item-0-category': str(flat.pk), 'item-0-grade': 'en-8d',
@@ -501,9 +501,9 @@ class ProductCodeMatchingTests(TestCase):
         self.round_bar = ProductCategory.objects.get(name='Square Bright Bar')
         self.hex_bar = ProductCategory.objects.get(name='Triangle Bright Bar')
         self.flat_wire = ProductCategory.objects.get(name='Cold Rolled Strip')
-        self.round_code = ProductType.objects.create(item_code='RB-EN8D-12', category=self.round_bar, grade='EN8D')
-        self.hex_code = ProductType.objects.create(item_code='HB-EN8D-12', category=self.hex_bar, grade='EN8D')
-        self.wire_code = ProductType.objects.create(item_code='FW-SS304-2', category=self.flat_wire, grade='SS304')
+        self.round_code = ProductCode.objects.create(item_code='RB-EN8D-12', category=self.round_bar, grade='EN8D')
+        self.hex_code = ProductCode.objects.create(item_code='HB-EN8D-12', category=self.hex_bar, grade='EN8D')
+        self.wire_code = ProductCode.objects.create(item_code='FW-SS304-2', category=self.flat_wire, grade='SS304')
 
     def _send(self, action='send', **item):
         data = quotation_item_post_data(**{f'item-0-{k}': v for k, v in item.items()}, **{'action': action})
@@ -512,41 +512,41 @@ class ProductCodeMatchingTests(TestCase):
         return QuotationLineItem.objects.order_by('-pk').first()
 
     def test_the_code_is_matched_from_type_and_grade(self):
-        self.assertEqual(self._send(category=str(self.round_bar.pk), grade='EN8D').product_type, self.round_code)
+        self.assertEqual(self._send(category=str(self.round_bar.pk), grade='EN8D').product_code, self.round_code)
 
     def test_the_same_grade_gives_a_different_code_for_a_different_type(self):
         line = self._send(category=str(self.hex_bar.pk), grade='EN8D')
-        self.assertEqual(line.product_type, self.hex_code)
+        self.assertEqual(line.product_code, self.hex_code)
         self.assertEqual(line.category, self.hex_bar)
 
     def test_without_a_type_an_ambiguous_grade_matches_nothing(self):
-        self.assertIsNone(self._send(grade='EN8D').product_type)
+        self.assertIsNone(self._send(grade='EN8D').product_code)
 
     def test_without_a_type_a_grade_only_one_code_has_still_matches(self):
-        self.assertEqual(self._send(grade='ss304').product_type, self.wire_code)
+        self.assertEqual(self._send(grade='ss304').product_code, self.wire_code)
 
     def test_sending_for_a_type_and_grade_with_no_code_is_refused_not_created(self):
-        before = ProductType.objects.count()
+        before = ProductCode.objects.count()
         self._send(category=str(self.flat_wire.pk), grade='EN8D')
-        self.assertEqual(ProductType.objects.count(), before)   # quotes never create codes
+        self.assertEqual(ProductCode.objects.count(), before)   # quotes never create codes
         self.assertFalse(QuotationLineItem.objects.exists())   # and the send was refused
 
     def test_saving_a_draft_for_such_a_combination_leaves_the_code_unassigned(self):
         line = self._send(action='save_draft', category=str(self.flat_wire.pk), grade='EN8D')
-        self.assertIsNone(line.product_type)
+        self.assertIsNone(line.product_code)
 
     def test_a_code_picked_by_hand_is_never_overridden(self):
-        line = self._send(category=str(self.round_bar.pk), grade='EN8D', size='12', product_type=str(self.wire_code.pk))
-        self.assertEqual(line.product_type, self.wire_code)
+        line = self._send(category=str(self.round_bar.pk), grade='EN8D', size='12', product_code=str(self.wire_code.pk))
+        self.assertEqual(line.product_code, self.wire_code)
 
     def test_save_draft_matches_the_code_too(self):
         line = self._send(action='save_draft', category=str(self.hex_bar.pk), grade='EN8D')
-        self.assertEqual(line.product_type, self.hex_code)
+        self.assertEqual(line.product_code, self.hex_code)
 
     def test_the_form_shows_the_queries_product_type_and_code_and_preselects_the_code(self):
         from ..models import ProductCategory
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        code = ProductType.objects.create(item_code='FBB009', category=flat, grade='EN8D')
+        code = ProductCode.objects.create(item_code='FBB009', category=flat, grade='EN8D')
         query = create_query(source='whatsapp', contact_phone='9123456783', company_name='Show Co',
                                      product_category=flat, grade='EN8D', width='50', thickness='6.5')
         response = self.client.get(f"{reverse('quotation_form')}?query={query.pk}")
@@ -555,7 +555,7 @@ class ProductCodeMatchingTests(TestCase):
         self.assertRegex(html, r'readonly-value">Flat Bright Bar</div>')
         self.assertRegex(html, r'readonly-value">FBB009</div>')
         self.assertIn('EN8D · 50 x 6.5 mm', html)
-        self.assertEqual(response.context['formset'].forms[0].initial['product_type'], code.pk)   # not left to JavaScript
+        self.assertEqual(response.context['formset'].forms[0].initial['product_code'], code.pk)   # not left to JavaScript
         self.assertRegex(html, rf'<option value="{code.pk}"\s+selected>FBB009</option>')
 
     def test_the_form_says_when_the_catalogue_has_no_code_yet(self):
@@ -718,12 +718,12 @@ class QuotationPdfCustomerDetailsTests(TestCase):
         from ..models import ProductCategory
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
         square = ProductCategory.objects.get(name='Square Bright Bar')
-        code = ProductType.objects.create(item_code='SQB001', category=square, grade='EN8D')
+        code = ProductCode.objects.create(item_code='SQB001', category=square, grade='EN8D')
         customer = Customer.objects.create(name='Type Print Co')
         quotation = Quotation.objects.create(customer=customer, status='sent')
         QuotationLineItem.objects.create(quotation=quotation, order=1, description='Bar A', category=flat, grade='EN8D',
                                          width=Decimal('50'), thickness=Decimal('6.5'), quantity=1, rate_per_kg=10)
-        QuotationLineItem.objects.create(quotation=quotation, order=2, description='Bar B', product_type=code, grade='EN8D',
+        QuotationLineItem.objects.create(quotation=quotation, order=2, description='Bar B', product_code=code, grade='EN8D',
                                          width=Decimal('20'), thickness=Decimal('20'), quantity=1, rate_per_kg=10)   # type via its code
         with patch('reportlab.rl_config.pageCompression', 0):
             data = generate_quotation_pdf(quotation)

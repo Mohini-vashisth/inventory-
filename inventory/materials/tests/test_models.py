@@ -10,7 +10,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from ..models import (
-    Customer, GateEntry, GateEntryLot, Material, Order, OrderCoilPick, ProductCategory, ProductType,
+    Customer, GateEntry, GateEntryLot, Material, Order, OrderCoilPick, ProductCategory, ProductCode,
 )
 
 
@@ -166,10 +166,10 @@ class MaterialArchivingTests(TestCase):
     def test_cannot_pick_an_archived_coil(self):
         self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         coil = Material.objects.create(quantity=500, archived_at=timezone.now())
-        product_type = ProductType.objects.create(item_code='Bar', grade='EN8D')
+        product_code = ProductCode.objects.create(item_code='Bar', grade='EN8D')
         customer = Customer.objects.create(name='Archive Pick Co')
         order = Order.objects.create(
-            customer=customer, product_type=product_type, quantity=100, status='confirmed', grade='EN8D')
+            customer=customer, product_code=product_code, quantity=100, status='confirmed', grade='EN8D')
 
         response = self.client.post(
             reverse('pick_coil_for_order', kwargs={'order_pk': order.pk, 'coil_pk': coil.pk}),
@@ -196,28 +196,28 @@ class MaterialArchivingTests(TestCase):
         self.assertIn(archived.pk, ids)
 
 
-class ProductTypeUniquenessTests(TestCase):
+class ProductCodeUniquenessTests(TestCase):
     """A grade/size combination identifies exactly one product type."""
 
     def test_duplicate_grade_and_size_rejected(self):
-        ProductType.objects.create(item_code='Bar A', grade='EN8D')
+        ProductCode.objects.create(item_code='Bar A', grade='EN8D')
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
-                ProductType.objects.create(item_code='Bar B', grade='EN8D')
+                ProductCode.objects.create(item_code='Bar B', grade='EN8D')
 
     def test_the_same_grade_and_size_is_allowed_in_different_product_types(self):
         round_bar = ProductCategory.objects.get(name='Square Bright Bar')
         hex_bar = ProductCategory.objects.get(name='Triangle Bright Bar')
-        ProductType.objects.create(item_code='RB-EN8D-12', category=round_bar, grade='EN8D')
-        ProductType.objects.create(item_code='HB-EN8D-12', category=hex_bar, grade='EN8D')
-        self.assertEqual(ProductType.objects.filter(grade='EN8D').count(), 2)
+        ProductCode.objects.create(item_code='RB-EN8D-12', category=round_bar, grade='EN8D')
+        ProductCode.objects.create(item_code='HB-EN8D-12', category=hex_bar, grade='EN8D')
+        self.assertEqual(ProductCode.objects.filter(grade='EN8D').count(), 2)
 
     def test_the_same_type_and_grade_is_rejected(self):
         round_bar = ProductCategory.objects.get(name='Square Bright Bar')
-        ProductType.objects.create(item_code='RB-1', category=round_bar, grade='EN8D')
+        ProductCode.objects.create(item_code='RB-1', category=round_bar, grade='EN8D')
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
-                ProductType.objects.create(item_code='RB-2', category=round_bar, grade='EN8D')
+                ProductCode.objects.create(item_code='RB-2', category=round_bar, grade='EN8D')
 
     def test_the_seven_product_types_are_in_place_with_their_codes_in_order(self):
         self.assertEqual(
@@ -227,13 +227,13 @@ class ProductTypeUniquenessTests(TestCase):
              ('Triangle Bright Bar', 'TBB')])
 
     def test_codes_without_a_type_cannot_repeat_a_grade(self):
-        ProductType.objects.create(item_code='Bar A', grade='EN8D')
+        ProductCode.objects.create(item_code='Bar A', grade='EN8D')
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
-                ProductType.objects.create(item_code='Bar B', grade='EN8D')
+                ProductCode.objects.create(item_code='Bar B', grade='EN8D')
 
     def test_size_is_not_part_of_a_product_code(self):
-        self.assertNotIn('size', [f.name for f in ProductType._meta.get_fields()])
+        self.assertNotIn('size', [f.name for f in ProductCode._meta.get_fields()])
 
 
 class GateEntryModelTests(TestCase):

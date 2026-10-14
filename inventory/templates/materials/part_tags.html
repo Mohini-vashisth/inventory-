@@ -32,7 +32,7 @@
     <div class="tag-details">
       <div class="row"><span class="field-name">Job</span><span>{{ job.job_no }}</span></div>
       <div class="row"><span class="field-name">Coil</span><span>{{ job.pick.coil.formatted_coil }}</span></div>
-      <div class="row"><span class="field-name">Product</span><span>{{ job.product_type.item_code }}</span></div>
+      <div class="row"><span class="field-name">Product</span><span>{{ job.product_code.item_code }}</span></div>
       <div class="row"><span class="field-name">Grade</span><span>{{ job.pick.coil.grade|default:"—" }}</span></div>
       <div class="row"><span class="field-name">Customer</span><span>{{ job.order.customer.name }}</span></div>
     </div>

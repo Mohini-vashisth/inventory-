@@ -15,11 +15,11 @@ from django.db import transaction
 from django.db.models import Sum
 from django.http import JsonResponse
 
-from ..models import ProductCategory, ProductType, Customer, Query, Order
+from ..models import ProductCategory, ProductCode, Customer, Query, Order
 from ..forms import CustomerOrderForm, OrderForm, OrderItemFormSet
 from ..order_pdf import generate_order_summary_pdf
 from ..decorators import redirect_to_admin_login, staff_required
-from .common import _first_form_error, _first_formset_error, _match_product_type
+from .common import _first_form_error, _first_formset_error, _match_product_code
 from .quotations import _public_quote_base_url
 
 logger = logging.getLogger(__name__)
@@ -38,8 +38,8 @@ def _send_order_confirmation_email(order):
         return 'not_configured'
     lines = [f"  {order.spec_text() or 'Item'}" + (f" — {order.quantity:.0f} kg" if order.quantity is not None else '')]
     details = []
-    if order.product_type_id:
-        details.append(f"Product code: {order.product_type.item_code}")
+    if order.product_code_id:
+        details.append(f"Product code: {order.product_code.item_code}")
     if order.delivery_form:
         details.append(f"Delivery form: {order.delivery_detail_text()}")
     if order.delivery_date:
@@ -80,7 +80,7 @@ def order_detail(request, pk):
     requirements and attachments, the quote and query it came from, and the coils picked for it —
     with the same Confirm / Reject / Dispatch actions as the Orders list."""
     order = get_object_or_404(
-        Order.objects.select_related('customer', 'product_type__category', 'source_query'), pk=pk)
+        Order.objects.select_related('customer', 'product_code__category', 'source_query'), pk=pk)
     picks = list(order.coil_picks.select_related('coil').order_by('pk'))
     weight_picked = sum((pick.weight_allocated for pick in picks), Decimal('0'))
     low_stock = False
@@ -103,14 +103,14 @@ def order_detail(request, pk):
 def order_dashboard(request):
 
     orders = (Order.objects
-              .select_related('customer', 'product_type__category')
+              .select_related('customer', 'product_code__category')
               .annotate(weight_cut=Sum('coil_picks__weight_allocated'))
               .order_by('-created_at'))
     customers = Customer.objects.order_by('name')
-    product_types = ProductType.objects.order_by('item_code')
-    product_type_data = {
+    product_codes = ProductCode.objects.order_by('item_code')
+    product_code_data = {
         str(pt.pk): {'grade': pt.grade}
-        for pt in product_types
+        for pt in product_codes
     }
     error = None
 
@@ -156,7 +156,7 @@ def order_dashboard(request):
         if order.status not in ('confirmed', 'in_production', 'pending'):
             continue
         # The cache key includes the size: which specs apply can depend on the order's width and thickness.
-        cache_key = (order.product_type_id, order.grade, order.width, order.thickness)
+        cache_key = (order.product_code_id, order.grade, order.width, order.thickness)
         if cache_key not in raw_material_output_cache:
             raw_material_output_cache[cache_key] = order.available_raw_material_output()
         available = raw_material_output_cache[cache_key]
@@ -169,8 +169,8 @@ def order_dashboard(request):
     return render(request, 'materials/order_dashboard.html', {
         'orders': orders,
         'customers': customers,
-        'product_types': product_types,
-        'product_type_data': product_type_data,
+        'product_codes': product_codes,
+        'product_code_data': product_code_data,
         'error': error,
         'post': request.POST if error else {},
         'quote_base_url': _public_quote_base_url(request),
@@ -198,7 +198,7 @@ def order_confirm(request, pk):
     order = get_object_or_404(Order, pk=pk)
     if order.status != 'pending':
         return redirect('order_dashboard')
-    if not order.product_type_id:
+    if not order.product_code_id:
         messages.error(request, f"ORD-{order.order_no:04d} cannot be confirmed without a product type. Edit the order to assign one.")
         return redirect('order_dashboard')
     order.status = 'confirmed'
@@ -260,11 +260,11 @@ def quote_form(request, token):
     # The query (if any) that led to this quote being sent.
     query = Query.objects.filter(customer=customer, status='quote_sent').order_by('-created_at').first()
     quotation = customer.quotations.filter(status='sent').order_by('-quotation_no').first()
-    items = list(quotation.line_items.select_related('product_type__category', 'category').order_by('order')) if quotation else []
+    items = list(quotation.line_items.select_related('product_code__category', 'category').order_by('order')) if quotation else []
     for item in items:
         # What the customer is shown (and what the order gets): the quoted code, else the catalogue's
         # code for the item's type + grade; the type from the line, else from that code.
-        item.shown_code = item.product_type or _match_product_type(item.grade, item.category)
+        item.shown_code = item.product_code or _match_product_code(item.grade, item.category)
         item.shown_type = item.category or (item.shown_code.category if item.shown_code else None)
     error = None
 
@@ -314,7 +314,7 @@ def quote_form(request, token):
                         order = item_form.save(commit=False)
                         order.customer = customer
                         order.source_query = query
-                        order.product_type = item.shown_code
+                        order.product_code = item.shown_code
                         order.grade = item.grade
                         order.width = item.width
                         order.thickness = item.thickness
@@ -340,7 +340,7 @@ def quote_form(request, token):
             order = form.save(commit=False)
             order.customer = customer
             order.source_query = query
-            order.product_type = _match_product_type(
+            order.product_code = _match_product_code(
                 order.grade, ProductCategory.objects.filter(pk=request.POST.get('product_category') or 0).first())
             order.status = 'pending'
             order.save()

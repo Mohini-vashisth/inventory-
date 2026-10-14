@@ -193,10 +193,10 @@
               </div>
               <div class="form-group">
                 <label>Product Code</label>
-                <select name="item-{{ forloop.counter0 }}-product_type">
+                <select name="item-{{ forloop.counter0 }}-product_code">
                   <option value="">— none —</option>
-                  {% for pt in item_form.fields.product_type.queryset %}
-                  <option value="{{ pt.pk }}" {% if item_form.product_type.value|stringformat:"s" == pt.pk|stringformat:"s" %}selected{% endif %}>{{ pt.item_code }}</option>
+                  {% for pt in item_form.fields.product_code.queryset %}
+                  <option value="{{ pt.pk }}" {% if item_form.product_code.value|stringformat:"s" == pt.pk|stringformat:"s" %}selected{% endif %}>{{ pt.item_code }}</option>
                   {% endfor %}
                 </select>
               </div>
@@ -414,7 +414,7 @@
         '<div class="form-group"><label>Product Type</label>' +
           '<select name="item-' + index + '-category">' + document.querySelector('[name="item-0-category"]').innerHTML + '</select></div>' +
         '<div class="form-group"><label>Product Code</label>' +
-          '<select name="item-' + index + '-product_type">' + document.querySelector('[name="item-0-product_type"]').innerHTML + '</select></div>' +
+          '<select name="item-' + index + '-product_code">' + document.querySelector('[name="item-0-product_code"]').innerHTML + '</select></div>' +
       '</div>' +
       '<div class="form-row cols-6">' +
         '<div class="form-group"><label>Grade</label><input type="text" name="item-' + index + '-grade" placeholder="Start typing…" list="grade-options" autocomplete="off"></div>' +
@@ -433,7 +433,7 @@
       '</div>';
 
     // The copied options carry row 1's selected="selected"; a new row starts with no code.
-    row.querySelector('select[name$="-product_type"]').value = '';
+    row.querySelector('select[name$="-product_code"]').value = '';
     row.querySelector('select[name$="-category"]').value = '';
     document.getElementById('items-container').appendChild(row);
     totalInput.value = index + 1;
@@ -496,7 +496,7 @@
     function matchRow(row) {
       var grade = gradeKey(row.querySelector('[name$="-grade"]').value);
       var category = row.querySelector('select[name$="-category"]').value;
-      var select = row.querySelector('select[name$="-product_type"]');
+      var select = row.querySelector('select[name$="-product_code"]');
       if (select.value && select.dataset.auto !== '1') return;
       var found = null;
       if (grade) {
@@ -526,7 +526,7 @@
     container.addEventListener('change', function (event) {
       var name = event.target.name || '';
       if (/-grade$/.test(name)) canonicalGrade(event.target);
-      if (/-product_type$/.test(name)) event.target.dataset.auto = '';
+      if (/-product_code$/.test(name)) event.target.dataset.auto = '';
       if (/-category$/.test(name)) matchRow(event.target.closest('.item-row'));
     });
     document.querySelectorAll('.item-row').forEach(matchRow);

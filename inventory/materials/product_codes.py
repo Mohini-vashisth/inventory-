@@ -15,7 +15,7 @@ import re
 
 from django.db.models import Max
 
-from .models import GradeOption, ProductType, normalize_grade
+from .models import GradeOption, ProductCode, normalize_grade
 
 MAX_GRADE_NUMBER = 999
 
@@ -38,7 +38,7 @@ def find_grade_option(grade):
 def find_product_code(category, grade, exclude_pk=None):
     """The existing code for this type + grade, whichever way the grade is spelled."""
     key = grade_key(grade)
-    candidates = ProductType.objects.exclude(pk=exclude_pk).filter(category=category)
+    candidates = ProductCode.objects.exclude(pk=exclude_pk).filter(category=category)
     return next((c for c in candidates if grade_key(c.grade) == key), None)
 
 
@@ -99,7 +99,7 @@ def _grade_number(grade):
 def _unique_item_code(base, exclude_pk=None):
     """`base`, or `base-2`, `base-3`... if a hand-made code already uses that text."""
     item_code, suffix = base, 1
-    while ProductType.objects.exclude(pk=exclude_pk).filter(item_code=item_code).exists():
+    while ProductCode.objects.exclude(pk=exclude_pk).filter(item_code=item_code).exists():
         suffix += 1
         item_code = f"{base}-{suffix}"
     return item_code

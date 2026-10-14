@@ -264,7 +264,7 @@ class ProductCategory(models.Model):
     """What the business calls a *product type*: Round Bright Bar, Key Steel,
     Flat Wire, ... (the menu on its website). A product code is one of these in
     a particular grade and size. NAMING: on screen this is "Product Type"; the
-    model that holds product codes is `ProductType` (an older name kept so as
+    model that holds product codes is `ProductCode` (an older name kept so as
     not to rename every table, field and URL) — see CLAUDE.md."""
     name     = models.CharField(max_length=100, unique=True)
     # The 3 letters this type starts every product code with (FBB = Flat Bright Bar).
@@ -285,7 +285,7 @@ class ProductCategory(models.Model):
         return self.name
 
 
-class ProductType(models.Model):
+class ProductCode(models.Model):
     """A **product code** (that's what the screens call it): e.g. FBB009 — Flat Bright
     Bar in EN-8D — defines the product, its grade, and which steps apply.
 
@@ -316,6 +316,7 @@ class ProductType(models.Model):
         ]
         verbose_name = 'product code'
         verbose_name_plural = 'product codes'
+        db_table = 'materials_producttype'   # the table keeps the model's old name: only the code names changed
 
     def __str__(self):
         return self.item_code
@@ -324,7 +325,7 @@ class ProductType(models.Model):
 class AllowedCoilSpec(models.Model):
     """Raw coil sizes (and the wastage ratio) the admin approves for a product code. The coil's grade is not
     part of the spec: it must always be the order's own grade."""
-    product_type = models.ForeignKey(ProductType, on_delete=models.CASCADE, related_name='allowed_specs')
+    product_code = models.ForeignKey(ProductCode, db_column='product_type_id', on_delete=models.CASCADE, related_name='allowed_specs')
     size  = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Size (mm)")
     raw_material_ratio = models.DecimalField(
         max_digits=6, decimal_places=3, default=Decimal('1.000'),
@@ -348,7 +349,7 @@ class AllowedCoilSpec(models.Model):
         return True
 
     def __str__(self):
-        text = f"{self.product_type.item_code} — {f'{self.size} mm' if self.size else 'Any size'}"
+        text = f"{self.product_code.item_code} — {f'{self.size} mm' if self.size else 'Any size'}"
         if not self.is_generic():
             sizes = ' x '.join(format(v.normalize(), 'f') for v in (self.order_width, self.order_thickness) if v is not None)
             text += f" (for {sizes} mm orders)"
@@ -356,8 +357,8 @@ class AllowedCoilSpec(models.Model):
 
 
 class ProcessStep(models.Model):
-    """A named step belonging to a product type, with a defined order."""
-    product_type = models.ForeignKey(ProductType, on_delete=models.CASCADE, related_name='steps')
+    """A named step belonging to a product code, with a defined order."""
+    product_code = models.ForeignKey(ProductCode, db_column='product_type_id', on_delete=models.CASCADE, related_name='steps')
     name = models.CharField(max_length=100)   # e.g. "Blanking", "Forming", "Heat treat"
     order = models.PositiveIntegerField()      # 1, 2, 3 ...
     # Material is cut into smaller parts at some steps: completing a step marked "splits the material" asks
@@ -368,10 +369,10 @@ class ProcessStep(models.Model):
 
     class Meta:
         ordering = ['order']
-        unique_together = ['product_type', 'order']
+        unique_together = ['product_code', 'order']
 
     def __str__(self):
-        return f"{self.product_type.item_code} — Step {self.order}: {self.name}"
+        return f"{self.product_code.item_code} — Step {self.order}: {self.name}"
 
 
 class OrderCoilPick(models.Model):
@@ -389,10 +390,10 @@ class OrderCoilPick(models.Model):
     def output_equivalent(self):
         """weight_allocated converted into finished-product terms, using the
         raw_material_ratio of whichever AllowedCoilSpec matches this coil's
-        grade/size under the order's product type. Falls back to 1:1 if no
-        spec matches (e.g. the product type has no specs configured)."""
+        grade/size under the order's product code. Falls back to 1:1 if no
+        spec matches (e.g. the product code has no specs configured)."""
         ratio = Decimal('1')
-        if self.order.product_type:
+        if self.order.product_code:
             for spec in self.order.applicable_specs():
                 if not spec.size or spec.size == self.coil.size:
                     ratio = spec.raw_material_ratio
@@ -404,7 +405,7 @@ class OrderCoilPick(models.Model):
 
 
 class ProductionJob(models.Model):
-    """Links a picked coil to a product type and tracks overall status."""
+    """Links a picked coil to a product code and tracks overall status."""
     STATUS_CHOICES = [
         ('pending',     'Pending'),
         ('in_progress', 'In Progress'),
@@ -413,7 +414,7 @@ class ProductionJob(models.Model):
     ]
 
     pick         = models.ForeignKey(OrderCoilPick, on_delete=models.CASCADE, related_name='jobs')
-    product_type = models.ForeignKey(ProductType, on_delete=models.PROTECT)
+    product_code = models.ForeignKey(ProductCode, db_column='product_type_id', on_delete=models.PROTECT)
     order        = models.ForeignKey('Order', on_delete=models.CASCADE, related_name='jobs')
     job_no       = models.CharField(max_length=30, unique=True)   # e.g. JOB-0001
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
@@ -451,7 +452,7 @@ class ProductionJob(models.Model):
         completed every step. Single source of truth — called from the employee step-update views and from
         StepLogAdmin whenever a StepLog is added, changed, or deleted, so this stays correct regardless of
         where a log came from."""
-        steps = list(self.product_type.steps.all())
+        steps = list(self.product_code.steps.all())
         self.root_part()   # make sure there is at least the whole-coil part to look at
         statuses, all_done = [], bool(steps)
         for part in self.active_parts():
@@ -476,7 +477,7 @@ class ProductionJob(models.Model):
 
     def finished_weight(self):
         """Weight of the parts that have been through every step."""
-        steps = list(self.product_type.steps.all())
+        steps = list(self.product_code.steps.all())
         total = Decimal('0')
         for part in self.active_parts():
             latest = part.latest_logs_by_step()
@@ -711,7 +712,7 @@ class QueryItem(models.Model):
     position         = models.PositiveSmallIntegerField(default=1)
     # The product type (family) — chosen from the bot's list, or set by staff.
     product_category = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
-    product_type     = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)   # the product code
+    product_code     = models.ForeignKey(ProductCode, db_column='product_type_id', on_delete=models.SET_NULL, null=True, blank=True)   # the product code
     grade            = GradeField(max_length=100, blank=True)
     width            = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
     thickness        = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Thickness (mm)")
@@ -747,7 +748,7 @@ class QueryItem(models.Model):
 
     def effective_product_code(self):
         """The code linked to the item, else the one its type + grade point to."""
-        return self.product_type or self.matching_product_code()
+        return self.product_code or self.matching_product_code()
 
     def summary_text(self):
         """"Flat Bright Bar · EN8D · 50 x 6.5 mm · 500 kg · Coil" — whatever is known about it."""
@@ -950,7 +951,7 @@ class QuotationLineItem(models.Model):
     order        = models.PositiveIntegerField(default=1, help_text="Display order (Sr. No.) within the quotation.")
     description  = models.CharField(max_length=255)
     category     = models.ForeignKey(ProductCategory, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
-    product_type = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True)
+    product_code = models.ForeignKey(ProductCode, db_column='product_type_id', on_delete=models.SET_NULL, null=True, blank=True)
     grade        = GradeField(max_length=100, blank=True)
     width        = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
     thickness    = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Thickness (mm)")
@@ -974,7 +975,7 @@ class QuotationLineItem(models.Model):
 
     def product_type_name(self):
         """The product type (e.g. Flat Bright Bar): the line's own, else its product code's."""
-        category = self.category or (self.product_type.category if self.product_type else None)
+        category = self.category or (self.product_code.category if self.product_code else None)
         return category.name if category else ''
 
     def spec_text(self):
@@ -1031,7 +1032,7 @@ class Order(models.Model):
     )
     customer              = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='orders')
     source_query          = models.ForeignKey(Query, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
-    product_type          = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Code")
+    product_code          = models.ForeignKey(ProductCode, db_column='product_type_id', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Code")
     # 1. Drawing / dimensions
     drawing_dimensions    = models.TextField(blank=True, verbose_name="Drawing / Dimensions")   # typed text: staff entry and older orders
     # What the customer attaches on the order form (instead of typing dimensions), and their tolerances:
@@ -1105,10 +1106,10 @@ class Order(models.Model):
     def applicable_specs(self):
         """The allowed coil specs that govern this order: those made for its exact size (width/thickness) if any
         apply, otherwise the size-less ones. Empty when none is configured, or when specs exist only for other
-        sizes (check `product_type.allowed_specs.exists()` to tell the two apart)."""
-        if not self.product_type_id:
+        sizes (check `product_code.allowed_specs.exists()` to tell the two apart)."""
+        if not self.product_code_id:
             return []
-        specs = list(self.product_type.allowed_specs.all())
+        specs = list(self.product_code.allowed_specs.all())
         specific = [spec for spec in specs if not spec.is_generic() and spec.applies_to(self)]
         return specific or [spec for spec in specs if spec.is_generic()]
 
@@ -1121,10 +1122,10 @@ class Order(models.Model):
         None if there's no product type yet to check against. Used to warn
         an admin confirming an order that raw material may need reordering
         before production can actually happen."""
-        if not self.product_type or not self.required_grade():
+        if not self.product_code or not self.required_grade():
             return None   # nothing to check against until the order has a product code and a grade
         specs = self.applicable_specs()
-        if not specs and self.product_type.allowed_specs.exists():
+        if not specs and self.product_code.allowed_specs.exists():
             return Decimal('0')   # specs are configured but none is for this order's size: nothing qualifies
         total = Decimal('0')
         for spec in (specs or [None]):  # None = wildcard, matches any coil
@@ -1151,7 +1152,7 @@ class Order(models.Model):
         otherwise a set (empty when specs exist but none is for this order's size)."""
         specs = self.applicable_specs()
         if not specs:
-            has_specs = bool(self.product_type_id) and self.product_type.allowed_specs.exists()
+            has_specs = bool(self.product_code_id) and self.product_code.allowed_specs.exists()
             return set() if has_specs else None
         if any(spec.size is None for spec in specs):
             return None
@@ -1172,9 +1173,9 @@ class Order(models.Model):
         my_sizes = self._coil_sizes_allowed()
         rivals = []
         rival_orders = (Order.objects.filter(status__in=('confirmed', 'in_production'), grade__iexact=self.required_grade())
-                        .exclude(pk=self.pk).select_related('product_type', 'customer'))
+                        .exclude(pk=self.pk).select_related('product_code', 'customer'))
         for other in rival_orders:
-            if not other.product_type_id:
+            if not other.product_code_id:
                 continue
             their_sizes = other._coil_sizes_allowed()
             if my_sizes is not None and their_sizes is not None and not (my_sizes & their_sizes):
@@ -1226,7 +1227,7 @@ class Order(models.Model):
 
     def product_type_name(self):
         """The product type (e.g. Flat Bright Bar), taken from the order's product code."""
-        category = self.product_type.category if self.product_type_id else None
+        category = self.product_code.category if self.product_code_id else None
         return category.name if category else ''
 
     def spec_text(self):

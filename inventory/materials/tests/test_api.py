@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from ..models import Customer, Material, Order, OrderCoilPick, ProcessStep, ProductionJob, ProductType
+from ..models import Customer, Material, Order, OrderCoilPick, ProcessStep, ProductionJob, ProductCode
 
 
 class OrderApiTests(TestCase):
@@ -13,9 +13,9 @@ class OrderApiTests(TestCase):
         self.client = APIClient()
         self.staff = User.objects.create_user('api_staff', password='pw', is_staff=True)
         self.customer = Customer.objects.create(name='Acme Corp')
-        self.product_type = ProductType.objects.create(item_code='Bar', grade='EN8D')
+        self.product_code = ProductCode.objects.create(item_code='Bar', grade='EN8D')
         self.order = Order.objects.create(
-            customer=self.customer, product_type=self.product_type,
+            customer=self.customer, product_code=self.product_code,
             quantity=250, status='in_production',
         )
 
@@ -52,13 +52,13 @@ class OrderApiTests(TestCase):
         """weight_cut used to run a fresh aggregate per order (N+1) — the
         viewset now annotates it on the queryset instead. Query count for the
         list endpoint should stay flat as the number of orders grows."""
-        job_product_type = ProductType.objects.create(item_code='Jobbed', grade='JOB-GRADE')
+        job_product_code = ProductCode.objects.create(item_code='Jobbed', grade='JOB-GRADE')
         for i in range(5):
             order = Order.objects.create(customer=self.customer, quantity=10, status='pending')
             coil = Material.objects.create(quantity=50)
             pick = OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=20)
             ProductionJob.objects.create(
-                pick=pick, product_type=job_product_type, job_no=f'QJOB-{i}', order=order,
+                pick=pick, product_code=job_product_code, job_no=f'QJOB-{i}', order=order,
             )
         self.client.force_authenticate(user=self.staff)
 
@@ -105,19 +105,19 @@ class CoilApiTests(TestCase):
         self.assertEqual(len(response.data['results']), 5)
 
 
-class ProductTypeAndJobApiTests(TestCase):
+class ProductCodeAndJobApiTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.staff = User.objects.create_user('api_staff3', password='pw', is_staff=True)
-        self.product_type = ProductType.objects.create(item_code='API Bar', grade='EN8D')
-        ProcessStep.objects.create(product_type=self.product_type, name='Cutting', order=1)
+        self.product_code = ProductCode.objects.create(item_code='API Bar', grade='EN8D')
+        ProcessStep.objects.create(product_code=self.product_code, name='Cutting', order=1)
         coil = Material.objects.create(quantity=500)
         self.order = Order.objects.create(
             customer=Customer.objects.create(name='API Job Co'), quantity=100, status='in_production',
         )
         self.pick = OrderCoilPick.objects.create(order=self.order, coil=coil, weight_allocated=50)
         self.job = ProductionJob.objects.create(
-            pick=self.pick, product_type=self.product_type, job_no='API-JOB-0001',
+            pick=self.pick, product_code=self.product_code, job_no='API-JOB-0001',
             order=self.order, status='in_progress',
         )
 
@@ -125,13 +125,13 @@ class ProductTypeAndJobApiTests(TestCase):
         self.client.force_authenticate(user=self.staff)
         response = self.client.get('/api/product-types/')
         self.assertEqual(response.status_code, 200)
-        row = next(r for r in response.data['results'] if r['id'] == self.product_type.pk)
+        row = next(r for r in response.data['results'] if r['id'] == self.product_code.pk)
         self.assertEqual(row['steps'][0]['name'], 'Cutting')
 
     def test_job_status_filter(self):
         other_pick = OrderCoilPick.objects.create(order=self.order, coil=self.pick.coil, weight_allocated=50)
         other = ProductionJob.objects.create(
-            pick=other_pick, product_type=self.product_type, job_no='API-JOB-0002',
+            pick=other_pick, product_code=self.product_code, job_no='API-JOB-0002',
             order=self.order, status='completed',
         )
         self.client.force_authenticate(user=self.staff)
@@ -145,7 +145,7 @@ class ProductTypeAndJobApiTests(TestCase):
         )
         other_pick = OrderCoilPick.objects.create(order=other_order, coil=self.pick.coil, weight_allocated=50)
         ProductionJob.objects.create(
-            pick=other_pick, product_type=self.product_type, job_no='API-JOB-0003', order=other_order,
+            pick=other_pick, product_code=self.product_code, job_no='API-JOB-0003', order=other_order,
         )
         self.client.force_authenticate(user=self.staff)
         response = self.client.get(f'/api/jobs/?order={self.order.pk}')

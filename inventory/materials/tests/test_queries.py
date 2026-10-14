@@ -9,7 +9,7 @@ from django.urls import reverse
 from django.utils import timezone
 from unittest.mock import patch
 
-from ..models import Customer, Order, ProductCategory, ProductType, Query, QueryItem, Quotation
+from ..models import Customer, Order, ProductCategory, ProductCode, Query, QueryItem, Quotation
 from ..views.whatsapp import (
     WhatsAppSendError,
     WHATSAPP_QUERY_INTAKE_TEMPLATE,
@@ -25,7 +25,7 @@ class QueryDashboardTests(TestCase):
 
     def setUp(self):
         self.staff = User.objects.create_user('query_staff', password='pw', is_staff=True)
-        self.product_type = ProductType.objects.create(item_code='Query Bar', grade='EN8D')
+        self.product_code = ProductCode.objects.create(item_code='Query Bar', grade='EN8D')
 
     def test_anonymous_cannot_view_dashboard(self):
         response = self.client.get(reverse('query_dashboard'))
@@ -160,7 +160,7 @@ class QueryDashboardTests(TestCase):
         through to the QuotationLineItem."""
         query = create_query(
             source='call', company_name='Prefill Rate Co', contact_email='prefill@example.com',
-            product_type=self.product_type, grade='EN8D', width=Decimal('50'), thickness=Decimal('6'),
+            product_code=self.product_code, grade='EN8D', width=Decimal('50'), thickness=Decimal('6'),
         )
         self.client.force_login(self.staff)
         get_response = self.client.get(f"{reverse('quotation_form')}?query={query.pk}")
@@ -172,7 +172,7 @@ class QueryDashboardTests(TestCase):
             f"{reverse('quotation_form')}?query={query.pk}",
             quotation_item_post_data(**{
                 'item-0-rate_per_kg': '60', 'item-0-grade': 'EN8D', 'item-0-width': '50', 'item-0-thickness': '6',
-                'item-0-product_type': str(self.product_type.pk),
+                'item-0-product_code': str(self.product_code.pk),
             }),
         )
 
@@ -180,7 +180,7 @@ class QueryDashboardTests(TestCase):
         item = quotation.line_items.get()
         self.assertEqual(item.grade, 'EN8D')
         self.assertEqual((item.width, item.thickness), (Decimal('50'), Decimal('6')))
-        self.assertEqual(item.product_type, self.product_type)
+        self.assertEqual(item.product_code, self.product_code)
 
     @override_settings(
         PUBLIC_QUOTE_BASE_URL='https://quote.mattadrawing.com',
@@ -233,12 +233,12 @@ class QueryDashboardTests(TestCase):
         self.assertEqual(query.notes, 'corrected via dashboard')
 
     def test_edit_query_links_product_type(self):
-        product_type = ProductType.objects.create(item_code='Edit Bar', grade='SS304')
+        product_code = ProductCode.objects.create(item_code='Edit Bar', grade='SS304')
         query = Query.objects.create(source='call', contact_phone='9123456780')
         self.client.force_login(self.staff)
         self.client.post(reverse('query_edit', kwargs={'pk': query.pk}), query_edit_data(
-            query, rows=[{'product_type': str(product_type.pk)}]))
-        self.assertEqual(query.items.get().product_type, product_type)
+            query, rows=[{'product_code': str(product_code.pk)}]))
+        self.assertEqual(query.items.get().product_code, product_code)
 
     def _edit(self, query, **row):
         """Edit the query's (only) product row: `row` fields replace what it has."""
@@ -251,23 +251,23 @@ class QueryDashboardTests(TestCase):
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
         from ..models import GradeOption
         GradeOption.objects.create(name='EN8D')
-        code = ProductType.objects.create(item_code='FBB00100120', category=flat, grade='EN8D')
+        code = ProductCode.objects.create(item_code='FBB00100120', category=flat, grade='EN8D')
         query = Query.objects.create(source='call', contact_phone='9123456780')
         self.client.force_login(self.staff)
         self._edit(query, product_category=str(flat.pk), grade='en8d', width='50', thickness='6')
         item = query.items.get()
-        self.assertEqual(item.product_type, code)
+        self.assertEqual(item.product_code, code)
         self.assertEqual(item.grade, 'EN8D')   # tidied to the listed spelling too
 
     def test_a_code_picked_by_hand_is_not_replaced_by_the_match(self):
         from ..models import ProductCategory
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        ProductType.objects.create(item_code='FBB00100120', category=flat, grade='EN8D')
-        picked = ProductType.objects.create(item_code='HAND', grade='SS304')
+        ProductCode.objects.create(item_code='FBB00100120', category=flat, grade='EN8D')
+        picked = ProductCode.objects.create(item_code='HAND', grade='SS304')
         query = Query.objects.create(source='call', contact_phone='9123456780')
         self.client.force_login(self.staff)
-        self._edit(query, product_category=str(flat.pk), grade='EN8D', width='50', thickness='6', product_type=str(picked.pk))
-        self.assertEqual(query.items.get().product_type, picked)
+        self._edit(query, product_category=str(flat.pk), grade='EN8D', width='50', thickness='6', product_code=str(picked.pk))
+        self.assertEqual(query.items.get().product_code, picked)
 
     def test_no_match_leaves_the_code_empty(self):
         from ..models import ProductCategory
@@ -275,12 +275,12 @@ class QueryDashboardTests(TestCase):
         query = Query.objects.create(source='call', contact_phone='9123456780')
         self.client.force_login(self.staff)
         self._edit(query, product_category=str(flat.pk), grade='EN8D', width='50', thickness='6')
-        self.assertIsNone(query.items.get().product_type)
+        self.assertIsNone(query.items.get().product_code)
 
     def test_the_edit_page_carries_the_code_map_and_grade_suggestions_for_live_fill(self):
         from ..models import GradeOption, ProductCategory
         flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        code = ProductType.objects.create(item_code='FBB00100120', category=flat, grade='EN8D')
+        code = ProductCode.objects.create(item_code='FBB00100120', category=flat, grade='EN8D')
         GradeOption.objects.create(name='EN8D')
         query = Query.objects.create(source='call', contact_phone='9123456780')
         self.client.force_login(self.staff)
@@ -314,7 +314,7 @@ class QueryDashboardTests(TestCase):
         customer = Customer.objects.create(name='Prefill Co')
         create_query(
             source='call', company_name='Prefill Co', customer=customer, status='quote_sent',
-            product_type=self.product_type, grade='EN8D', width=Decimal('50'), thickness=Decimal('6'),
+            product_code=self.product_code, grade='EN8D', width=Decimal('50'), thickness=Decimal('6'),
             quantity=Decimal('750'), notes='Call back before Friday',
         )
         response = self.client.get(reverse('quote_form', kwargs={'token': customer.quote_token}))
@@ -724,11 +724,11 @@ class QueryProductCodeLinkTests(TestCase):
         self.client.force_login(self.staff)
         from ..models import ProductCategory
         self.flat = ProductCategory.objects.get(name='Flat Bright Bar')
-        self.code = ProductType.objects.create(item_code='FBB009', category=self.flat, grade='EN8D')
+        self.code = ProductCode.objects.create(item_code='FBB009', category=self.flat, grade='EN8D')
 
     def test_the_detail_page_shows_the_code_for_the_type_and_grade_even_if_not_linked(self):
         query = create_query(source='call', contact_phone='9123456780', product_category=self.flat, grade='en-8d')
-        self.assertIsNone(query.items.get().product_type)
+        self.assertIsNone(query.items.get().product_code)
         html = self.client.get(reverse('query_detail', kwargs={'pk': query.pk})).content.decode()
         self.assertIn('FBB009', html)
 
@@ -739,9 +739,9 @@ class QueryProductCodeLinkTests(TestCase):
         self.assertNotIn('FBB009', html)
 
     def test_a_linked_code_wins_over_the_match(self):
-        other = ProductType.objects.create(item_code='HAND', grade='SS304')
+        other = ProductCode.objects.create(item_code='HAND', grade='SS304')
         query = create_query(source='call', contact_phone='9123456782', product_category=self.flat,
-                                     grade='EN8D', product_type=other)
+                                     grade='EN8D', product_code=other)
         self.assertEqual(query.items.get().effective_product_code(), other)
 
 

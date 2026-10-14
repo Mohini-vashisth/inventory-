@@ -23,7 +23,7 @@ class PartError(Exception):
 
 
 def _steps(job):
-    return list(job.product_type.steps.all())
+    return list(job.product_code.steps.all())
 
 
 def completed_step_ids(part):

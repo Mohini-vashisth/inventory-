@@ -10,7 +10,7 @@ from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django import forms
 from .product_codes import canonical_grade, item_code_for, reserve_grade_number
-from .models import QueryItem, GateEntry, GateEntryLot, NonCoilEntry, Material, OrderCoilPick, GradeOption, SizeOption, ProductCategory, ProductType, AllowedCoilSpec, ProcessStep, ProductionJob, ProductionPart, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
+from .models import QueryItem, GateEntry, GateEntryLot, NonCoilEntry, Material, OrderCoilPick, GradeOption, SizeOption, ProductCategory, ProductCode, AllowedCoilSpec, ProcessStep, ProductionJob, ProductionPart, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
 
 
 class GateEntryLotInline(admin.TabularInline):
@@ -92,7 +92,7 @@ class SizeOptionAdmin(admin.ModelAdmin):
     ordering = ['value']
 
 
-# ── Inline steps inside ProductType ─────────────────────────
+# ── Inline steps inside ProductCode ─────────────────────────
 
 class ProcessStepInline(admin.TabularInline):
     model = ProcessStep
@@ -108,7 +108,7 @@ class AllowedCoilSpecInline(admin.TabularInline):
     verbose_name_plural = "Allowed Coil Specs"
 
 
-# ── ProductType ──────────────────────────────────────────────
+# ── ProductCode ──────────────────────────────────────────────
 
 @admin.register(ProductCategory)
 class ProductCategoryAdmin(admin.ModelAdmin):
@@ -122,12 +122,12 @@ class ProductCategoryAdmin(admin.ModelAdmin):
         return obj.product_codes.count()
 
 
-class ProductTypeAdminForm(forms.ModelForm):
+class ProductCodeAdminForm(forms.ModelForm):
     """Leave Item Code blank and it's generated from the product type and grade
     in the agreed format (see product_codes.py); type one yourself to override it."""
 
     class Meta:
-        model = ProductType
+        model = ProductCode
         fields = ['item_code', 'category', 'grade', 'description']
 
     # The grade is picked from the grade list (add a new one with the + beside it), like the product type.
@@ -164,9 +164,9 @@ class ProductTypeAdminForm(forms.ModelForm):
         return cleaned
 
 
-@admin.register(ProductType)
-class ProductTypeAdmin(admin.ModelAdmin):
-    form = ProductTypeAdminForm
+@admin.register(ProductCode)
+class ProductCodeAdmin(admin.ModelAdmin):
+    form = ProductCodeAdminForm
     inlines = [ProcessStepInline, AllowedCoilSpecInline]
     list_display = ['item_code', 'category', 'grade', 'step_count', 'allowed_spec_summary']
     list_filter = ['category']
@@ -262,12 +262,12 @@ class ProductionJobAdmin(admin.ModelAdmin):
         'job_no',
         'coil_link',
         'order',
-        'product_type',
+        'product_code',
         'progress_bar',
         'status_badge',
         'created_at',
     ]
-    list_filter  = ['status', 'product_type', 'created_at']
+    list_filter  = ['status', 'product_code', 'created_at']
     search_fields = ['job_no', 'pick__coil__coil_no']
     readonly_fields = ['job_no', 'progress_bar', 'status_badge', 'created_at', 'updated_at']
     inlines = [ProductionPartInline, StepLogInline]
@@ -275,7 +275,7 @@ class ProductionJobAdmin(admin.ModelAdmin):
     # ── Custom columns ───────────────────────────────────────
     def get_queryset(self, request):
         return super().get_queryset(request).prefetch_related(
-            'step_logs', 'product_type__steps'
+            'step_logs', 'product_code__steps'
         )
 
     actions = ['mark_completed', 'mark_on_hold']
@@ -288,10 +288,10 @@ class ProductionJobAdmin(admin.ModelAdmin):
         anywhere on that job (recalculate_status runs on every StepLog
         add/change/delete) would silently revert the status this action
         just set."""
-        for job in queryset.prefetch_related('product_type__steps'):
+        for job in queryset.prefetch_related('product_code__steps'):
             for part in job.active_parts():   # a split job: every part still being worked on
                 done = {step_id for step_id, log in part.latest_logs_by_step().items() if log.status == 'completed'}
-                for step in job.product_type.steps.all():
+                for step in job.product_code.steps.all():
                     if step.id not in done:
                         StepLog.objects.create(
                             job=job, part=part, step=step, status='completed', updated_by=request.user,
@@ -305,9 +305,9 @@ class ProductionJobAdmin(admin.ModelAdmin):
         StepLog — writes one against the job's current step (or its first
         step, for a job with no logs yet) so the hold actually sticks
         instead of being overwritten by the next unrelated StepLog change."""
-        for job in queryset.prefetch_related('product_type__steps'):
+        for job in queryset.prefetch_related('product_code__steps'):
             current_log = job.step_logs.order_by('-timestamp').first()
-            steps = list(job.product_type.steps.all())
+            steps = list(job.product_code.steps.all())
             target_step = current_log.step if current_log else (steps[0] if steps else None)
             if target_step is None:
                 continue
@@ -324,7 +324,7 @@ class ProductionJobAdmin(admin.ModelAdmin):
     coil_link.short_description = 'Coil'
 
     def progress_bar(self, obj):
-        steps = list(obj.product_type.steps.all())  # uses prefetch
+        steps = list(obj.product_code.steps.all())  # uses prefetch
         total_steps = len(steps)
         if total_steps == 0:
             return '—'
@@ -395,7 +395,7 @@ class ProductionJobAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ('Job info', {
-            'fields': ('job_no', 'pick', 'order', 'product_type', 'created_at', 'updated_at')
+            'fields': ('job_no', 'pick', 'order', 'product_code', 'created_at', 'updated_at')
         }),
         ('Status', {
             'fields': ('status', 'progress_bar', 'notes')
@@ -408,7 +408,7 @@ class ProductionJobAdmin(admin.ModelAdmin):
 @admin.register(StepLog)
 class StepLogAdmin(admin.ModelAdmin):
     list_display  = ['job', 'part', 'step', 'status_badge', 'updated_by', 'timestamp', 'notes']
-    list_filter   = ['status', 'step__product_type', 'updated_by']
+    list_filter   = ['status', 'step__product_code', 'updated_by']
     search_fields = ['job__job_no', 'step__name']
     readonly_fields = ['timestamp']
 
@@ -590,7 +590,7 @@ class QueryItemInline(admin.TabularInline):
     """The products a query asks about — one row each."""
     model = QueryItem
     extra = 0
-    fields = ['position', 'product_category', 'product_type', 'grade', 'width', 'thickness', 'quantity', 'delivery_form',
+    fields = ['position', 'product_category', 'product_code', 'grade', 'width', 'thickness', 'quantity', 'delivery_form',
               'drawing', 'drawing_notes', 'technical_requirements', 'end_use']
 
 
@@ -617,15 +617,15 @@ class QueryAdmin(admin.ModelAdmin):
 
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
-    list_display  = ['order_number', 'customer', 'product_type_label', 'product_code', 'grade', 'quantity', 'delivery_form', 'frequency', 'delivery_date', 'status_badge', 'created_at']
-    list_filter   = ['status', 'product_type__category', 'delivery_form', 'frequency', 'customer']
-    search_fields = ['customer__name', 'grade', 'mill_make', 'product_type__item_code']
+    list_display  = ['order_number', 'customer', 'product_type_label', 'item_code_column', 'grade', 'quantity', 'delivery_form', 'frequency', 'delivery_date', 'status_badge', 'created_at']
+    list_filter   = ['status', 'product_code__category', 'delivery_form', 'frequency', 'customer']
+    search_fields = ['customer__name', 'grade', 'mill_make', 'product_code__item_code']
     ordering      = ['-created_at']
-    list_select_related = ['customer', 'product_type__category']
+    list_select_related = ['customer', 'product_code__category']
     readonly_fields = ['product_type_label', 'purchase_order_link', 'drawing_link']
     fieldsets = (
         ('Order Info', {
-            'fields': ('customer', 'product_type_label', 'product_type', 'status', 'delivery_date', 'frequency', 'notes')
+            'fields': ('customer', 'product_type_label', 'product_code', 'status', 'delivery_date', 'frequency', 'notes')
         }),
         ('Material Requirements', {
             'fields': ('grade', 'width', 'thickness', 'mill_make', 'drawing_dimensions', 'drawing_file', 'drawing_link', 'mechanical_properties', 'processes', 'end_usage')
@@ -646,13 +646,13 @@ class OrderAdmin(admin.ModelAdmin):
         return obj.product_type_name() or '—'
     product_type_label.short_description = 'Product type'
 
-    def product_code(self, obj):
-        return obj.product_type.item_code if obj.product_type_id else '—'
-    product_code.short_description = 'Product code'
-    product_code.admin_order_field = 'product_type__item_code'
+    def item_code_column(self, obj):
+        return obj.product_code.item_code if obj.product_code_id else '—'
+    item_code_column.short_description = 'Product code'
+    item_code_column.admin_order_field = 'product_code__item_code'
 
     def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        if db_field.name == 'product_type':   # the model calls the product code "product_type"; the screens say code
+        if db_field.name == 'product_code':   # label the dropdown the way the screens say it
             kwargs['label'] = 'Product code'
         return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
@@ -694,7 +694,7 @@ class QuotationLineItemInline(admin.TabularInline):
     extra = 0
     can_delete = False
     readonly_fields = [
-        'order', 'description', 'product_type', 'grade', 'width', 'thickness', 'quantity', 'unit',
+        'order', 'description', 'product_code', 'grade', 'width', 'thickness', 'quantity', 'unit',
         'rate_per_kg', 'discount_pct', 'hsn_sac', 'gst_pct', 'tool_cost', 'moq',
     ]
 

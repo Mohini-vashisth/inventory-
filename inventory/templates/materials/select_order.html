@@ -72,7 +72,7 @@
         {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
         {% if order.size_text %}<span>📏 {{ order.size_text }} mm</span>{% endif %}
       </div>
-      {% if not order.product_type %}
+      {% if not order.product_code %}
       <div class="no-product-type">⚠ No product code set — admin needs to assign one</div>
       {% endif %}
     </div>
@@ -104,7 +104,7 @@
         {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
         {% if order.size_text %}<span>📏 {{ order.size_text }} mm</span>{% endif %}
       </div>
-      {% if not order.product_type %}
+      {% if not order.product_code %}
       <div class="no-product-type">⚠ No product code set — admin needs to assign one</div>
       {% endif %}
     </div>

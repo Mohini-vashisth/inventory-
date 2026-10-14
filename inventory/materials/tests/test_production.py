@@ -12,7 +12,7 @@ from ..models import (
     OrderCoilPick,
     ProcessStep,
     ProductionJob,
-    ProductType,
+    ProductCode,
     StepLog,
 )
 
@@ -26,10 +26,10 @@ class JobStepUnlockTests(TestCase):
         customer = Customer.objects.create(name='Job Step Unlock Co')
         order = Order.objects.create(customer=customer, quantity=10)
         pick = OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=10)
-        product_type = ProductType.objects.create(item_code='Bar 1.2mm')
-        self.step1 = ProcessStep.objects.create(product_type=product_type, name='Cutting', order=1)
-        self.step2 = ProcessStep.objects.create(product_type=product_type, name='Heat treat', order=2)
-        self.job = ProductionJob.objects.create(pick=pick, product_type=product_type, job_no='JOB-0001', order=order)
+        product_code = ProductCode.objects.create(item_code='Bar 1.2mm')
+        self.step1 = ProcessStep.objects.create(product_code=product_code, name='Cutting', order=1)
+        self.step2 = ProcessStep.objects.create(product_code=product_code, name='Heat treat', order=2)
+        self.job = ProductionJob.objects.create(pick=pick, product_code=product_code, job_no='JOB-0001', order=order)
 
     def test_cannot_complete_step2_before_step1(self):
         self.client.post(
@@ -63,10 +63,10 @@ class JobStatusRollupTests(TestCase):
         customer = Customer.objects.create(name='Job Status Rollup Co')
         order = Order.objects.create(customer=customer, quantity=10)
         pick = OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=10)
-        self.product_type = ProductType.objects.create(item_code='Bar 1.2mm')
-        self.step1 = ProcessStep.objects.create(product_type=self.product_type, name='Cutting', order=1)
-        self.step2 = ProcessStep.objects.create(product_type=self.product_type, name='Heat treat', order=2)
-        self.job = ProductionJob.objects.create(pick=pick, product_type=self.product_type, job_no='JOB-0001', order=order)
+        self.product_code = ProductCode.objects.create(item_code='Bar 1.2mm')
+        self.step1 = ProcessStep.objects.create(product_code=self.product_code, name='Cutting', order=1)
+        self.step2 = ProcessStep.objects.create(product_code=self.product_code, name='Heat treat', order=2)
+        self.job = ProductionJob.objects.create(pick=pick, product_code=self.product_code, job_no='JOB-0001', order=order)
 
     def test_no_logs_is_pending(self):
         self.job.recalculate_status()
@@ -203,13 +203,13 @@ class SelectJobForCoilTests(TestCase):
     def setUp(self):
         self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.customer = Customer.objects.create(name='Job Scan Co')
-        self.product_type = ProductType.objects.create(item_code='Job Scan Bar')
+        self.product_code = ProductCode.objects.create(item_code='Job Scan Bar')
         self.order = Order.objects.create(customer=self.customer, quantity=100, status='in_production')
 
     def _make_job(self, coil, job_no='JOB-0001'):
         pick = OrderCoilPick.objects.create(order=self.order, coil=coil, weight_allocated=100)
         return ProductionJob.objects.create(
-            pick=pick, product_type=self.product_type, job_no=job_no, order=self.order,
+            pick=pick, product_code=self.product_code, job_no=job_no, order=self.order,
         )
 
     def test_scanning_coil_with_one_job_redirects_straight_to_it(self):
@@ -241,7 +241,7 @@ class SelectJobForCoilTests(TestCase):
         other_order = Order.objects.create(customer=self.customer, quantity=50, status='in_production')
         pick2 = OrderCoilPick.objects.create(order=other_order, coil=coil, weight_allocated=50)
         job2 = ProductionJob.objects.create(
-            pick=pick2, product_type=self.product_type, job_no='JOB-0002', order=other_order,
+            pick=pick2, product_code=self.product_code, job_no='JOB-0002', order=other_order,
         )
         response = self.client.post(reverse('select_job_for_coil'), {'coil_no': coil.formatted_coil()})
         self.assertEqual(response.status_code, 200)
@@ -254,13 +254,13 @@ class ProductionBoardScanLinkTests(TestCase):
         from ..models import Order, ProcessStep, ProductionJob, StepLog
         self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         customer = Customer.objects.create(name='Board Co')
-        code = ProductType.objects.create(item_code='BOARD1', grade='EN8D')
-        ProcessStep.objects.create(product_type=code, name='Drawing', order=1)
-        order = Order.objects.create(customer=customer, product_type=code, grade='EN8D', quantity=100, status='in_production')
+        code = ProductCode.objects.create(item_code='BOARD1', grade='EN8D')
+        ProcessStep.objects.create(product_code=code, name='Drawing', order=1)
+        order = Order.objects.create(customer=customer, product_code=code, grade='EN8D', quantity=100, status='in_production')
         coil = Material.objects.create(grade='EN8D', quantity=500)
         pick = OrderCoilPick.objects.create(order=order, coil=coil, weight_allocated=100)
-        job = ProductionJob.objects.create(pick=pick, order=order, product_type=code)
-        step = ProcessStep.objects.get(product_type=code)
+        job = ProductionJob.objects.create(pick=pick, order=order, product_code=code)
+        step = ProcessStep.objects.get(product_code=code)
         StepLog.objects.create(job=job, step=step, status='pending')
         page = self.client.get(reverse('production_board')).content.decode()
         self.assertIn(f'<a href="{reverse("select_job_for_coil")}" class="btn-update">', page)
