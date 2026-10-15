@@ -51,6 +51,8 @@
 
 .form-row { display: grid; gap: 0.75rem; margin-bottom: 0.75rem; }
 
+/* An icon-btn is used on both <button> and <a>: make a link look exactly like a button (no underline, same box). */
+.icon-btn { display: inline-block; text-decoration: none; font-family: inherit; line-height: 1.4; vertical-align: middle; white-space: nowrap; }
 .icon-btn:hover { background: #eef3ef; }
 
 .muted { color: #aaa; font-size: 0.82rem; }
