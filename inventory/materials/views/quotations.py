@@ -361,13 +361,7 @@ def quotation_drafts(request):
     where it was left off (quotation_form in edit mode); 'Discard' deletes
     it outright, safe because a draft never consumed a quotation_no."""
     drafts = Quotation.objects.filter(status='draft').select_related('customer').prefetch_related('line_items').order_by('-updated_at')
-    # Drafts are reachable from both the Orders and the Queries dashboards; the back link returns to the one you came from.
-    came_from_queries = request.GET.get('from') == 'queries'
-    return render(request, 'materials/quotation_drafts.html', {
-        'drafts': drafts,
-        'back_url': reverse('query_dashboard' if came_from_queries else 'order_dashboard'),
-        'back_label': 'Back to Queries' if came_from_queries else 'Back to Orders',
-    })
+    return render(request, 'materials/quotation_drafts.html', {'drafts': drafts})
 
 
 @staff_required
