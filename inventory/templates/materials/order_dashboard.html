@@ -75,6 +75,7 @@
     
     /* The low-stock badge: a title line, then labels and amounts in two aligned columns. */
     .shortfall { font-size: 0.72rem; color: #b45309; font-weight: 600; margin-top: 3px; }
+    .in-stock { font-size: 0.72rem; color: #166534; font-weight: 600; margin-top: 3px; }
     .shortfall-rows { display: grid; grid-template-columns: max-content max-content; column-gap: 0.6rem; justify-content: start; font-weight: 500; }
     .icon-btn.green { background: #dcfce7; border-color: #bbf7d0; color: #166534; margin-left: 4px; }
     .icon-btn.green:hover { background: #bbf7d0; }
@@ -370,6 +371,9 @@
                 <div>⚠️ Low stock</div>
                 <div class="shortfall-rows"><span>Needs</span><span>{{ order.shortfall.needed|floatformat:"0g" }} kg{% if order.shortfall.picked %} more{% endif %}</span><span>Available</span><span>{{ order.shortfall.available|floatformat:"0g" }} kg</span></div>
               </div>
+            {% endif %}
+            {% if order.in_stock %}
+              <div class="in-stock">✓ In stock: {{ order.in_stock|floatformat:"0g" }} kg available</div>
             {% endif %}
             {% if order.status == 'pending' %}
               {% if order.outlook_unchecked %}
