@@ -1158,14 +1158,13 @@ class Order(models.Model):
             return None
         return {spec.size for spec in specs}
 
-    def stock_shortfall(self, available=None):
-        """For a confirmed or in-production order: how short the in-stock raw material is of what the order still
-        needs. "Still needs" is the quantity minus what has already been picked (the picked coils have already left
-        the stock figure, so counting the whole quantity would warn about steel that is already in hand). Returns
-        {'needed', 'available', 'picked'} when stock falls short, otherwise None: nothing short, nothing left to
-        pick, not an accepted order, or it can't be checked (no grade or product code). Other accepted orders'
-        claims are not counted here; each order is compared with the whole available stock. `available` can be
-        passed in when the caller already has available_raw_material_output()."""
+    def stock_position(self, available=None):
+        """Where an accepted (confirmed or in-production) order stands against the raw material in stock:
+        {'needed', 'available', 'picked', 'short'}. "Needed" is what the order still needs, the quantity minus what
+        has already been picked (picked coils have already left the stock figure, so counting the whole quantity
+        would warn about steel already in hand). None when the order isn't accepted or can't be checked (no grade or
+        product code). Other accepted orders' claims are not counted: each order is compared with the whole
+        available stock. `available` can be passed in when the caller already has available_raw_material_output()."""
         if self.status not in ('confirmed', 'in_production'):
             return None
         if available is None:
@@ -1174,9 +1173,21 @@ class Order(models.Model):
             return None
         picked = self.picked_output_weight()
         needed = max(self.quantity - picked, Decimal('0'))
-        if needed <= 0 or available >= needed:
+        return {'needed': needed, 'available': available, 'picked': picked, 'short': needed > 0 and available < needed}
+
+    def stock_shortfall(self, available=None, position=None):
+        """The position when stock falls short of what the order still needs, otherwise None (nothing short,
+        nothing left to pick, not an accepted order, or it can't be checked)."""
+        position = position or self.stock_position(available)
+        return position if position and position['short'] else None
+
+    def stock_in_hand(self, available=None, position=None):
+        """How much steel is in stock for an accepted order that still has something to pick and isn't short:
+        the amount, or None (short, fully picked, no stock, not accepted, or can't be checked)."""
+        position = position or self.stock_position(available)
+        if not position or position['short'] or position['needed'] <= 0 or not position['available']:
             return None
-        return {'needed': needed, 'available': available, 'picked': picked}
+        return position['available']
 
     def stock_outlook(self, available=None):
         """How much of the in-stock raw material is still free for this order once the accepted orders

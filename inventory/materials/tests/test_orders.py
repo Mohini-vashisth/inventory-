@@ -261,12 +261,35 @@ class InStockNoteTests(TestCase):
         self.assertContains(page, 'Low stock')
         self.assertNotContains(page, 'In stock:')
 
-    def test_only_confirmed_orders_get_the_line(self):
-        for status in ('pending', 'in_production', 'completed', 'cancelled'):
+    def test_only_confirmed_and_in_production_orders_get_the_line(self):
+        for status, expected in (('confirmed', True), ('in_production', True), ('pending', False),
+                                 ('completed', False), ('cancelled', False)):
             with self.subTest(status=status):
                 Order.objects.all().delete()
                 self._order(500, status)
-                self.assertNotContains(self.client.get(reverse('order_dashboard')), 'In stock:')
+                page = self.client.get(reverse('order_dashboard'))
+                if expected:
+                    self.assertContains(page, 'In stock: 2,000 kg available')
+                else:
+                    self.assertNotContains(page, 'In stock:')
+
+    def test_an_in_production_order_says_it_while_something_is_still_to_pick(self):
+        order = self._order(500, 'in_production')
+        OrderCoilPick.objects.create(order=order, coil=Material.objects.get(), weight_allocated=300)   # 1,700 left, 200 to pick
+        self.assertContains(self.client.get(reverse('order_dashboard')), 'In stock: 1,700 kg available')
+        self.assertContains(self.client.get(reverse('order_detail', args=[order.pk])), 'In stock: 1,700 kg available')
+
+    def test_a_fully_picked_in_production_order_has_nothing_left_to_find_stock_for(self):
+        order = self._order(500, 'in_production')
+        OrderCoilPick.objects.create(order=order, coil=Material.objects.get(), weight_allocated=500)
+        self.assertNotContains(self.client.get(reverse('order_dashboard')), 'In stock:')
+
+    def test_a_short_in_production_order_shows_the_warning_not_the_line(self):
+        order = self._order(2500, 'in_production')
+        OrderCoilPick.objects.create(order=order, coil=Material.objects.get(), weight_allocated=1900)   # 100 in stock, 600 to pick
+        page = self.client.get(reverse('order_dashboard'))
+        self.assertContains(page, 'Low stock')
+        self.assertNotContains(page, 'In stock:')
 
     def test_no_line_when_the_order_cannot_be_checked(self):
         self._order(500, grade='')
