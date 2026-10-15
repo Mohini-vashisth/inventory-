@@ -362,9 +362,9 @@
             {% else %}
               <span class="badge badge-{{ order.status }}">{{ order.get_status_display }}</span>
             {% endif %}
-            {% if order.low_stock %}
-              <div style="font-size:0.72rem; color:#f59e0b; font-weight:600; margin-top:3px;" title="Raw material in stock isn't enough to fulfil this order">
-                ⚠️ Low stock
+            {% if order.shortfall %}
+              <div style="font-size:0.72rem; color:#f59e0b; font-weight:600; margin-top:3px;" title="Raw material in stock isn't enough to fulfil what this order still needs">
+                ⚠️ Low stock: needs {{ order.shortfall.needed|floatformat:"0g" }} kg{% if order.shortfall.picked %} more{% endif %}, {{ order.shortfall.available|floatformat:"0g" }} kg available
               </div>
             {% endif %}
             {% if order.status == 'pending' %}
