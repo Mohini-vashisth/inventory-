@@ -83,7 +83,9 @@ def order_detail(request, pk):
         Order.objects.select_related('customer', 'product_code__product_type', 'source_query'), pk=pk)
     picks = list(order.coil_picks.select_related('coil').order_by('pk'))
     weight_picked = sum((pick.weight_allocated for pick in picks), Decimal('0'))
-    shortfall = order.stock_shortfall()
+    available = order.available_raw_material_output() if order.status in ('confirmed', 'in_production') else None
+    shortfall = order.stock_shortfall(available=available)
+    in_stock = available if (order.status == 'confirmed' and shortfall is None and available) else None
     outlook = order.stock_outlook() if order.status == 'pending' else None
     return render(request, 'materials/order_detail.html', {
         'order': order,
@@ -92,6 +94,7 @@ def order_detail(request, pk):
         'picks': picks,
         'weight_picked': weight_picked,
         'shortfall': shortfall,
+        'in_stock': in_stock,
         'quotation': order.source_query.latest_sent_quotation() if order.source_query else None,
     })
 
@@ -149,6 +152,7 @@ def order_dashboard(request):
     raw_material_output_cache = {}
     for order in orders:
         order.shortfall = None
+        order.in_stock = None
         order.outlook = None
         if order.status not in ('confirmed', 'in_production', 'pending'):
             continue
@@ -162,6 +166,8 @@ def order_dashboard(request):
             order.outlook_unchecked = available is None
             continue
         order.shortfall = order.stock_shortfall(available=available)
+        # A confirmed order whose steel is in stock says how much (nothing is short, so no warning above).
+        order.in_stock = available if (order.status == 'confirmed' and order.shortfall is None and available) else None
 
     return render(request, 'materials/order_dashboard.html', {
         'orders': orders,

@@ -229,6 +229,50 @@ class StockShortfallTests(TestCase):
         self.assertNotContains(self.client.get(reverse('order_dashboard')), 'Low stock')
 
 
+class InStockNoteTests(TestCase):
+    """A confirmed order whose steel is in stock says so, with the amount: "In stock: 2,000 kg available"."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(name='In Stock Co')
+        self.code = ProductCode.objects.create(item_code='INS1', grade='EN8D')
+        AllowedCoilSpec.objects.create(product_code=self.code, size='1.200')
+        Material.objects.create(quantity=2000, grade='EN8D', size='1.200')
+        self.staff = User.objects.create_user('instock_staff', password='pw', is_staff=True)
+        self.client.force_login(self.staff)
+
+    def _order(self, quantity, status='confirmed', **fields):
+        fields.setdefault('grade', 'EN8D')
+        return Order.objects.create(customer=self.customer, product_code=self.code,
+                                    quantity=quantity, status=status, **fields)
+
+    def test_a_confirmed_order_with_enough_stock_says_how_much_is_in_stock(self):
+        self._order(500)
+        page = self.client.get(reverse('order_dashboard'))
+        self.assertContains(page, 'In stock: 2,000 kg available')
+        self.assertNotContains(page, 'Low stock')
+
+    def test_the_order_page_says_it_too(self):
+        order = self._order(500)
+        self.assertContains(self.client.get(reverse('order_detail', args=[order.pk])), 'In stock: 2,000 kg available')
+
+    def test_a_short_order_shows_the_low_stock_warning_and_no_in_stock_line(self):
+        self._order(2500)
+        page = self.client.get(reverse('order_dashboard'))
+        self.assertContains(page, 'Low stock')
+        self.assertNotContains(page, 'In stock:')
+
+    def test_only_confirmed_orders_get_the_line(self):
+        for status in ('pending', 'in_production', 'completed', 'cancelled'):
+            with self.subTest(status=status):
+                Order.objects.all().delete()
+                self._order(500, status)
+                self.assertNotContains(self.client.get(reverse('order_dashboard')), 'In stock:')
+
+    def test_no_line_when_the_order_cannot_be_checked(self):
+        self._order(500, grade='')
+        self.assertNotContains(self.client.get(reverse('order_dashboard')), 'In stock:')
+
+
 class StockOutlookTests(TestCase):
     """Order.stock_outlook(): what is free for an order once the accepted orders competing for the
     same coils have taken their share. Pending orders claim nothing."""
