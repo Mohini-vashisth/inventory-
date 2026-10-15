@@ -206,20 +206,22 @@ class StockShortfallTests(TestCase):
         self._order(2500)
         self.client.force_login(self.staff)
         response = self.client.get(reverse('order_dashboard'))
-        self.assertContains(response, 'Low stock: needs 2,500 kg<br>2,000 kg available')
+        self.assertContains(response, 'Low stock')
+        self.assertContains(response, '<span>Needs</span><span>2,500 kg</span><span>Available</span><span>2,000 kg</span>')
 
     def test_the_dashboard_says_more_once_some_has_been_picked(self):
         order = self._order(2500, 'in_production')
         OrderCoilPick.objects.create(order=order, coil=self.coil, weight_allocated=1800)
         self.client.force_login(self.staff)
         response = self.client.get(reverse('order_dashboard'))
-        self.assertContains(response, 'Low stock: needs 700 kg more<br>200 kg available')
+        self.assertContains(response, '<span>Needs</span><span>700 kg more</span><span>Available</span><span>200 kg</span>')
 
     def test_the_order_page_says_it_too(self):
         order = self._order(2500)
         self.client.force_login(self.staff)
         response = self.client.get(reverse('order_detail', args=[order.pk]))
-        self.assertContains(response, 'Low stock: needs 2,500 kg<br>2,000 kg available')
+        self.assertContains(response, 'Low stock')
+        self.assertContains(response, '<span>Needs</span><span>2,500 kg</span><span>Available</span><span>2,000 kg</span>')
 
     def test_no_badge_when_stock_is_enough(self):
         self._order(500)
