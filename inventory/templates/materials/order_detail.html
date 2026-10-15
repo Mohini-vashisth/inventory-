@@ -28,7 +28,8 @@
     .btn-dispatch { background: #e5e7eb; border-color: #d1d5db; color: #374151; }
     .warn { color: #b45309; font-weight: 600; font-size: 0.85rem; margin-top: 0.75rem; }
     .ok { color: #166534; font-weight: 600; font-size: 0.85rem; margin-top: 0.75rem; }
-    .shortfall-rows { display: grid; grid-template-columns: max-content max-content; column-gap: 0.75rem; justify-content: start; font-weight: 500; }
+    .shortfall { display: flex; gap: 0.5rem; align-items: flex-start; }
+    .shortfall-title, .shortfall > div { white-space: nowrap; }
     .muted { color: #888; }
     .link { color: #2f7d5b; text-decoration: none; }
     table.picks { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
@@ -71,7 +72,7 @@
         {% endif %}
       </div>
       {% if not order.product_code %}<p class="warn">⚠ No product code is set, so this order can't be confirmed yet. Set one in the admin (Orders → this order).</p>{% endif %}
-      {% if shortfall %}<div class="warn"><div>⚠️ Low stock</div><div class="shortfall-rows"><span>Needs</span><span>{{ shortfall.needed|floatformat:"0g" }} kg{% if shortfall.picked %} more{% endif %}</span><span>Available</span><span>{{ shortfall.available|floatformat:"0g" }} kg</span></div></div>{% endif %}
+      {% if shortfall %}<div class="warn shortfall"><span class="shortfall-title">⚠️ Low stock:</span><div><div>Needs {{ shortfall.needed|floatformat:"0g" }} kg{% if shortfall.picked %} more{% endif %}</div><div>Available {{ shortfall.available|floatformat:"0g" }} kg</div></div></div>{% endif %}
       {% if in_stock %}<p class="ok">✓ In stock: {{ in_stock|floatformat:"0g" }} kg available</p>{% endif %}
       {% if outlook_unchecked %}
       <p class="muted">Stock: can't check yet (the order needs a grade and a product code).</p>
