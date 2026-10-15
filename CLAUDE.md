@@ -206,7 +206,7 @@ Decided 2026-10-13. The confirm-time check above only sees the whole stock, so t
 - Purely informational: nothing is reserved or blocked. Nothing is stored — it is worked out each time the page loads. The tag is hidden when stock is enough and nobody competes; a pending order with no grade or product code says "can't check yet".
 - Figures are finished-product kg (like the confirm check), so a rival's claim is not converted through a different wastage ratio — an approximation.
 - The dashboard caches `available_raw_material_output()` per (product code, grade, width, thickness); it used to be per product code only, which ignored that the grade and size-specific specs can change the answer.
-- **Not built yet (the owner's next step): tracking raw material that has been ordered from suppliers**, so a shortfall can be marked as ordered.
+- **Not built — on hold (2026-10-15): tracking raw material ordered from suppliers**, so a shortfall can be marked as ordered. The owner is not sure how it should work and will consult the company first; the open questions are what a supplier order is (grade/size/quantity/date), who creates it, how it links to the gate entry when the steel arrives, and whether ordered steel should count for the stock tag. Nothing is designed or built yet.
 
 ### Finance team and supplier bills (`views/finance.py`)
 
