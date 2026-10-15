@@ -69,7 +69,7 @@
         {% endif %}
       </div>
       {% if not order.product_code %}<p class="warn">⚠ No product code is set, so this order can't be confirmed yet. Set one in the admin (Orders → this order).</p>{% endif %}
-      {% if low_stock %}<p class="warn">⚠️ Low stock: the raw material in stock isn't enough to fulfil this order.</p>{% endif %}
+      {% if shortfall %}<p class="warn">⚠️ Low stock: needs {{ shortfall.needed|floatformat:"0g" }} kg{% if shortfall.picked %} more{% endif %}, {{ shortfall.available|floatformat:"0g" }} kg available.</p>{% endif %}
       {% if outlook_unchecked %}
       <p class="muted">Stock: can't check yet (the order needs a grade and a product code).</p>
       {% elif outlook and outlook.short or outlook.rivals %}

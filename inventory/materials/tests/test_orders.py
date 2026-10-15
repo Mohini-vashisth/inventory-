@@ -152,6 +152,81 @@ class RawMaterialAvailabilityTests(TestCase):
         self.assertEqual(order.available_raw_material_output(), Decimal('50'))
 
 
+class StockShortfallTests(TestCase):
+    """Order.stock_shortfall(): the Low stock badge on confirmed and in-production orders says how short it is,
+    measured against what the order still needs (the quantity minus what is already picked)."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(name='Shortfall Co')
+        self.code = ProductCode.objects.create(item_code='SHF1', grade='EN8D')
+        AllowedCoilSpec.objects.create(product_code=self.code, size='1.200')
+        self.coil = Material.objects.create(quantity=2000, grade='EN8D', size='1.200')
+        self.staff = User.objects.create_user('shortfall_staff', password='pw', is_staff=True)
+
+    def _order(self, quantity, status='confirmed', **fields):
+        fields.setdefault('grade', 'EN8D')
+        return Order.objects.create(customer=self.customer, product_code=self.code,
+                                    quantity=quantity, status=status, **fields)
+
+    def test_a_confirmed_order_needs_its_whole_quantity(self):
+        shortfall = self._order(2500).stock_shortfall()
+        self.assertEqual(shortfall['needed'], Decimal('2500'))
+        self.assertEqual(shortfall['available'], Decimal('2000'))
+        self.assertEqual(shortfall['picked'], Decimal('0'))
+
+    def test_an_in_production_order_needs_only_what_is_left_to_pick(self):
+        order = self._order(2500, 'in_production')
+        OrderCoilPick.objects.create(order=order, coil=self.coil, weight_allocated=1800)   # leaves 200 in stock
+        shortfall = order.stock_shortfall()
+        self.assertEqual((shortfall['needed'], shortfall['available'], shortfall['picked']),
+                         (Decimal('700'), Decimal('200'), Decimal('1800')))
+
+    def test_no_shortfall_when_stock_covers_what_is_left_even_if_it_is_less_than_the_whole_order(self):
+        """The old badge compared stock with the whole quantity and would have warned here."""
+        order = self._order(2500, 'in_production')
+        OrderCoilPick.objects.create(order=order, coil=self.coil, weight_allocated=1200)   # 800 left in stock, 1300 to pick
+        self.assertEqual(order.stock_shortfall()['needed'], Decimal('1300'))
+        Material.objects.create(quantity=600, grade='EN8D', size='1.200')                  # now 1400 available
+        self.assertIsNone(order.stock_shortfall())
+
+    def test_no_shortfall_for_a_fully_picked_order(self):
+        order = self._order(500, 'in_production')
+        OrderCoilPick.objects.create(order=order, coil=self.coil, weight_allocated=500)
+        self.assertIsNone(order.stock_shortfall())
+
+    def test_only_accepted_orders_have_one(self):
+        for status in ('pending', 'completed', 'cancelled'):
+            with self.subTest(status=status):
+                self.assertIsNone(self._order(99999, status).stock_shortfall())
+
+    def test_no_shortfall_when_it_cannot_be_checked(self):
+        self.assertIsNone(self._order(99999, grade='').stock_shortfall())
+
+    def test_the_dashboard_says_how_short(self):
+        self._order(2500)
+        self.client.force_login(self.staff)
+        response = self.client.get(reverse('order_dashboard'))
+        self.assertContains(response, 'Low stock: needs 2,500 kg, 2,000 kg available')
+
+    def test_the_dashboard_says_more_once_some_has_been_picked(self):
+        order = self._order(2500, 'in_production')
+        OrderCoilPick.objects.create(order=order, coil=self.coil, weight_allocated=1800)
+        self.client.force_login(self.staff)
+        response = self.client.get(reverse('order_dashboard'))
+        self.assertContains(response, 'Low stock: needs 700 kg more, 200 kg available')
+
+    def test_the_order_page_says_it_too(self):
+        order = self._order(2500)
+        self.client.force_login(self.staff)
+        response = self.client.get(reverse('order_detail', args=[order.pk]))
+        self.assertContains(response, 'Low stock: needs 2,500 kg, 2,000 kg available')
+
+    def test_no_badge_when_stock_is_enough(self):
+        self._order(500)
+        self.client.force_login(self.staff)
+        self.assertNotContains(self.client.get(reverse('order_dashboard')), 'Low stock')
+
+
 class StockOutlookTests(TestCase):
     """Order.stock_outlook(): what is free for an order once the accepted orders competing for the
     same coils have taken their share. Pending orders claim nothing."""

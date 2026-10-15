@@ -83,10 +83,7 @@ def order_detail(request, pk):
         Order.objects.select_related('customer', 'product_code__product_type', 'source_query'), pk=pk)
     picks = list(order.coil_picks.select_related('coil').order_by('pk'))
     weight_picked = sum((pick.weight_allocated for pick in picks), Decimal('0'))
-    low_stock = False
-    if order.status in ('confirmed', 'in_production'):
-        available = order.available_raw_material_output()
-        low_stock = available is not None and available < order.quantity
+    shortfall = order.stock_shortfall()
     outlook = order.stock_outlook() if order.status == 'pending' else None
     return render(request, 'materials/order_detail.html', {
         'order': order,
@@ -94,7 +91,7 @@ def order_detail(request, pk):
         'outlook_unchecked': order.status == 'pending' and outlook is None,
         'picks': picks,
         'weight_picked': weight_picked,
-        'low_stock': low_stock,
+        'shortfall': shortfall,
         'quotation': order.source_query.latest_sent_quotation() if order.source_query else None,
     })
 
@@ -139,7 +136,7 @@ def order_dashboard(request):
             order.save()
             return redirect('order_dashboard')
 
-    # Persistent low-stock indicator for orders already committed to
+    # Persistent low-stock badge (with how short it is) for orders already committed to
     # production — a one-time warning at confirm time can get missed, so
     # this stays visible for as long as it's actually true. Pending orders
     # instead get a stock outlook tag (what is left for them after the
@@ -151,7 +148,7 @@ def order_dashboard(request):
     # instead of each re-running its own set of aggregate queries.
     raw_material_output_cache = {}
     for order in orders:
-        order.low_stock = False
+        order.shortfall = None
         order.outlook = None
         if order.status not in ('confirmed', 'in_production', 'pending'):
             continue
@@ -164,7 +161,7 @@ def order_dashboard(request):
             order.outlook = order.stock_outlook(available=available)
             order.outlook_unchecked = available is None
             continue
-        order.low_stock = available is not None and available < order.quantity
+        order.shortfall = order.stock_shortfall(available=available)
 
     return render(request, 'materials/order_dashboard.html', {
         'orders': orders,

@@ -1158,6 +1158,26 @@ class Order(models.Model):
             return None
         return {spec.size for spec in specs}
 
+    def stock_shortfall(self, available=None):
+        """For a confirmed or in-production order: how short the in-stock raw material is of what the order still
+        needs. "Still needs" is the quantity minus what has already been picked (the picked coils have already left
+        the stock figure, so counting the whole quantity would warn about steel that is already in hand). Returns
+        {'needed', 'available', 'picked'} when stock falls short, otherwise None: nothing short, nothing left to
+        pick, not an accepted order, or it can't be checked (no grade or product code). Other accepted orders'
+        claims are not counted here; each order is compared with the whole available stock. `available` can be
+        passed in when the caller already has available_raw_material_output()."""
+        if self.status not in ('confirmed', 'in_production'):
+            return None
+        if available is None:
+            available = self.available_raw_material_output()
+        if available is None:
+            return None
+        picked = self.picked_output_weight()
+        needed = max(self.quantity - picked, Decimal('0'))
+        if needed <= 0 or available >= needed:
+            return None
+        return {'needed': needed, 'available': available, 'picked': picked}
+
     def stock_outlook(self, available=None):
         """How much of the in-stock raw material is still free for this order once the accepted orders
         (confirmed or in production) that compete for the same coils have taken their share. Pending
