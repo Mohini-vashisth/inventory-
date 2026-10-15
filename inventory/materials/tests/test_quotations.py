@@ -389,17 +389,16 @@ class QuotationDraftTests(TestCase):
         response = self.client.get(reverse('quotation_drafts'))
         self.assertRedirects(response, reverse('home'))
 
-    def test_the_drafts_page_returns_to_where_you_came_from(self):
+    def test_drafts_are_reached_from_the_queries_page_only(self):
+        """Quotes are drafted from queries; an order only exists once a quote was sent and accepted."""
         self.client.force_login(self.staff)
-        from_orders = self.client.get(reverse('quotation_drafts'))
-        self.assertContains(from_orders, f'href="{reverse("order_dashboard")}" class="back-link">← Back to Orders')
-        from_queries = self.client.get(reverse('quotation_drafts') + '?from=queries')
-        self.assertContains(from_queries, f'href="{reverse("query_dashboard")}" class="back-link">← Back to Queries')
+        self.assertContains(self.client.get(reverse('query_dashboard')), f'href="{reverse("quotation_drafts")}"')
+        self.assertNotContains(self.client.get(reverse('order_dashboard')), reverse('quotation_drafts'))
 
-    def test_both_dashboards_link_to_the_drafts(self):
+    def test_the_drafts_page_returns_to_the_queries_page(self):
         self.client.force_login(self.staff)
-        self.assertContains(self.client.get(reverse('order_dashboard')), reverse('quotation_drafts'))
-        self.assertContains(self.client.get(reverse('query_dashboard')), reverse('quotation_drafts') + '?from=queries')
+        page = self.client.get(reverse('quotation_drafts'))
+        self.assertContains(page, f'href="{reverse("query_dashboard")}" class="back-link">← Back to Queries')
 
     def test_drafts_list_shows_drafts_with_resume_and_discard(self):
         self.client.force_login(self.staff)

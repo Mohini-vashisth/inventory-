@@ -30,7 +30,7 @@
 {% block content %}
 <div class="content">
   <div class="ds-top">
-    <a href="{{ back_url }}" class="back-link">← {{ back_label }}</a>
+    <a href="{% url 'query_dashboard' %}" class="back-link">← Back to Queries</a>
   </div>
   <h1>Draft Quotations</h1>
   {% for msg in messages %}
