@@ -217,13 +217,13 @@ class Material(models.Model):
     vendor = models.CharField(max_length=50, null=True, blank=True)
     quantity = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     heat_no = models.CharField(max_length=8, null=True, blank=True)
-    # The coil's actual thickness (mm), measured at five places along it when it is registered. Empty for coils that
+    # The coil's actual diameter (mm), measured at five places along it when it is registered. Empty for coils that
     # were never measured (registered before this, or imported); the registration form requires all five.
-    thickness_1 = models.DecimalField("thickness, reading 1 (mm)", max_digits=7, decimal_places=3, null=True, blank=True)
-    thickness_2 = models.DecimalField("thickness, reading 2 (mm)", max_digits=7, decimal_places=3, null=True, blank=True)
-    thickness_3 = models.DecimalField("thickness, reading 3 (mm)", max_digits=7, decimal_places=3, null=True, blank=True)
-    thickness_4 = models.DecimalField("thickness, reading 4 (mm)", max_digits=7, decimal_places=3, null=True, blank=True)
-    thickness_5 = models.DecimalField("thickness, reading 5 (mm)", max_digits=7, decimal_places=3, null=True, blank=True)
+    diameter_1 = models.DecimalField("actual diameter, reading 1 (mm)", max_digits=7, decimal_places=3, null=True, blank=True)
+    diameter_2 = models.DecimalField("actual diameter, reading 2 (mm)", max_digits=7, decimal_places=3, null=True, blank=True)
+    diameter_3 = models.DecimalField("actual diameter, reading 3 (mm)", max_digits=7, decimal_places=3, null=True, blank=True)
+    diameter_4 = models.DecimalField("actual diameter, reading 4 (mm)", max_digits=7, decimal_places=3, null=True, blank=True)
+    diameter_5 = models.DecimalField("actual diameter, reading 5 (mm)", max_digits=7, decimal_places=3, null=True, blank=True)
     archived_at = models.DateTimeField(null=True, blank=True, db_index=True)
     legacy_used_weight = models.DecimalField(
         max_digits=10, decimal_places=3, default=0, blank=True,
@@ -238,13 +238,13 @@ class Material(models.Model):
             self.heat_no = self.heat_no.strip().upper()
         super().save(*args, **kwargs)
 
-    THICKNESS_FIELDS = ('thickness_1', 'thickness_2', 'thickness_3', 'thickness_4', 'thickness_5')
+    DIAMETER_FIELDS = ('diameter_1', 'diameter_2', 'diameter_3', 'diameter_4', 'diameter_5')
 
-    def thickness_readings(self):
-        """The measured thickness readings in the order taken, each with three decimals ("6.000", "1.215") so they
+    def diameter_readings(self):
+        """The actual diameter readings in the order taken, each with three decimals ("6.000", "1.215") so they
         line up and show the precision measured; empty list for a coil that was never measured. (Stored and shown
         only: nothing compares them with the nominal size.)"""
-        values = [getattr(self, name) for name in self.THICKNESS_FIELDS]
+        values = [getattr(self, name) for name in self.DIAMETER_FIELDS]
         return [f"{value:.3f}" for value in values if value is not None]
 
     def formatted_coil(self):

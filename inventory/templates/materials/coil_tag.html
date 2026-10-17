@@ -78,11 +78,11 @@
     .tag-details .field-name {
       font-weight: 600;
       color: #111;
-      width: 85px;
+      width: 120px;   /* wide enough for the longest label to stay on one line */
       flex-shrink: 0;
     }
 
-    /* The five thickness readings, in the order taken, wrapping inside the label. */
+    /* The five diameter readings, in the order taken, wrapping inside the label. */
     .tag-details .readings { display: flex; flex-wrap: wrap; gap: 0 0.35rem; line-height: 1.5; padding-top: 0.15rem; }
     .tag-details .readings span:not(:last-child)::after { content: ' ·'; color: #999; }
 
@@ -182,9 +182,9 @@
         <span class="field-name">Quantity</span>
         <span>{{ coil.quantity|default:"—" }}</span>
       </div>
-      {% with readings=coil.thickness_readings %}{% if readings %}
+      {% with readings=coil.diameter_readings %}{% if readings %}
       <div class="row">
-        <span class="field-name">Thickness</span>
+        <span class="field-name">Actual Diameter</span>
         <span class="readings">{% for reading in readings %}<span>{{ reading }}</span>{% endfor %} mm</span>
       </div>
       {% endif %}{% endwith %}
