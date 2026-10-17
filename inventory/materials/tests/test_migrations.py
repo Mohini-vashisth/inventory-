@@ -124,3 +124,41 @@ class RealRenameKeepsRelationsTests(TransactionTestCase):
         self.assertEqual(get('materials', 'Order').objects.get(pk=order.pk).product_code.item_code, 'FTT001')
         _migrate(_latest())
         self.assertEqual(Order.objects.get(pk=order.pk).product_code.product_type.name, 'Flat Test')
+
+
+class WhatsAppSavedKeysTests(TransactionTestCase):
+    """Migration 0064 converts the product type key the WhatsApp bot saved in conversations (last_asked_field,
+    edit_field and the held pending_value) from 'product_category' to 'product_type', and can convert it back."""
+
+    BEFORE = [('materials', '0063_real_table_and_column_names')]
+
+    def tearDown(self):
+        _migrate(_latest())
+
+    def test_saved_conversations_are_converted_and_converted_back(self):
+        _migrate(self.BEFORE)
+        Query = MigrationExecutor(connection).loader.project_state(self.BEFORE).apps.get_model('materials', 'Query')
+        mid_question = Query.objects.create(source='whatsapp', contact_phone='919000000011', last_asked_field='product_category@1')
+        mid_edit = Query.objects.create(
+            source='whatsapp', contact_phone='919000000012', bot_stage='confirm_change', edit_field='item:2:product_category',
+            pending_value={'_items': {'product_category': [4], 'grade': ['EN8D']}, '_item_only': 2})
+        untouched = Query.objects.create(
+            source='whatsapp', contact_phone='919000000013', last_asked_field='width@0', edit_field='item:0:width',
+            pending_value={'_items': {'width': ['50']}})
+
+        _migrate(_latest())
+
+        from ..models import Query as CurrentQuery
+        self.assertEqual(CurrentQuery.objects.get(pk=mid_question.pk).last_asked_field, 'product_type@1')
+        edit = CurrentQuery.objects.get(pk=mid_edit.pk)
+        self.assertEqual(edit.edit_field, 'item:2:product_type')
+        self.assertEqual(edit.pending_value, {'_items': {'product_type': [4], 'grade': ['EN8D']}, '_item_only': 2})
+        other = CurrentQuery.objects.get(pk=untouched.pk)
+        self.assertEqual((other.last_asked_field, other.edit_field, other.pending_value),
+                         ('width@0', 'item:0:width', {'_items': {'width': ['50']}}))
+
+        _migrate(self.BEFORE)   # and back
+        back = Query.objects.get(pk=mid_edit.pk)
+        self.assertEqual(back.edit_field, 'item:2:product_category')
+        self.assertEqual(back.pending_value['_items'], {'product_category': [4], 'grade': ['EN8D']})
+        self.assertEqual(Query.objects.get(pk=mid_question.pk).last_asked_field, 'product_category@1')
