@@ -3,7 +3,7 @@ import re
 from django import forms
 from django.core.validators import FileExtensionValidator
 from django.forms import formset_factory, inlineformset_factory
-from .models import BILL_EXTENSIONS, GSTIN_PATTERN, GateEntry, NonCoilEntry, validate_bill_size, Material, GradeOption, SizeOption, Order, Query, QueryItem
+from .models import NonCoilBillLine, BILL_EXTENSIONS, GSTIN_PATTERN, GateEntry, NonCoilEntry, validate_bill_size, Material, GradeOption, SizeOption, Order, Query, QueryItem
 
 
 class GateEntryForm(forms.ModelForm):
@@ -51,6 +51,20 @@ class NonCoilEntryForm(forms.ModelForm):
 class BillUploadForm(forms.Form):
     """The finance team's bill upload: a photo or scan (pdf, png, jpg, jpeg, webp), at most 10 MB."""
     bill = forms.FileField(validators=[FileExtensionValidator(BILL_EXTENSIONS), validate_bill_size])
+
+
+class BillLineForm(forms.ModelForm):
+    """One product row on a non-coil bill: description, quantity, unit. Used one row at a time by the finance
+    details page (rows are added and removed in the browser, so the page parses them itself)."""
+    class Meta:
+        model = NonCoilBillLine
+        fields = ['description', 'quantity', 'unit']
+
+    def clean_description(self):
+        return self.cleaned_data['description'].strip()
+
+    def clean_unit(self):
+        return self.cleaned_data['unit'].strip().upper()   # NOS, KG, PCS... one spelling, whoever types it
 
 
 class GateEntryLotForm(forms.Form):

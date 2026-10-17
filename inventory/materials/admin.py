@@ -10,7 +10,7 @@ from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django import forms
 from .product_codes import canonical_grade, item_code_for, reserve_grade_number
-from .models import QueryItem, GateEntry, GateEntryLot, NonCoilEntry, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, ProductCode, AllowedCoilSpec, ProcessStep, ProductionJob, ProductionPart, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
+from .models import QueryItem, GateEntry, GateEntryLot, NonCoilEntry, NonCoilBillLine, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, ProductCode, AllowedCoilSpec, ProcessStep, ProductionJob, ProductionPart, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
 
 
 class GateEntryLotInline(admin.TabularInline):
@@ -22,8 +22,14 @@ class GateEntryLotInline(admin.TabularInline):
         return False  # lots are added via the employee portal, one at a time
 
 
+class NonCoilBillLineInline(admin.TabularInline):
+    model = NonCoilBillLine
+    extra = 0
+
+
 @admin.register(NonCoilEntry)
 class NonCoilEntryAdmin(admin.ModelAdmin):
+    inlines = [NonCoilBillLineInline]
     list_display = ['id', 'category', 'company', 'arrived_at', 'bill_status']
     search_fields = ['category', 'company']
     ordering = ['-arrived_at']
