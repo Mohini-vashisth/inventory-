@@ -13,6 +13,8 @@
   }
   .gate-entry-banner strong { font-weight: 700; }
   .form-group { margin-bottom: 1.1rem; }
+  .readings { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem; }
+  @media (max-width: 520px) { .readings { grid-template-columns: repeat(2, 1fr); } }
   input[readonly] { background: #f7f7f5; color: #888; }
   
 
@@ -66,6 +68,17 @@
       <div class="form-group">
         <label>Actual Measured Weight (kg)</label>
         <input type="number" name="quantity" step="0.001" min="0.001" value="{{ post.quantity|default:'' }}" placeholder="e.g. 500.000" {% if not complete %}required{% endif %}>
+      </div>
+
+      <div class="form-group">
+        <label>Measured Thickness (mm) — 5 places along the coil</label>
+        <div class="readings">
+          <input type="number" name="thickness_1" step="0.001" min="0.001" value="{{ post.thickness_1|default:'' }}" placeholder="Reading 1" aria-label="Thickness reading 1" {% if not complete %}required{% endif %}>
+          <input type="number" name="thickness_2" step="0.001" min="0.001" value="{{ post.thickness_2|default:'' }}" placeholder="Reading 2" aria-label="Thickness reading 2" {% if not complete %}required{% endif %}>
+          <input type="number" name="thickness_3" step="0.001" min="0.001" value="{{ post.thickness_3|default:'' }}" placeholder="Reading 3" aria-label="Thickness reading 3" {% if not complete %}required{% endif %}>
+          <input type="number" name="thickness_4" step="0.001" min="0.001" value="{{ post.thickness_4|default:'' }}" placeholder="Reading 4" aria-label="Thickness reading 4" {% if not complete %}required{% endif %}>
+          <input type="number" name="thickness_5" step="0.001" min="0.001" value="{{ post.thickness_5|default:'' }}" placeholder="Reading 5" aria-label="Thickness reading 5" {% if not complete %}required{% endif %}>
+        </div>
       </div>
 
       <button type="submit" class="btn-submit">Save Coil →</button>

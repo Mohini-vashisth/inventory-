@@ -151,6 +151,22 @@ class MaterialForm(forms.ModelForm):
             raise forms.ValidationError("Weight must be greater than zero.")
         return quantity
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Registering a coil needs all five thickness readings (the model allows empty only so that coils measured
+        # before this, and imported ones, stay valid).
+        for number, name in enumerate(Material.THICKNESS_FIELDS, start=1):
+            self.fields[name].required = True
+            self.fields[name].label = f"Reading {number}"
+
+    def clean(self):
+        cleaned = super().clean()
+        for name in Material.THICKNESS_FIELDS:
+            value = cleaned.get(name)
+            if value is not None and value <= 0:
+                self.add_error(name, "Each thickness reading must be greater than zero.")
+        return cleaned
+
 
 class OrderForm(forms.ModelForm):
     class Meta:
