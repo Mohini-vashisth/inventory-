@@ -12,12 +12,11 @@ class ProcessStepSerializer(serializers.ModelSerializer):
 
 class ProductCodeSerializer(serializers.ModelSerializer):
     steps = ProcessStepSerializer(many=True, read_only=True)
-    # The product type's name, e.g. "Round Bright Bar". The API keeps its original output name `category`.
-    category = serializers.StringRelatedField(source='product_type')
+    product_type = serializers.StringRelatedField()  # the product type's name, e.g. "Round Bright Bar"
 
     class Meta:
         model = ProductCode
-        fields = ['id', 'item_code', 'category', 'grade', 'description', 'steps']
+        fields = ['id', 'item_code', 'product_type', 'grade', 'description', 'steps']
 
 
 class MaterialSerializer(serializers.ModelSerializer):
@@ -68,9 +67,7 @@ class ProductionPartSerializer(serializers.ModelSerializer):
 
 
 class ProductionJobSerializer(serializers.ModelSerializer):
-    # The API keeps its original output name `product_type` (for the product code's id); only the code's own names changed.
-    product_type = serializers.PrimaryKeyRelatedField(source='product_code', read_only=True)
-    product_type_item_code = serializers.CharField(source='product_code.item_code', read_only=True)
+    product_code_item_code = serializers.CharField(source='product_code.item_code', read_only=True)
     coil_no = serializers.CharField(source='pick.coil.formatted_coil', read_only=True)
     weight_allocated = serializers.DecimalField(source='pick.weight_allocated', max_digits=10, decimal_places=3, read_only=True)
     latest_logs = serializers.SerializerMethodField()
@@ -79,7 +76,7 @@ class ProductionJobSerializer(serializers.ModelSerializer):
     class Meta:
         model = ProductionJob
         fields = [
-            'id', 'job_no', 'status', 'product_type', 'product_type_item_code',
+            'id', 'job_no', 'status', 'product_code', 'product_code_item_code',
             'coil_no', 'weight_allocated', 'order', 'created_at', 'updated_at', 'latest_logs', 'parts',
         ]
 
@@ -99,14 +96,13 @@ class CustomerSerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     customer_name = serializers.CharField(source='customer.name', read_only=True)
-    product_type = serializers.PrimaryKeyRelatedField(source='product_code', read_only=True)   # API output name unchanged
-    product_type_item_code = serializers.CharField(source='product_code.item_code', read_only=True)
+    product_code_item_code = serializers.CharField(source='product_code.item_code', read_only=True)
     weight_cut = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
         fields = [
-            'id', 'order_no', 'customer', 'customer_name', 'product_type', 'product_type_item_code',
+            'id', 'order_no', 'customer', 'customer_name', 'product_code', 'product_code_item_code',
             'grade', 'width', 'thickness', 'quantity', 'delivery_form', 'frequency', 'delivery_date',
             'status', 'created_at', 'weight_cut',
         ]

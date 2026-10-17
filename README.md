@@ -12,7 +12,7 @@ A Django app for a steel coil manufacturing business, covering the full workflow
 - **Order-first production** — customers submit requirements via a unique quote-form link; admin confirms an order, employees can then only pick coils matching that order's allowed grade/size specs
 - **Production jobs & step tracking** — each picked coil is assigned a product type with ordered manufacturing steps; employees tick off each step with a full audit trail (`StepLog`)
 - **Admin dashboard** — Django admin (themed with Jazzmin) with progress bars, status badges, used/unused coil filters, and bulk actions (archive coils, mark jobs on hold, etc.)
-- **Read-only REST API** — `orders`, `coils`, `jobs`, `product-types` under `/api/`, staff-only
+- **Read-only REST API** — `orders`, `coils`, `jobs`, `product-codes` under `/api/`, staff-only
 - **Two access paths** — a PIN-based employee portal (tablet-friendly) and a Django-auth admin/staff area, both reachable from the home screen
 
 See `CLAUDE.md` for the full architecture reference, deployment setup, and decision history.
@@ -193,7 +193,7 @@ CI (`.github/workflows/tests.yml`) runs `manage.py check`, a migration-check, an
 | `/quote/<token>/` | `quote_form` | Customer-facing, single-use quote request form |
 | `/admin-login/` | `admin_login` | Staff login |
 | `/admin/` | Django admin | Full admin panel |
-| `/api/` | DRF router | Read-only `orders`/`coils`/`jobs`/`product-types` |
+| `/api/` | DRF router | Read-only `orders`/`coils`/`jobs`/`product-codes` |
 
 ---
 
