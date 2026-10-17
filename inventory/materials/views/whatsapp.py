@@ -50,7 +50,7 @@ WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE = "en"
 # gst_number (see _parse_whatsapp_gst_details) and so is skipped; it only
 # gets its own question when the customer sent the number without an address.
 WHATSAPP_QUERY_FIELDS = [
-    'company_name', 'contact_email', 'gst_number', 'gst_address', 'item_count', 'product_category',
+    'company_name', 'contact_email', 'gst_number', 'gst_address', 'item_count', 'product_type',
     'drawing', 'grade', 'width', 'thickness', 'technical_requirements', 'end_use', 'delivery_form', 'quantity',
 ]
 
@@ -61,8 +61,8 @@ WHATSAPP_QUERY_FIELDS = [
 # (drawing, make/properties/process, end use) are asked one product at a time, because a tap answers one
 # product and the text can contain commas.
 WHATSAPP_LIST_ITEM_FIELDS = ('grade', 'width', 'thickness', 'quantity')
-WHATSAPP_SEQUENTIAL_ITEM_FIELDS = ('product_category', 'drawing', 'technical_requirements', 'end_use', 'delivery_form')
-WHATSAPP_PER_ITEM_FIELDS = tuple(f for f in ('product_category', 'drawing', 'grade', 'width', 'thickness',
+WHATSAPP_SEQUENTIAL_ITEM_FIELDS = ('product_type', 'drawing', 'technical_requirements', 'end_use', 'delivery_form')
+WHATSAPP_PER_ITEM_FIELDS = tuple(f for f in ('product_type', 'drawing', 'grade', 'width', 'thickness',
                                               'technical_requirements', 'end_use', 'delivery_form', 'quantity'))
 WHATSAPP_MAX_ITEMS = Query.MAX_ITEMS
 
@@ -72,7 +72,7 @@ WHATSAPP_QUERY_QUESTIONS = {
     'gst_number': "Please share your GST details: your GST number (GSTIN) and the address registered under it.",
     'gst_address': "Thanks! And the address registered under your GST?",
     'item_count': "How many different products do you need a quote for? Tap a number below.",
-    'product_category': "Which product type do you need? Tap the button below and choose one.",
+    'product_type': "Which product type do you need? Tap the button below and choose one.",
     'drawing': "Please attach a drawing with detailed dimensions, or a photo of a sample. You can send an image or PDF here, or reply 'no' if you don't have one.",
     'grade': "Which grade of material do you require?",
     'width': "What width do you need, in mm? Please reply with the number, for example 50 or 12.5.",
@@ -216,10 +216,30 @@ def _send_whatsapp_buttons_message(phone, text, choices):
 # and the opening button up to 20.
 WHATSAPP_LIST_MAX_ROWS = 10
 WHATSAPP_LIST_TITLE_MAX = 24
-# NAMING: the product type used to be called "category" in the code. These two strings are saved in conversations
-# in progress and sent to WhatsApp (the bot's field key 'product_category' in Query.last_asked_field / edit_field,
-# and the 'category:' list-row ids a customer taps), so they keep their old spelling; the code's names changed.
-WHATSAPP_CATEGORY_ROW_PREFIX = 'category:'
+# The product type was once called "category" in the code. Its list-row ids used to start `category:`; they now start
+# `type:`, but a customer can still tap an older list that is sitting in their chat, so the old prefix is understood too.
+WHATSAPP_TYPE_ROW_PREFIX = 'type:'
+WHATSAPP_LEGACY_TYPE_ROW_PREFIX = 'category:'
+
+# The bot's saved state (Query.last_asked_field, edit_field and the held pending_value) used the key
+# 'product_category' for the same reason. Migration 0064 converted what was saved; anything still carrying the old key
+# is read as the new one, so a conversation never trips over the rename.
+LEGACY_KEYS = {'product_category': 'product_type'}
+
+
+def _modern(text):
+    """A saved key or key path ('product_category@0', 'item:1:product_category') with any old key spelled the new way."""
+    for old, new in LEGACY_KEYS.items():
+        text = text.replace(old, new)
+    return text
+
+
+def _modern_updates(updates):
+    """A held change (Query.pending_value) with the per-product keys in their current spelling."""
+    items = updates.get('_items') if isinstance(updates, dict) else None
+    if not items:
+        return updates
+    return {**updates, '_items': {LEGACY_KEYS.get(key, key): value for key, value in items.items()}}
 
 
 def _send_whatsapp_list_message(phone, text, button_label, rows):
@@ -248,7 +268,7 @@ def _product_type_rows():
     if not product_types or len(product_types) > WHATSAPP_LIST_MAX_ROWS:
         return None
     return [
-        (f"{WHATSAPP_CATEGORY_ROW_PREFIX}{c.pk}",
+        (f"{WHATSAPP_TYPE_ROW_PREFIX}{c.pk}",
          c.name if len(c.name) <= WHATSAPP_LIST_TITLE_MAX else c.name[:WHATSAPP_LIST_TITLE_MAX - 1] + '…',
          c.name)
         for c in product_types
@@ -330,7 +350,7 @@ def _send_whatsapp_question(phone, field, count=1, lead=''):
     text = lead + _question_text(field, count)
     if field == 'item_count':
         return _send_whatsapp_list_message_background(phone, text, "Choose number", _item_count_rows())
-    if field == 'product_category':
+    if field == 'product_type':
         rows = _product_type_rows()
         if rows:
             return _send_whatsapp_list_message_background(phone, text, "Choose type", rows)
@@ -342,7 +362,7 @@ def _send_whatsapp_question(phone, field, count=1, lead=''):
 
 
 def _item_value_missing(item, field):
-    if field == 'product_category':
+    if field == 'product_type':
         return not item.product_type_id
     if field in ('width', 'thickness', 'quantity'):
         return getattr(item, field) is None
@@ -651,9 +671,10 @@ def _handle_whatsapp_message(msg, phone, profile_name, sent_at, send_next):
         reply = interactive.get("button_reply") or interactive.get("list_reply") or {}
         title = (reply.get("title") or "").strip()
         reply_id = reply.get("id") or ""
-        if reply_id.startswith(WHATSAPP_CATEGORY_ROW_PREFIX):   # a product type row: its title may be cut short
-            product_type = ProductType.objects.filter(pk=reply_id[len(WHATSAPP_CATEGORY_ROW_PREFIX):] or 0).first() \
-                if reply_id[len(WHATSAPP_CATEGORY_ROW_PREFIX):].isdigit() else None
+        prefix = next((p for p in (WHATSAPP_TYPE_ROW_PREFIX, WHATSAPP_LEGACY_TYPE_ROW_PREFIX) if reply_id.startswith(p)), None)
+        if prefix:   # a product type row: its title may be cut short
+            row_pk = reply_id[len(prefix):]
+            product_type = ProductType.objects.filter(pk=row_pk or 0).first() if row_pk.isdigit() else None
             title = product_type.name if product_type else title
         if reply_id.startswith(WHATSAPP_FIELD_ROW_PREFIX) or reply_id.startswith(WHATSAPP_ITEM_ROW_PREFIX) or reply_id in ('more', 'back'):
             title = f"@{reply_id}"   # a row of the "what would you like to change?" lists
@@ -931,7 +952,7 @@ def _advance_whatsapp_query(query):
             _send_whatsapp_steps_background(query.contact_phone, _summary_steps(query))
         return
     asked = next_field if index is None else f"{next_field}@{index}"   # which product, for the one-at-a-time ones
-    if query.last_asked_field == asked:
+    if _modern(query.last_asked_field) == asked:
         return
     query.last_asked_field = asked
     query.save(update_fields=['last_asked_field'])
@@ -1021,11 +1042,11 @@ def _parse_answer(field, text, count=1, index=None):
             raise _InvalidAnswer(say=WHATSAPP_GST_INVALID_MESSAGE)
         number, address = parsed
         return {'gst_number': number, **({'gst_address': address} if address else {})}
-    if field == 'product_category':
+    if field == 'product_type':
         detected = _detect_product_type(text)
         if detected is None:
-            raise _InvalidAnswer(ask='product_category')
-        return {'_items': {'product_category': [detected.pk]}, '_item_only': index if index is not None else 0}
+            raise _InvalidAnswer(ask='product_type')
+        return {'_items': {'product_type': [detected.pk]}, '_item_only': index if index is not None else 0}
     if field == 'delivery_form':
         parsed = _parse_whatsapp_delivery_form(text)
         if parsed is None:
@@ -1060,16 +1081,14 @@ def _apply_item_updates(query, values_by_field, only=None, editing=False):
         item, touched = items[index], []
         for field, values in values_by_field.items():
             value = values[value_index]
-            if field == 'product_category':
+            if field == 'product_type':
                 value = ProductType.objects.get(pk=value)
                 item.product_type = value
             elif field in ('width', 'thickness', 'quantity'):
                 setattr(item, field, Decimal(value))
             else:
                 setattr(item, field, value)
-            # The bot's stored key for the product type is still 'product_category' (saved in conversations in
-            # progress); the database field it writes is `product_type`.
-            touched.append('product_type' if field == 'product_category' else field)
+            touched.append(field)
         if editing and 'drawing_notes' in touched and item.drawing:
             item.drawing = ''   # replaced by a text answer: the old file no longer stands
             touched.append('drawing')
@@ -1134,7 +1153,7 @@ WHATSAPP_QUERY_REVIEW_FIELDS = [
     ('company_name', 'Company name'), ('contact_email', 'Email'), ('gst_number', 'GST number & address'),
 ]
 WHATSAPP_ITEM_REVIEW_FIELDS = [
-    ('product_category', 'Product type'), ('drawing', 'Drawing / sample'), ('grade', 'Grade'), ('width', 'Width'),
+    ('product_type', 'Product type'), ('drawing', 'Drawing / sample'), ('grade', 'Grade'), ('width', 'Width'),
     ('thickness', 'Thickness'), ('technical_requirements', 'Make/properties/process'), ('end_use', 'End use'),
     ('delivery_form', 'Delivery form'), ('quantity', 'Quantity'),
 ]
@@ -1144,7 +1163,7 @@ _REVIEW_ALIASES = {
     'company_name': ('company', 'name'), 'contact_email': ('email', 'mail'), 'gst_number': ('gst', 'address'),
 }
 _ITEM_ALIASES = {
-    'product_category': ('type', 'category'), 'drawing': ('drawing', 'sample'), 'grade': ('grade',),
+    'product_type': ('type', 'category'), 'drawing': ('drawing', 'sample'), 'grade': ('grade',),
     'width': ('width',), 'thickness': ('thickness',),
     'technical_requirements': ('make', 'propert', 'process'), 'end_use': ('end use', 'use'),
     'delivery_form': ('delivery', 'coil', 'bar'), 'quantity': ('quantity', 'kg'),
@@ -1170,7 +1189,7 @@ def _review_value(query, key):
 
 def _item_field_value(item, field):
     """What the summary shows for one detail of one product ('—' when empty)."""
-    if field == 'product_category':
+    if field == 'product_type':
         value = item.product_type.name if item.product_type_id else ''
     elif field in ('width', 'thickness'):
         number = getattr(item, field)
@@ -1228,10 +1247,11 @@ def _item_field_list_step(query, index):
 
 def _edit_target(query):
     """('item', index, field) or ('query', None, field) for what Query.edit_field points at."""
-    if query.edit_field.startswith(WHATSAPP_ITEM_ROW_PREFIX):
-        parts = query.edit_field.split(':')
+    edit_field = _modern(query.edit_field)
+    if edit_field.startswith(WHATSAPP_ITEM_ROW_PREFIX):
+        parts = edit_field.split(':')
         return 'item', int(parts[1]), parts[2] if len(parts) > 2 else ''
-    return 'query', None, query.edit_field
+    return 'query', None, edit_field
 
 
 def _target_label(query):
@@ -1249,7 +1269,7 @@ def _pending_display(query, updates):
     if '_items' in updates:
         (field, values), = updates['_items'].items()
         value = values[0]
-        if field == 'product_category':
+        if field == 'product_type':
             return ProductType.objects.get(pk=value).name
         if field in ('width', 'thickness'):
             return f"{_trim_number(Decimal(value))} mm"
@@ -1265,7 +1285,7 @@ def _pending_display(query, updates):
 
 
 def _confirm_change_steps(query):
-    shown = _pending_display(query, query.pending_value)[:700]
+    shown = _pending_display(query, _modern_updates(query.pending_value))[:700]
     return [('buttons', f"Change {_target_label(query)} to:\n{shown}\n\nSave this change?", WHATSAPP_CHANGE_CHOICES)]
 
 
@@ -1443,7 +1463,7 @@ def _review_reply(query, text, window_open):
 
     if stage == 'confirm_change':
         if _says_yes(lowered):
-            changed = _apply_updates(query, query.pending_value, editing=True)
+            changed = _apply_updates(query, _modern_updates(query.pending_value), editing=True)
             query.pending_value, query.bot_stage, query.edit_field = {}, 'summary', ''
             query.save(update_fields=changed + ['pending_value', 'bot_stage', 'edit_field'])
             send(_summary_steps(query, "Done, I've updated that."))
@@ -1458,7 +1478,7 @@ def _question_step(field, count=1):
     text = _question_text(field, count)
     if field == 'item_count':
         return ('list', text, "Choose number", _item_count_rows())
-    if field == 'product_category':
+    if field == 'product_type':
         rows = _product_type_rows()
         if rows:
             return ('list', text, "Choose type", rows)
