@@ -48,8 +48,79 @@ class RenameKeepsAdminPermissionsTests(TransactionTestCase):
         held = set(User.objects.get(pk=user.pk).user_permissions.values_list('pk', flat=True))
         self.assertEqual(held, {code_perm.pk, type_perm.pk})   # the user keeps both permissions
 
-    def test_the_data_tables_keep_their_old_names(self):
+    def test_the_tables_have_the_names_that_match_the_models(self):
         tables = connection.introspection.table_names()
-        self.assertIn('materials_producttype', tables)       # the code table
-        self.assertIn('materials_productcategory', tables)   # the type table
-        self.assertNotIn('materials_productcode', tables)
+        self.assertIn('materials_productcode', tables)       # the code table
+        self.assertIn('materials_producttype', tables)       # the type table
+        self.assertNotIn('materials_productcategory', tables)
+
+
+class RealRenameKeepsRelationsTests(TransactionTestCase):
+    """Migration 0063 really renames the tables and columns (the code table to materials_productcode, the type table
+    to materials_producttype, and the foreign-key columns to match). Data built under the OLD schema must still point
+    at the right rows afterwards, and going back and forward again must keep working."""
+
+    OLD = [('materials', '0062_coil_thickness_readings')]
+
+    def tearDown(self):
+        _migrate(_latest())
+
+    def _old_models(self):
+        apps = MigrationExecutor(connection).loader.project_state(self.OLD).apps
+        return apps.get_model
+
+    def test_links_survive_the_rename_and_the_undo(self):
+        _migrate(self.OLD)
+        get = self._old_models()
+        customer = get('materials', 'Customer').objects.create(name='Link Co')
+        flat = get('materials', 'ProductType').objects.create(name='Flat Test', code='FTT')
+        square = get('materials', 'ProductType').objects.create(name='Square Test', code='SQT')
+        flat_code = get('materials', 'ProductCode').objects.create(item_code='FTT001', grade='EN8D', product_type=flat)
+        square_code = get('materials', 'ProductCode').objects.create(item_code='SQT001', grade='EN8D', product_type=square)
+        order = get('materials', 'Order').objects.create(customer=customer, product_code=flat_code, quantity=100, grade='EN8D')
+        step = get('materials', 'ProcessStep').objects.create(product_code=square_code, name='Cut', order=1)
+        spec = get('materials', 'AllowedCoilSpec').objects.create(product_code=flat_code, size='1.200')
+        query = get('materials', 'Query').objects.create(source='other', contact_phone='919000000009')
+        item = get('materials', 'QueryItem').objects.create(query=query, product_type=square, product_code=square_code)
+        quotation = get('materials', 'Quotation').objects.create(customer=customer, status='draft')
+        line = get('materials', 'QuotationLineItem').objects.create(
+            quotation=quotation, description='x', product_type=flat, product_code=flat_code)
+
+        _migrate(_latest())
+
+        from ..models import AllowedCoilSpec, Order, ProcessStep, ProductCode, ProductType, QueryItem, QuotationLineItem
+        self.assertEqual(ProductCode.objects.get(item_code='FTT001').product_type.name, 'Flat Test')
+        self.assertEqual(ProductCode.objects.get(item_code='SQT001').product_type.name, 'Square Test')
+        self.assertEqual(Order.objects.get(pk=order.pk).product_code.item_code, 'FTT001')
+        self.assertEqual(ProcessStep.objects.get(pk=step.pk).product_code.item_code, 'SQT001')
+        self.assertEqual(AllowedCoilSpec.objects.get(pk=spec.pk).product_code.item_code, 'FTT001')
+        new_item = QueryItem.objects.get(pk=item.pk)
+        self.assertEqual((new_item.product_type.name, new_item.product_code.item_code), ('Square Test', 'SQT001'))
+        new_line = QuotationLineItem.objects.get(pk=line.pk)
+        self.assertEqual((new_line.product_type.name, new_line.product_code.item_code), ('Flat Test', 'FTT001'))
+        self.assertEqual(set(ProductType.objects.filter(code__in=['FTT', 'SQT']).values_list('name', flat=True)),
+                         {'Flat Test', 'Square Test'})   # (the standard seven types are there too)
+        self.assertEqual(ProductCode.objects.filter(item_code__in=['FTT001', 'SQT001']).count(), 2)
+
+        # the tables and columns really carry the new names
+        tables = connection.introspection.table_names()
+        self.assertIn('materials_productcode', tables)
+        self.assertIn('materials_producttype', tables)
+        self.assertNotIn('materials_productcategory', tables)
+        with connection.cursor() as cursor:
+            def columns(table):
+                return {col.name for col in connection.introspection.get_table_description(cursor, table)}
+            self.assertIn('product_code_id', columns('materials_order'))
+            self.assertNotIn('product_type_id', columns('materials_order'))
+            self.assertEqual({'product_type_id', 'product_code_id'} <= columns('materials_queryitem'), True)
+            self.assertNotIn('product_category_id', columns('materials_queryitem'))
+            self.assertIn('product_type_id', columns('materials_productcode'))
+            self.assertNotIn('category_id', columns('materials_productcode'))
+
+        # and the migration can be undone and applied again without losing anything
+        _migrate(self.OLD)
+        get = self._old_models()
+        self.assertEqual(get('materials', 'ProductCode').objects.get(item_code='SQT001').product_type.name, 'Square Test')
+        self.assertEqual(get('materials', 'Order').objects.get(pk=order.pk).product_code.item_code, 'FTT001')
+        _migrate(_latest())
+        self.assertEqual(Order.objects.get(pk=order.pk).product_code.product_type.name, 'Flat Test')

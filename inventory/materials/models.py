@@ -328,7 +328,6 @@ class ProductType(models.Model):
         ordering = ['position', 'name']
         verbose_name = 'product type'
         verbose_name_plural = 'product types'
-        db_table = 'materials_productcategory'   # the table keeps the model's old name: only the code names changed
 
     def __str__(self):
         return self.name
@@ -345,7 +344,7 @@ class ProductCode(models.Model):
     quote line and order, not here.
     """
     product_type    = models.ForeignKey(
-        ProductType, db_column='category_id', on_delete=models.PROTECT, null=True, related_name='product_codes',
+        ProductType, on_delete=models.PROTECT, null=True, related_name='product_codes',
         verbose_name="Product Type",
     )
     item_code   = models.CharField(max_length=100, verbose_name="Item Code")
@@ -365,7 +364,6 @@ class ProductCode(models.Model):
         ]
         verbose_name = 'product code'
         verbose_name_plural = 'product codes'
-        db_table = 'materials_producttype'   # the table keeps the model's old name: only the code names changed
 
     def __str__(self):
         return self.item_code
@@ -374,7 +372,7 @@ class ProductCode(models.Model):
 class AllowedCoilSpec(models.Model):
     """Raw coil sizes (and the wastage ratio) the admin approves for a product code. The coil's grade is not
     part of the spec: it must always be the order's own grade."""
-    product_code = models.ForeignKey(ProductCode, db_column='product_type_id', on_delete=models.CASCADE, related_name='allowed_specs')
+    product_code = models.ForeignKey(ProductCode, on_delete=models.CASCADE, related_name='allowed_specs')
     size  = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Size (mm)")
     raw_material_ratio = models.DecimalField(
         max_digits=6, decimal_places=3, default=Decimal('1.000'),
@@ -407,7 +405,7 @@ class AllowedCoilSpec(models.Model):
 
 class ProcessStep(models.Model):
     """A named step belonging to a product code, with a defined order."""
-    product_code = models.ForeignKey(ProductCode, db_column='product_type_id', on_delete=models.CASCADE, related_name='steps')
+    product_code = models.ForeignKey(ProductCode, on_delete=models.CASCADE, related_name='steps')
     name = models.CharField(max_length=100)   # e.g. "Blanking", "Forming", "Heat treat"
     order = models.PositiveIntegerField()      # 1, 2, 3 ...
     # Material is cut into smaller parts at some steps: completing a step marked "splits the material" asks
@@ -463,7 +461,7 @@ class ProductionJob(models.Model):
     ]
 
     pick         = models.ForeignKey(OrderCoilPick, on_delete=models.CASCADE, related_name='jobs')
-    product_code = models.ForeignKey(ProductCode, db_column='product_type_id', on_delete=models.PROTECT)
+    product_code = models.ForeignKey(ProductCode, on_delete=models.PROTECT)
     order        = models.ForeignKey('Order', on_delete=models.CASCADE, related_name='jobs')
     job_no       = models.CharField(max_length=30, unique=True)   # e.g. JOB-0001
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
@@ -760,8 +758,8 @@ class QueryItem(models.Model):
     query            = models.ForeignKey(Query, on_delete=models.CASCADE, related_name='items')
     position         = models.PositiveSmallIntegerField(default=1)
     # The product type (family) — chosen from the bot's list, or set by staff.
-    product_type = models.ForeignKey(ProductType, db_column='product_category_id', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
-    product_code     = models.ForeignKey(ProductCode, db_column='product_type_id', on_delete=models.SET_NULL, null=True, blank=True)   # the product code
+    product_type = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
+    product_code     = models.ForeignKey(ProductCode, on_delete=models.SET_NULL, null=True, blank=True)   # the product code
     grade            = GradeField(max_length=100, blank=True)
     width            = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
     thickness        = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Thickness (mm)")
@@ -999,8 +997,8 @@ class QuotationLineItem(models.Model):
     quotation    = models.ForeignKey(Quotation, on_delete=models.CASCADE, related_name='line_items')
     order        = models.PositiveIntegerField(default=1, help_text="Display order (Sr. No.) within the quotation.")
     description  = models.CharField(max_length=255)
-    product_type     = models.ForeignKey(ProductType, db_column='category_id', on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
-    product_code = models.ForeignKey(ProductCode, db_column='product_type_id', on_delete=models.SET_NULL, null=True, blank=True)
+    product_type     = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True, verbose_name="Product Type")
+    product_code = models.ForeignKey(ProductCode, on_delete=models.SET_NULL, null=True, blank=True)
     grade        = GradeField(max_length=100, blank=True)
     width        = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Width (mm)")
     thickness    = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, verbose_name="Thickness (mm)")
@@ -1081,7 +1079,7 @@ class Order(models.Model):
     )
     customer              = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='orders')
     source_query          = models.ForeignKey(Query, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
-    product_code          = models.ForeignKey(ProductCode, db_column='product_type_id', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Code")
+    product_code          = models.ForeignKey(ProductCode, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Code")
     # 1. Drawing / dimensions
     drawing_dimensions    = models.TextField(blank=True, verbose_name="Drawing / Dimensions")   # typed text: staff entry and older orders
     # What the customer attaches on the order form (instead of typing dimensions), and their tolerances:
