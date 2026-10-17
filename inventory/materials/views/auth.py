@@ -1,14 +1,16 @@
 """Employee PIN login/logout, the admin login page, and the public home page."""
 
+from django.contrib import messages
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate, login, logout
 from django.conf import settings
 from django.core.cache import cache
 from django.urls import Resolver404, resolve, reverse
 from urllib.parse import urlsplit
-from django.utils.crypto import constant_time_compare
 
+from .. import access_codes
 from ..decorators import employee_required, redirect_to_admin_login, staff_required
+from ..forms import AccessCodeChangeForm
 from .common import _safe_next
 
 
@@ -44,12 +46,13 @@ def _check_code(request):
         return None, f"Too many incorrect attempts. Try again in {minutes} minutes."
     typed = request.POST.get('pin', '')
     # Both comparisons always run, so the time taken doesn't hint at which code is closer.
-    is_employee = constant_time_compare(typed, settings.EMPLOYEE_PIN)
-    is_finance = constant_time_compare(typed, settings.FINANCE_CODE)
+    is_employee = access_codes.code_matches('employee', typed)
+    is_finance = access_codes.code_matches('finance', typed)
     if is_employee or is_finance:
         role = 'employee' if is_employee else 'finance'
         cache.delete(key)
-        request.session[ROLE_SESSION_FLAGS[role]] = True
+        # The session holds the code's current version, so a later change of the code signs this browser out.
+        request.session[ROLE_SESSION_FLAGS[role]] = access_codes.session_token(role)
         return role, None
     cache.add(key, 0, settings.EMPLOYEE_LOGIN_LOCKOUT_SECONDS)
     try:
@@ -63,8 +66,8 @@ def code_login(request):
     """The login page for ground staff and the finance team: one code box, and the code decides the dashboard.
     (Owners use the separate username and password page, linked below the box.)"""
     requested = request.GET.get('next') or request.POST.get('next')
-    for role, flag in ROLE_SESSION_FLAGS.items():
-        if request.session.get(flag):
+    for role in ROLE_SESSION_FLAGS:
+        if access_codes.session_valid(request, role):
             return redirect(_landing_for(request, role, requested))
     error = None
     if request.method == 'POST':
@@ -128,3 +131,24 @@ def admin_login(request):
 @employee_required
 def employee_landing(request):
     return render(request, 'materials/employee_landing.html')
+
+
+@staff_required(on_denied=redirect_to_admin_login)
+def access_codes_page(request):
+    """Owners change the employee PIN and the finance code here. A new code is exactly 4 digits and must differ from
+    the other role's code; saving it signs out everybody who was signed in with the old one. The current code is
+    never shown (it is stored scrambled), only when it was last changed and by whom."""
+    posted_role = request.POST.get('role') if request.method == 'POST' else None
+    cards = []
+    for role in access_codes.ROLES:
+        form = AccessCodeChangeForm(request.POST, role=role) if posted_role == role else AccessCodeChangeForm(role=role)
+        if posted_role == role and form.is_valid():
+            if access_codes.set_code(role, form.cleaned_data['new_code'], request.user):
+                messages.success(request, f"{access_codes.LABELS[role]} changed. Everyone signed in with the old one "
+                                          f"has been signed out.")
+            else:
+                messages.info(request, f"That is already the {access_codes.LABELS[role]}; nothing was changed.")
+            return redirect('access_codes')
+        cards.append({'role': role, 'label': access_codes.LABELS[role], 'noun': access_codes.NOUNS[role], 'form': form,
+                      'row': access_codes.current_row(role)})
+    return render(request, 'materials/access_codes.html', {'cards': cards})

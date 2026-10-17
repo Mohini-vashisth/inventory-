@@ -3,6 +3,8 @@ from functools import wraps
 from django.shortcuts import redirect
 from django.urls import reverse
 
+from . import access_codes
+
 
 def _tag(wrapper, access):
     # Read by MaterialsRouteGuardTests, which fails for any routed view that
@@ -34,7 +36,7 @@ def employee_required(view_func):
     view (session flag set by the code login)."""
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
-        if not request.session.get('employee_auth'):
+        if not access_codes.session_valid(request, 'employee'):
             return redirect(f"{reverse('login')}?next={request.path}")
         return view_func(request, *args, **kwargs)
     return _tag(wrapper, 'employee')
@@ -46,7 +48,7 @@ def employee_or_staff_required(view_func):
     anonymous or non-staff visitor is denied, and a PIN session stays out of the staff-only routes."""
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
-        if not (request.session.get('employee_auth') or request.user.is_staff):
+        if not (access_codes.session_valid(request, 'employee') or request.user.is_staff):
             return redirect(f"{reverse('login')}?next={request.path}")
         return view_func(request, *args, **kwargs)
     return _tag(wrapper, 'employee')
@@ -58,7 +60,7 @@ def finance_required(view_func):
     The employee PIN does not open it, and the finance code opens nothing else."""
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
-        if not (request.session.get('finance_auth') or request.user.is_staff):
+        if not (access_codes.session_valid(request, 'finance') or request.user.is_staff):
             return redirect(f"{reverse('login')}?next={request.path}")
         return view_func(request, *args, **kwargs)
     return _tag(wrapper, 'finance')

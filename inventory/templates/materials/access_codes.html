@@ -1,0 +1,50 @@
+{% extends "materials/base.html" %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}Access codes{% endblock %}
+
+{% block css %}
+  .code-card { margin-bottom: 1.1rem; }
+  .code-card h2 { font-size: 1.05rem; margin-bottom: 0.2rem; }
+  .code-card .changed { color: var(--ds-muted); font-size: 0.85rem; margin-bottom: 0.9rem; }
+  .code-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-bottom: 0.8rem; }
+  .code-fields input { letter-spacing: 0.3em; text-align: center; }
+  .warning { color: #92400e; font-size: 0.82rem; margin-bottom: 0.8rem; }
+  @media (max-width: 520px) { .code-fields { grid-template-columns: 1fr; } }
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="ds-top">
+    <a href="{% url 'staff_home' %}" class="back-link">← Back to dashboard</a>
+  </div>
+  <h1>Access codes</h1>
+  <p class="subtitle">Change the code ground staff or the finance team sign in with. A code is exactly 4 digits. The current codes are never shown.</p>
+
+  {% for msg in messages %}
+  <div class="alert {% if msg.tags == 'success' %}alert-success{% elif msg.tags == 'info' %}alert-warning{% else %}alert-error{% endif %}">{{ msg }}</div>
+  {% endfor %}
+
+  {% for card in cards %}
+  <div class="card code-card">
+    <h2>{{ card.label }}</h2>
+    <p class="changed">
+      {% if card.row %}Last changed {{ card.row.changed_at|date:"d M Y, H:i" }}{% if card.row.changed_by %} by {{ card.row.changed_by.get_username }}{% endif %}.
+      {% else %}Not changed here yet: it is still the one set when the app was installed.{% endif %}
+    </p>
+    {% if card.form.non_field_errors %}<div class="error-msg">{{ card.form.non_field_errors.0 }}</div>{% endif %}
+    {% if card.form.new_code.errors or card.form.repeat.errors %}<div class="error-msg">The code must be exactly 4 digits.</div>{% endif %}
+    <form method="POST">
+      {% csrf_token %}
+      <input type="hidden" name="role" value="{{ card.role }}">
+      <div class="code-fields">
+        <div><label>New code</label><input type="password" name="new_code" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" required></div>
+        <div><label>Type it again</label><input type="password" name="repeat" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" autocomplete="off" required></div>
+      </div>
+      <p class="warning">Everyone signed in with the current {{ card.noun }} is signed out the moment you change it.</p>
+      <button type="submit" class="btn-submit">Change the {{ card.noun }}</button>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

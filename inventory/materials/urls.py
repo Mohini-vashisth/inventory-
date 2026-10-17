@@ -5,6 +5,7 @@ urlpatterns = [
     path("", auth.welcome, name="home"),
     path("dashboard/", auth.staff_home, name="staff_home"),
     path("dashboard/logout/", auth.staff_logout, name="staff_logout"),
+    path("dashboard/codes/", auth.access_codes_page, name="access_codes"),
     path("login/", auth.code_login, name="login"),
     path("gate-entry/", gate_entry.gate_entry_form, name="gate_entry_form"),
     path("gate-entry/autocomplete/", gate_entry.material_field_autocomplete, name="material_field_autocomplete"),
