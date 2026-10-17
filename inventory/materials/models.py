@@ -137,6 +137,22 @@ class GateEntryLot(models.Model):
         return f"{self.gate_entry} — {self.grade}, {self.size} mm ({self.no_of_coils} coils)"
 
 
+class AccessCode(models.Model):
+    """The shared code for one role, once an owner has changed it from the owners' dashboard (until then the value in
+    the `.env` file is used). The code is stored scrambled (hashed, like a password), never in clear, so a backup
+    can't reveal it. `version` goes up on every change: a browser signed in with the code holds the version it was
+    given, so a change signs everybody out at once (their version no longer matches). See materials/access_codes.py."""
+    ROLE_CHOICES = [('employee', 'Employee PIN'), ('finance', 'Finance code')]
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, unique=True)
+    code_hash = models.CharField(max_length=128)
+    version = models.PositiveIntegerField(default=1)
+    changed_at = models.DateTimeField(default=timezone.now)
+    changed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+
+    def __str__(self):
+        return f"{self.get_role_display()} (version {self.version})"
+
+
 class NonCoilEntry(models.Model):
     """Something other than a truck of coils arriving at the gate (dies, machine parts, anything): the gate
     person records only what kind of thing it is and which company sent it; the time is recorded

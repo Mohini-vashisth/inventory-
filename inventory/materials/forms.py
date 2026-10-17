@@ -67,6 +67,29 @@ class BillLineForm(forms.ModelForm):
         return self.cleaned_data['unit'].strip().upper()   # NOS, KG, PCS... one spelling, whoever types it
 
 
+class AccessCodeChangeForm(forms.Form):
+    """A new employee PIN or finance code: exactly 4 digits, typed twice (a typo would lock everyone out), and not
+    the other role's code."""
+    new_code = forms.CharField(max_length=4, label="New code")
+    repeat = forms.CharField(max_length=4, label="Type it again")
+
+    def __init__(self, *args, role=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.role = role
+
+    def clean(self):
+        cleaned = super().clean()
+        new_code, repeat = cleaned.get('new_code'), cleaned.get('repeat')
+        if new_code is not None and repeat is not None:
+            if new_code != repeat:
+                raise forms.ValidationError("The two codes do not match.")
+            from . import access_codes   # imported here: access_codes imports the models
+            error = access_codes.validate_new_code(self.role, new_code)
+            if error:
+                raise forms.ValidationError(error)
+        return cleaned
+
+
 class GateEntryLotForm(forms.Form):
     """A single lot row — company/grade/size/no_of_coils. Used both as a
     standalone form (adding one more lot to an existing gate entry) and,
