@@ -71,13 +71,13 @@
       </div>
 
       <div class="form-group">
-        <label>Measured Thickness (mm) — 5 places along the coil</label>
+        <label>Actual Diameter (mm) — 5 places along the coil</label>
         <div class="readings">
-          <input type="number" name="thickness_1" step="0.001" min="0.001" value="{{ post.thickness_1|default:'' }}" placeholder="Reading 1" aria-label="Thickness reading 1" {% if not complete %}required{% endif %}>
-          <input type="number" name="thickness_2" step="0.001" min="0.001" value="{{ post.thickness_2|default:'' }}" placeholder="Reading 2" aria-label="Thickness reading 2" {% if not complete %}required{% endif %}>
-          <input type="number" name="thickness_3" step="0.001" min="0.001" value="{{ post.thickness_3|default:'' }}" placeholder="Reading 3" aria-label="Thickness reading 3" {% if not complete %}required{% endif %}>
-          <input type="number" name="thickness_4" step="0.001" min="0.001" value="{{ post.thickness_4|default:'' }}" placeholder="Reading 4" aria-label="Thickness reading 4" {% if not complete %}required{% endif %}>
-          <input type="number" name="thickness_5" step="0.001" min="0.001" value="{{ post.thickness_5|default:'' }}" placeholder="Reading 5" aria-label="Thickness reading 5" {% if not complete %}required{% endif %}>
+          <input type="number" name="diameter_1" step="0.001" min="0.001" value="{{ post.diameter_1|default:'' }}" placeholder="Reading 1" aria-label="Diameter reading 1" {% if not complete %}required{% endif %}>
+          <input type="number" name="diameter_2" step="0.001" min="0.001" value="{{ post.diameter_2|default:'' }}" placeholder="Reading 2" aria-label="Diameter reading 2" {% if not complete %}required{% endif %}>
+          <input type="number" name="diameter_3" step="0.001" min="0.001" value="{{ post.diameter_3|default:'' }}" placeholder="Reading 3" aria-label="Diameter reading 3" {% if not complete %}required{% endif %}>
+          <input type="number" name="diameter_4" step="0.001" min="0.001" value="{{ post.diameter_4|default:'' }}" placeholder="Reading 4" aria-label="Diameter reading 4" {% if not complete %}required{% endif %}>
+          <input type="number" name="diameter_5" step="0.001" min="0.001" value="{{ post.diameter_5|default:'' }}" placeholder="Reading 5" aria-label="Diameter reading 5" {% if not complete %}required{% endif %}>
         </div>
       </div>
 

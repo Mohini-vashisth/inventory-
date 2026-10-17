@@ -22,7 +22,7 @@ class MaterialFormValidationTests(TestCase):
             'date': '2026-07-06', 'grade': 'EN8D', 'size': '1.200',
             'company': 'Tata Steel', 'vendor': 'ABC Traders',
             'quantity': '500.000', 'heat_no': 'H001',
-            'thickness_1': '1.215', 'thickness_2': '1.218', 'thickness_3': '1.212', 'thickness_4': '1.216', 'thickness_5': '1.214',
+            'diameter_1': '1.215', 'diameter_2': '1.218', 'diameter_3': '1.212', 'diameter_4': '1.216', 'diameter_5': '1.214',
         }
         data.update(overrides)
         return data
@@ -445,7 +445,7 @@ class MaterialFormGateEntryTests(TestCase):
     def _post_coil(self, lot=None, **overrides):
         lot = lot or self.lot
         data = {'date': '2026-07-06', 'heat_no': 'H001', 'quantity': '480.500',
-                'thickness_1': '1.215', 'thickness_2': '1.218', 'thickness_3': '1.212', 'thickness_4': '1.216', 'thickness_5': '1.214'}
+                'diameter_1': '1.215', 'diameter_2': '1.218', 'diameter_3': '1.212', 'diameter_4': '1.216', 'diameter_5': '1.214'}
         data.update(overrides)
         return self.client.post(reverse('material_form', args=[lot.pk]), data)
 
@@ -522,11 +522,11 @@ class MaterialFormGateEntryTests(TestCase):
         self.assertEqual(Material.objects.filter(lot=self.lot).count(), 1)
 
 
-class CoilThicknessReadingsTests(TestCase):
-    """Registering a coil takes five measured thickness readings (mm, along the coil): all required, stored and
+class CoilDiameterReadingsTests(TestCase):
+    """Registering a coil takes five measured diameter readings (mm, along the coil): all required, stored and
     shown only, printed on the tag in the order taken."""
 
-    READINGS = {'thickness_1': '1.215', 'thickness_2': '1.218', 'thickness_3': '1.212', 'thickness_4': '1.216', 'thickness_5': '1.214'}
+    READINGS = {'diameter_1': '1.215', 'diameter_2': '1.218', 'diameter_3': '1.212', 'diameter_4': '1.216', 'diameter_5': '1.214'}
 
     def setUp(self):
         GradeOption.objects.get_or_create(name='EN8D')
@@ -544,28 +544,28 @@ class CoilThicknessReadingsTests(TestCase):
     def test_the_page_asks_for_five_readings(self):
         page = self.client.get(self.url)
         for number in range(1, 6):
-            self.assertContains(page, f'name="thickness_{number}"')
-        self.assertContains(page, 'Measured Thickness (mm)')
+            self.assertContains(page, f'name="diameter_{number}"')
+        self.assertContains(page, 'Actual Diameter (mm)')
 
     def test_the_five_readings_are_saved_in_order(self):
         response = self._post()
         coil = Material.objects.get()
         self.assertRedirects(response, reverse('coil_tag', args=[coil.pk]))
-        self.assertEqual([str(getattr(coil, f'thickness_{n}')) for n in range(1, 6)],
+        self.assertEqual([str(getattr(coil, f'diameter_{n}')) for n in range(1, 6)],
                          ['1.215', '1.218', '1.212', '1.216', '1.214'])
-        self.assertEqual(coil.thickness_readings(), ['1.215', '1.218', '1.212', '1.216', '1.214'])
+        self.assertEqual(coil.diameter_readings(), ['1.215', '1.218', '1.212', '1.216', '1.214'])
 
     def test_all_five_are_required(self):
         for number in range(1, 6):
             with self.subTest(missing=number):
-                response = self._post(**{f'thickness_{number}': ''})
+                response = self._post(**{f'diameter_{number}': ''})
                 self.assertEqual(response.status_code, 200)
         self.assertEqual(Material.objects.count(), 0)
 
     def test_each_reading_must_be_above_zero_and_a_number(self):
         for bad in ('0', '-1.2', 'abc'):
             with self.subTest(reading=bad):
-                self.assertEqual(self._post(thickness_3=bad).status_code, 200)
+                self.assertEqual(self._post(diameter_3=bad).status_code, 200)
         self.assertEqual(Material.objects.count(), 0)
 
     def test_a_refused_form_keeps_the_readings_typed(self):
@@ -577,18 +577,18 @@ class CoilThicknessReadingsTests(TestCase):
         self._post()
         coil = Material.objects.get()
         tag = self.client.get(reverse('coil_tag', args=[coil.pk])).content.decode()
-        self.assertIn('Thickness', tag)
+        self.assertIn('Actual Diameter', tag)
         positions = [tag.index(f'<span>{value}</span>') for value in ('1.215', '1.218', '1.212', '1.216', '1.214')]
         self.assertEqual(positions, sorted(positions))
 
     def test_every_reading_is_shown_with_three_decimals(self):
-        self._post(thickness_1='6', thickness_2='1.25')
-        self.assertEqual(Material.objects.get().thickness_readings()[:2], ['6.000', '1.250'])
+        self._post(diameter_1='6', diameter_2='1.25')
+        self.assertEqual(Material.objects.get().diameter_readings()[:2], ['6.000', '1.250'])
 
-    def test_a_coil_that_was_never_measured_has_no_thickness_row_on_its_tag(self):
+    def test_a_coil_that_was_never_measured_has_no_diameter_row_on_its_tag(self):
         old = Material.objects.create(grade='EN8D', size='1.200', quantity=500, heat_no='OLD1')
-        self.assertEqual(old.thickness_readings(), [])
-        self.assertNotContains(self.client.get(reverse('coil_tag', args=[old.pk])), 'Thickness')
+        self.assertEqual(old.diameter_readings(), [])
+        self.assertNotContains(self.client.get(reverse('coil_tag', args=[old.pk])), 'Actual Diameter')
 
     def test_an_old_coil_can_still_be_saved_in_the_admin_without_readings(self):
         from django.contrib.auth.models import User
@@ -597,8 +597,8 @@ class CoilThicknessReadingsTests(TestCase):
         self.client.login(username='boss', password='pw')
         old = Material.objects.create(grade='EN8D', size='1.200', quantity=500, heat_no='OLD1')
         page = self.client.get(reverse('admin:materials_material_change', args=[old.pk]))
-        self.assertContains(page, 'name="thickness_1"')
-        self.assertEqual(page.context['adminform'].form.fields['thickness_1'].required, False)
+        self.assertContains(page, 'name="diameter_1"')
+        self.assertEqual(page.context['adminform'].form.fields['diameter_1'].required, False)
 
 
 class GateEntryUppercaseTests(TestCase):
@@ -631,6 +631,6 @@ class GateEntryUppercaseTests(TestCase):
         GradeOption.objects.get_or_create(name='EN8D')
         SizeOption.objects.get_or_create(value='1.200')
         form = MaterialForm({'grade': 'EN8D', 'size': '1.2', 'vendor': 'ABC', 'company': 'TATA', 'quantity': '500', 'heat_no': ' 21e02404 ',
-                             'thickness_1': '1.215', 'thickness_2': '1.218', 'thickness_3': '1.212', 'thickness_4': '1.216', 'thickness_5': '1.214'})
+                             'diameter_1': '1.215', 'diameter_2': '1.218', 'diameter_3': '1.212', 'diameter_4': '1.216', 'diameter_5': '1.214'})
         self.assertTrue(form.is_valid(), form.errors)
         self.assertEqual(form.cleaned_data['heat_no'], '21E02404')
