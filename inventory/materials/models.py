@@ -3,7 +3,7 @@ import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import ValidationError
-from django.core.validators import FileExtensionValidator, MaxValueValidator, RegexValidator
+from django.core.validators import FileExtensionValidator, MaxValueValidator, MinValueValidator, RegexValidator
 from django.db import models
 from django.contrib.auth.models import User
 from django.db.models.functions import Coalesce
@@ -160,6 +160,23 @@ class NonCoilEntry(models.Model):
 
     def __str__(self):
         return f"{self.category} from {self.company}"
+
+
+class NonCoilBillLine(models.Model):
+    """One product on the supplier's bill for a non-coil entry, entered by hand by the finance team from the bill
+    (bill-wise tracking: how many dies arrived, how often, when machine parts were needed). More fields will
+    follow once the client confirms what they want recorded; coil bills stay file-only."""
+    entry = models.ForeignKey(NonCoilEntry, on_delete=models.CASCADE, related_name='lines')
+    position = models.PositiveIntegerField(default=0, help_text="The order the products appear on the bill.")
+    description = models.CharField(max_length=200)
+    quantity = models.DecimalField(max_digits=12, decimal_places=3, validators=[MinValueValidator(Decimal('0.001'))])
+    unit = models.CharField(max_length=20, help_text="e.g. NOS, KG, PCS, SET, M, BOX.")
+
+    class Meta:
+        ordering = ['position', 'pk']
+
+    def __str__(self):
+        return f"{self.description} — {self.quantity.normalize():f} {self.unit}"
 
 
 class Material(models.Model):

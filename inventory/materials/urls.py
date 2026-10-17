@@ -22,6 +22,7 @@ urlpatterns = [
     path("finance-logout/", auth.finance_logout, name="finance_logout"),
     path("finance/upload/coil/<int:pk>/", finance.finance_upload_coil_bill, name="finance_upload_coil_bill"),
     path("finance/upload/other/<int:pk>/", finance.finance_upload_other_bill, name="finance_upload_other_bill"),
+    path("finance/other/<int:pk>/details/", finance.finance_bill_details, name="finance_bill_details"),
     path("finance/bill/coil/<int:pk>/", finance.finance_coil_bill, name="finance_coil_bill"),
     path("finance/bill/other/<int:pk>/", finance.finance_other_bill, name="finance_other_bill"),
     path("employee/", auth.employee_landing, name="employee"),

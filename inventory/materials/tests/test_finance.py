@@ -352,3 +352,107 @@ class WelcomeAndStaffDashboardTests(TestCase):
     def test_the_staff_dashboard_is_staff_only(self):
         response = self.client.get(reverse('staff_home'))
         self.assertIn(reverse('admin_login'), response['Location'])
+
+
+class BillDetailsPageTests(FinanceTestCase):
+    """The products on a non-coil bill: description, quantity, unit, entered by finance after the bill is uploaded."""
+
+    def setUp(self):
+        finance_login(self.client)
+        self.entry = NonCoilEntry.objects.create(category='DIES', company='ABC TOOLS', bill=bill_file())
+        self.url = reverse('finance_bill_details', args=[self.entry.pk])
+
+    def _post(self, rows):
+        data = {'line-TOTAL_FORMS': str(len(rows))}
+        for index, (description, quantity, unit) in enumerate(rows):
+            data.update({f'line-{index}-description': description, f'line-{index}-quantity': quantity, f'line-{index}-unit': unit})
+        return self.client.post(self.url, data)
+
+    def test_uploading_a_non_coil_bill_goes_on_to_the_details_page(self):
+        entry = NonCoilEntry.objects.create(category='BEARINGS', company='XYZ')
+        response = self.client.post(reverse('finance_upload_other_bill', args=[entry.pk]), {'bill': bill_file()})
+        self.assertRedirects(response, reverse('finance_bill_details', args=[entry.pk]))
+
+    def test_a_refused_bill_stays_on_the_list(self):
+        entry = NonCoilEntry.objects.create(category='BEARINGS', company='XYZ')
+        response = self.client.post(reverse('finance_upload_other_bill', args=[entry.pk]), {'bill': bill_file('x.html', b'<b>')})
+        self.assertRedirects(response, reverse('finance'))
+
+    def test_a_coil_bill_still_returns_to_the_list(self):
+        coil = GateEntry.objects.create(vendor='TATA', invoice_no='I1', total_weight=100)
+        response = self.client.post(reverse('finance_upload_coil_bill', args=[coil.pk]), {'bill': bill_file()})
+        self.assertRedirects(response, reverse('finance'))
+
+    def test_the_page_shows_the_entry_and_the_bill(self):
+        page = self.client.get(self.url)
+        self.assertContains(page, 'DIES')
+        self.assertContains(page, 'ABC TOOLS')
+        self.assertContains(page, reverse('finance_other_bill', args=[self.entry.pk]))
+
+    def test_saving_products_stores_them_in_order_with_the_unit_in_capitals(self):
+        response = self._post([('Die 12 mm', '4', 'nos'), ('Grease', '2.5', 'kg')])
+        self.assertRedirects(response, reverse('finance'))
+        lines = list(self.entry.lines.all())
+        self.assertEqual([(line.description, str(line.quantity), line.unit, line.position) for line in lines],
+                         [('Die 12 mm', '4.000', 'NOS', 1), ('Grease', '2.500', 'KG', 2)])
+
+    def test_saving_again_replaces_the_list(self):
+        self._post([('Die 12 mm', '4', 'NOS'), ('Grease', '2', 'KG')])
+        self._post([('Die 12 mm', '6', 'NOS')])
+        self.assertEqual([(line.description, str(line.quantity)) for line in self.entry.lines.all()], [('Die 12 mm', '6.000')])
+
+    def test_blank_rows_are_ignored_and_saving_none_is_allowed(self):
+        self._post([('', '', ''), ('Die', '1', 'NOS')])
+        self.assertEqual(self.entry.lines.count(), 1)
+        self._post([('', '', '')])
+        self.assertEqual(self.entry.lines.count(), 0)
+
+    def test_a_half_filled_row_is_refused_and_nothing_is_saved(self):
+        self._post([('Die', '1', 'NOS')])
+        response = self._post([('Die', '1', 'NOS'), ('Grease', '', 'KG')])
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Please complete or remove the rows marked below.')
+        self.assertContains(response, 'Grease')                        # what was typed is kept
+        self.assertEqual([line.description for line in self.entry.lines.all()], ['Die'])   # the earlier list is untouched
+
+    def test_a_quantity_must_be_above_zero(self):
+        response = self._post([('Die', '0', 'NOS')])
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.entry.lines.count(), 0)
+
+    def test_the_page_lists_the_saved_products_to_edit(self):
+        self._post([('Die 12 mm', '4', 'NOS')])
+        page = self.client.get(self.url)
+        self.assertContains(page, 'value="Die 12 mm"')
+        self.assertContains(page, 'value="4"')
+
+    def test_an_entry_without_a_bill_has_no_details_page(self):
+        bare = NonCoilEntry.objects.create(category='TOOLS', company='NO BILL')
+        response = self.client.get(reverse('finance_bill_details', args=[bare.pk]), follow=True)
+        self.assertContains(response, 'Upload the bill first')
+
+    def test_the_list_links_to_the_page_and_counts_the_products(self):
+        self._post([('Die 12 mm', '4', 'NOS'), ('Grease', '2', 'KG')])
+        page = self.client.get(reverse('finance'))
+        self.assertContains(page, reverse('finance_bill_details', args=[self.entry.pk]))
+        self.assertContains(page, '2 products')
+        other = NonCoilEntry.objects.create(category='X', company='Y', bill=bill_file())
+        self.assertContains(self.client.get(reverse('finance')), 'No products yet')
+        other.delete()
+
+    def test_a_coil_row_has_no_details_link(self):
+        self.entry.delete()   # leave only a coil entry on the page
+        GateEntry.objects.create(vendor='TATA', invoice_no='I1', total_weight=100, bill=bill_file())
+        self.assertNotContains(self.client.get(reverse('finance')), 'Details</a>')
+
+    def test_the_page_confirms_a_fresh_upload(self):
+        entry = NonCoilEntry.objects.create(category='BEARINGS', company='XYZ')
+        page = self.client.post(reverse('finance_upload_other_bill', args=[entry.pk]), {'bill': bill_file()}, follow=True)
+        self.assertContains(page, 'Bill uploaded.')
+
+    def test_the_employee_pin_does_not_open_it(self):
+        self.client.post(reverse('finance_logout'))
+        employee_login(self.client)
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse('login'), response['Location'])
