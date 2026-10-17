@@ -323,7 +323,7 @@ class MaterialsRouteGuardTests(TestCase):
                 self._assert_denied(self.client.get(self._url_for(pattern)), cb.__name__)
 
     def test_rest_api_rejects_anonymous_requests(self):
-        for name in ('coils', 'orders', 'jobs', 'product-types'):
+        for name in ('coils', 'orders', 'jobs', 'product-codes'):
             with self.subTest(endpoint=name):
                 self.assertIn(self.client.get(f'/api/{name}/').status_code, (401, 403))
 

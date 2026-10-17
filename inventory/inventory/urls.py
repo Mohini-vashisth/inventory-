@@ -24,7 +24,7 @@ router = DefaultRouter()
 router.register('coils', MaterialViewSet, basename='api-coil')
 router.register('orders', OrderViewSet, basename='api-order')
 router.register('jobs', ProductionJobViewSet, basename='api-job')
-router.register('product-types', ProductCodeViewSet, basename='api-product-type')
+router.register('product-codes', ProductCodeViewSet, basename='api-product-code')
 
 urlpatterns = [
     path('admin/', admin.site.urls),

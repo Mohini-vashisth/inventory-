@@ -121,12 +121,38 @@ class ProductCodeAndJobApiTests(TestCase):
             order=self.order, status='in_progress',
         )
 
-    def test_product_type_list_includes_steps(self):
+    def test_product_code_list_includes_steps(self):
         self.client.force_authenticate(user=self.staff)
-        response = self.client.get('/api/product-types/')
+        response = self.client.get('/api/product-codes/')
         self.assertEqual(response.status_code, 200)
         row = next(r for r in response.data['results'] if r['id'] == self.product_code.pk)
         self.assertEqual(row['steps'][0]['name'], 'Cutting')
+
+    def test_the_old_product_types_address_is_gone(self):
+        self.client.force_authenticate(user=self.staff)
+        self.assertEqual(self.client.get('/api/product-types/').status_code, 404)
+
+    def test_a_product_codes_type_is_called_product_type(self):
+        from ..models import ProductType
+        flat = ProductType.objects.create(name='API Flat Type', code='AFT')
+        self.product_code.product_type = flat
+        self.product_code.save()
+        self.client.force_authenticate(user=self.staff)
+        row = next(r for r in self.client.get('/api/product-codes/').data['results'] if r['id'] == self.product_code.pk)
+        self.assertEqual(row['product_type'], 'API Flat Type')
+        self.assertNotIn('category', row)
+
+    def test_orders_and_jobs_name_the_product_code_as_product_code(self):
+        self.order.product_code = self.product_code
+        self.order.save()
+        self.client.force_authenticate(user=self.staff)
+        order = self.client.get('/api/orders/').data['results'][0]
+        job = self.client.get('/api/jobs/').data['results'][0]
+        for row in (order, job):
+            self.assertEqual(row['product_code'], self.product_code.pk)
+            self.assertEqual(row['product_code_item_code'], 'API Bar')
+            self.assertNotIn('product_type', row)
+            self.assertNotIn('product_type_item_code', row)
 
     def test_job_status_filter(self):
         other_pick = OrderCoilPick.objects.create(order=self.order, coil=self.pick.coil, weight_allocated=50)
