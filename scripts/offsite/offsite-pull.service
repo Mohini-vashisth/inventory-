@@ -1,0 +1,9 @@
+[Unit]
+Description=Pull the office PC's database backups to this laptop
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=homelab
+ExecStart=/home/homelab/pull_officepc_backups.sh

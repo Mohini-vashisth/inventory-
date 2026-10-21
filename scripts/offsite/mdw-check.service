@@ -1,0 +1,9 @@
+[Unit]
+Description=Check the live app and email if it is down
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=homelab
+ExecStart=/usr/bin/python3 /home/homelab/mdw_check.py

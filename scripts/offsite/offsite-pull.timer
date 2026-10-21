@@ -1,0 +1,11 @@
+[Unit]
+Description=Pull office PC backups at 02:30 and 14:30 IST (30 min after each office backup)
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+OnCalendar=*-*-* 14:30:00
+# If the laptop was off at the scheduled time, run as soon as it is back.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
