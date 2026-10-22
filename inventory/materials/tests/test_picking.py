@@ -421,3 +421,58 @@ class CoilGradeMustMatchOrderTests(TestCase):
         self.assertTrue(confirm.context['blocked'])
         self.assertContains(confirm, 'no grade set')
         self.assertIsNone(self.order.available_raw_material_output())
+
+
+class UnpickCoilTests(TestCase):
+    """The picked coils on the picking page open a detail page, from which an unstarted pick can be undone."""
+
+    def setUp(self):
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
+        self.coil = Material.objects.create(
+            date='2026-07-01', grade='EN8D', size='1.2', company='Tata', vendor='ABC', quantity=500, heat_no='H001')
+        self.code = ProductCode.objects.create(item_code='Bar 1.2mm', grade='EN8D')
+        self.step = ProcessStep.objects.create(product_code=self.code, name='Cutting', order=1)
+        self.order = Order.objects.create(
+            customer=Customer.objects.create(name='Unpick Co'), product_code=self.code, quantity=100,
+            status='confirmed', grade='EN8D')
+        self.client.post(reverse('pick_coil_for_order', args=[self.order.pk, self.coil.pk]), {'weight_allocated': '100'})
+        self.pick = OrderCoilPick.objects.get()
+
+    def test_hub_links_to_the_picked_coil_and_detail_shows_its_facts(self):
+        hub = self.client.get(reverse('select_coil_for_order', args=[self.order.pk]))
+        detail_url = reverse('picked_coil_detail', args=[self.order.pk, self.pick.pk])
+        self.assertContains(hub, detail_url)
+        page = self.client.get(detail_url)
+        for text in ('EN8D', 'Tata', 'H001', 'Unpick this coil'):
+            self.assertContains(page, text)
+
+    def test_unpicking_removes_the_pick_and_job_and_frees_the_weight(self):
+        self.assertEqual(self.coil.weight_remaining(), 400)
+        response = self.client.post(reverse('unpick_coil', args=[self.order.pk, self.pick.pk]))
+        self.assertRedirects(response, reverse('select_coil_for_order', args=[self.order.pk]))
+        self.assertFalse(OrderCoilPick.objects.exists())
+        self.assertFalse(ProductionJob.objects.exists())
+        self.assertEqual(self.coil.weight_remaining(), 500)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 'confirmed')
+
+    def test_a_get_never_unpicks(self):
+        self.client.get(reverse('unpick_coil', args=[self.order.pk, self.pick.pk]))
+        self.assertTrue(OrderCoilPick.objects.exists())
+
+    def test_started_work_blocks_unpicking(self):
+        from ..models import StepLog
+        StepLog.objects.create(job=ProductionJob.objects.get(), step=self.step, status='in_progress')
+        page = self.client.get(reverse('picked_coil_detail', args=[self.order.pk, self.pick.pk]))
+        self.assertNotContains(page, 'Yes, unpick it')
+        self.client.post(reverse('unpick_coil', args=[self.order.pk, self.pick.pk]))
+        self.assertTrue(OrderCoilPick.objects.exists())
+
+    def test_staff_can_unpick_too_and_anonymous_cannot(self):
+        from django.contrib.auth.models import User
+        self.client.logout()
+        self.client.post(reverse('unpick_coil', args=[self.order.pk, self.pick.pk]))
+        self.assertTrue(OrderCoilPick.objects.exists())
+        self.client.force_login(User.objects.create_user('boss', password='pw', is_staff=True))
+        self.client.post(reverse('unpick_coil', args=[self.order.pk, self.pick.pk]))
+        self.assertFalse(OrderCoilPick.objects.exists())

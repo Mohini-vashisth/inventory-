@@ -8,7 +8,8 @@ from decimal import Decimal, InvalidOperation
 from django.core.exceptions import ValidationError
 
 from ..models import Material, OrderCoilPick, ProductionJob, StepLog, Order, ProductionPart
-from ..decorators import employee_required
+from django.contrib import messages
+from ..decorators import employee_or_staff_required, employee_required
 from .common import _CoilOverCommitted, _parse_coil_no, _safe_get
 
 
@@ -239,3 +240,51 @@ def pick_coil_for_order(request, order_pk, coil_pk):
         'matches_specs': matches_specs, 'fully_picked': fully_picked,
         'blocked': blocked, 'no_grade': no_grade, 'error': error,
     })
+
+
+def _unpick_blocker(order, pick):
+    """Why this pick can't be undone, or None."""
+    if order.status in ('completed', 'cancelled'):
+        return f"This order is {order.get_status_display().lower()}, so its coils can't be unpicked."
+    if pick.work_started():
+        return "Work has started on this coil (a step was started or the material was split), so it can't be unpicked."
+    return None
+
+
+@employee_or_staff_required
+def picked_coil_detail(request, order_pk, pick_pk):
+    """Everything about a coil picked for an order, with the option to unpick it (after a confirmation)
+    while no work has started on it."""
+    order = get_object_or_404(Order.objects.select_related('customer'), pk=order_pk)
+    pick = get_object_or_404(OrderCoilPick.objects.select_related('coil__lot__gate_entry'), pk=pick_pk, order=order)
+    return render(request, 'materials/picked_coil_detail.html', {
+        'order': order,
+        'pick': pick,
+        'coil': pick.coil,
+        'gate_entry': pick.coil.lot.gate_entry if pick.coil.lot_id else None,
+        'jobs': list(pick.jobs.all()),
+        'blocker': _unpick_blocker(order, pick),
+    })
+
+
+@employee_or_staff_required
+def unpick_coil(request, order_pk, pick_pk):
+    """Undo a pick (POST only): the pick, its job and pending steps go, and the weight returns to the coil. Refused
+    once work has started. An order left with no picked coil goes back from in production to confirmed."""
+    order = get_object_or_404(Order, pk=order_pk)
+    pick = get_object_or_404(OrderCoilPick.objects.select_related('coil'), pk=pick_pk, order=order)
+    if request.method != 'POST':
+        return redirect('picked_coil_detail', order_pk=order.pk, pick_pk=pick.pk)
+    with transaction.atomic():
+        pick = OrderCoilPick.objects.select_for_update().get(pk=pick.pk)
+        blocker = _unpick_blocker(order, pick)
+        if blocker:
+            messages.error(request, blocker)
+            return redirect('picked_coil_detail', order_pk=order.pk, pick_pk=pick.pk)
+        coil_label = pick.coil.formatted_coil()
+        pick.delete()   # its production job, parts and pending steps go with it
+        if order.status == 'in_production' and not order.coil_picks.exists():
+            order.status = 'confirmed'
+            order.save(update_fields=['status'])
+    messages.success(request, f"{coil_label} unpicked. Its weight is back on the coil.")
+    return redirect('select_coil_for_order', order_pk=order.pk)

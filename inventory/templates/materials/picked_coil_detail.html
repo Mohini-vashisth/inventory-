@@ -1,0 +1,60 @@
+{% extends "materials/base.html" %}
+{% block tablet_css %}{% include "materials/_portal_tablet.css" %}{% endblock %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}{{ coil.formatted_coil }}{% endblock %}
+
+{% block css %}
+  .rows { display: grid; grid-template-columns: 11rem 1fr; gap: 0.6rem 1rem; font-size: 0.92rem; }
+  .rows dt { font-size: 0.72rem; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding-top: 0.15rem; }
+  .unpick summary { cursor: pointer; display: inline-block; border: 1px solid #fecaca; background: #fee2e2; color: #991b1b;
+                    border-radius: 8px; padding: 0.55rem 1rem; font-weight: 600; list-style: none; }
+  .unpick summary::-webkit-details-marker { display: none; }
+  .unpick .confirm { margin-top: 0.9rem; padding: 0.9rem 1rem; border: 1px solid #fecaca; border-radius: 10px; background: #fff7f7; }
+  .btn-danger { background: #b91c1c; color: #fff; border: 0; border-radius: 8px; padding: 0.6rem 1.1rem; font-weight: 600; cursor: pointer; }
+  .blocked { color: #92400e; font-weight: 600; font-size: 0.9rem; }
+  @media (max-width: 560px) { .rows { grid-template-columns: 1fr; gap: 0.1rem; } .rows dd { margin-bottom: 0.5rem; } }
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <a href="{% url 'select_coil_for_order' order.pk %}" class="back-link">← Back to order</a>
+  <h1>{{ coil.formatted_coil }}</h1>
+  <p class="subtitle">Picked for ORD-{{ order.order_no|stringformat:"04d" }} · {{ order.customer.name }}</p>
+  {% for msg in messages %}<div class="alert {% if msg.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ msg }}</div>{% endfor %}
+
+  <div class="card"><div class="card-body">
+    <dl class="rows">
+      <dt>Picked for this order</dt><dd>{{ pick.weight_allocated }} kg · {{ pick.picked_at|date:"d M Y, H:i" }}</dd>
+      <dt>Grade</dt><dd>{{ coil.grade|default:"—" }}</dd>
+      <dt>Size</dt><dd>{{ coil.size|default:"—" }} mm</dd>
+      <dt>Company</dt><dd>{{ coil.company|default:"—" }}</dd>
+      <dt>Vendor</dt><dd>{{ coil.vendor|default:"—" }}</dd>
+      <dt>Heat no.</dt><dd>{{ coil.heat_no|default:"—" }}</dd>
+      <dt>Date</dt><dd>{{ coil.date|date:"d M Y"|default:"—" }}</dd>
+      <dt>Coil weight</dt><dd>{{ coil.quantity|default:"—" }} kg</dd>
+      <dt>Remaining on coil</dt><dd>{{ coil.weight_remaining }} kg</dd>
+      <dt>Actual Diameter</dt><dd>{% if coil.diameter_readings %}{{ coil.diameter_readings|join:" · " }} mm{% else %}—{% endif %}</dd>
+      <dt>Gate entry</dt><dd>{% if gate_entry %}{{ gate_entry.date|date:"d M Y" }} · {{ gate_entry.vendor }}{% if gate_entry.vehicle_no %} · {{ gate_entry.vehicle_no }}{% endif %}{% else %}—{% endif %}</dd>
+      <dt>Production</dt><dd>{% for job in jobs %}{{ job.job_no }} ({{ job.get_status_display }}){% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</dd>
+    </dl>
+  </div></div>
+
+  <div class="card"><div class="card-body">
+    {% if blocker %}
+    <p class="blocked">{{ blocker }}</p>
+    {% else %}
+    <details class="unpick">
+      <summary>Unpick this coil</summary>
+      <div class="confirm">
+        <p>Unpick <strong>{{ coil.formatted_coil }}</strong> ({{ pick.weight_allocated }} kg) from ORD-{{ order.order_no|stringformat:"04d" }}? Its job is removed and the weight goes back on the coil.</p>
+        <form method="post" action="{% url 'unpick_coil' order.pk pick.pk %}">{% csrf_token %}
+          <button type="submit" class="btn-danger">Yes, unpick it</button>
+        </form>
+      </div>
+    </details>
+    {% endif %}
+  </div></div>
+</div>
+{% include "materials/_screen_off_welcome.html" %}
+{% endblock %}
