@@ -126,6 +126,8 @@
 
   <a href="{% url 'select_order' %}" class="back-link">← Back to orders</a>
 
+  {% for msg in messages %}<div class="alert {% if msg.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ msg }}</div>{% endfor %}
+
   <!-- Order summary -->
   <div class="order-banner">
     <div class="label">Order ORD-{{ order.order_no|stringformat:"04d" }}</div>
@@ -173,10 +175,10 @@
   <h2>Picked so far</h2>
   <div class="picks-list">
     {% for pick in picks %}
-    <div class="pick-row">
+    <a href="{% url 'picked_coil_detail' order.pk pick.pk %}" class="pick-row" style="text-decoration:none;">
       <span>{{ pick.coil.formatted_coil }}</span>
-      <span>{{ pick.weight_allocated }} kg</span>
-    </div>
+      <span>{{ pick.weight_allocated }} kg ›</span>
+    </a>
     {% endfor %}
   </div>
   {% endif %}

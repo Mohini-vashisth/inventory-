@@ -434,6 +434,12 @@ class OrderCoilPick(models.Model):
     weight_allocated = models.DecimalField(max_digits=10, decimal_places=3)
     picked_at = models.DateTimeField(auto_now_add=True)
 
+    def work_started(self):
+        """True once production has begun on this pick: any step beyond pending on any of its jobs, or the
+        material cut into parts. Until then a pick can be undone without losing anything."""
+        return (StepLog.objects.filter(job__pick=self).exclude(status='pending').exists()
+                or ProductionPart.objects.filter(job__pick=self, parent__isnull=False).exists())
+
     def output_equivalent(self):
         """weight_allocated converted into finished-product terms, using the
         raw_material_ratio of whichever AllowedCoilSpec matches this coil's
