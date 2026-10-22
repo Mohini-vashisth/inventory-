@@ -233,7 +233,9 @@ EMAIL_HOST_USER     = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL  = os.environ.get('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
 
-LOGOUT_REDIRECT_URL = '/'
+# Logging out of the Django admin lands on the owners' dashboard address; signed out, that is the admin login,
+# which returns to the dashboard after signing in again.
+LOGOUT_REDIRECT_URL = '/dashboard/'
 
 EMPLOYEE_PIN = os.environ.get('EMPLOYEE_PIN')
 if not EMPLOYEE_PIN:

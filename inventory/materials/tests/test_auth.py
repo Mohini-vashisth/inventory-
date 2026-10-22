@@ -417,3 +417,13 @@ class LogoutButtonIsTheSameEverywhereTests(TestCase):
         response = self.client.post(reverse('staff_logout'))
         self.assertRedirects(response, reverse('home'))
         self.assertEqual(self.client.get(reverse('staff_home')).status_code, 302)
+
+
+class AdminLogoutTests(TestCase):
+    def test_django_admin_logout_goes_to_the_dashboard_address(self):
+        user = User.objects.create_user('boss', password='pw', is_staff=True, is_superuser=True)
+        self.client.force_login(user)
+        response = self.client.post('/admin/logout/')
+        self.assertRedirects(response, reverse('staff_home'), fetch_redirect_response=False)
+        # signed out now, so the dashboard asks for the admin login (and returns here after it)
+        self.assertEqual(self.client.get(reverse('staff_home')).status_code, 302)
