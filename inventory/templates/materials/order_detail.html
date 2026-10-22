@@ -70,6 +70,7 @@
         {% else %}
         <span class="muted">No action needed.</span>
         {% endif %}
+        {% if order.status != 'completed' and order.status != 'cancelled' %}<a href="{% url 'order_edit' order.pk %}" class="action-btn" style="text-decoration:none;">✏️ Edit</a>{% endif %}
       </div>
       {% if not order.product_code %}<p class="warn">⚠ No product code is set, so this order can't be confirmed yet. Set one in the admin (Orders → this order).</p>{% endif %}
       {% if shortfall %}<div class="warn shortfall"><span class="shortfall-title">⚠️ Low stock:</span><div><div>Needs {{ shortfall.needed|floatformat:"0g" }} kg{% if shortfall.picked %} more{% endif %}</div><div>Available {{ shortfall.available|floatformat:"0g" }} kg</div></div></div>{% endif %}

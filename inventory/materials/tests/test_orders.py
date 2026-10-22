@@ -639,6 +639,37 @@ class OrderDashboardTests(TestCase):
         self.client.post(reverse('send_order_form'), {'name': 'No Phone Co', 'phone': '+91 '})
         self.assertEqual(Customer.objects.get(name='NO PHONE CO').phone, '')
 
+    def test_free_form_customer_order_keeps_the_chosen_type_even_with_no_code(self):
+        from materials.models import Customer, GradeOption, ProductType
+        t = ProductType.objects.get_or_create(name='Flat Bright Bar', defaults={'code': 'FBX'})[0]
+        GradeOption.objects.create(name='SAE1018')
+        customer = Customer.objects.create(name='TYPE CO', open_order_link=True)
+        url = reverse('quote_form', kwargs={'token': customer.quote_token})
+        self.assertContains(self.client.get(url), '<option value="SAE1018">')
+        self.client.post(url, {'product_type': str(t.pk), 'grade': 'ZZ9', 'quantity': '10'})
+        order = Order.objects.get()
+        self.assertIsNone(order.product_code)
+        self.assertEqual(order.product_type_name(), 'Flat Bright Bar')
+
+    def test_staff_can_edit_an_order_and_the_type_is_kept(self):
+        from materials.models import Customer, ProductType
+        t = ProductType.objects.get_or_create(name='Flat Bright Bar', defaults={'code': 'FBX'})[0]
+        order = Order.objects.create(customer=Customer.objects.create(name='EDIT CO'), quantity=Decimal('10'), status='pending')
+        self.client.force_login(self.staff)
+        self.assertContains(self.client.get(reverse('order_edit', args=[order.pk])), 'Save changes')
+        response = self.client.post(reverse('order_edit', args=[order.pk]), {
+            'product_type': str(t.pk), 'grade': 'en8d', 'quantity': '25', 'width': '50'})
+        self.assertRedirects(response, reverse('order_detail', args=[order.pk]))
+        order.refresh_from_db()
+        self.assertEqual((order.quantity, order.grade, order.product_type), (Decimal('25'), 'EN8D', t))
+
+    def test_a_completed_order_cannot_be_edited(self):
+        from materials.models import Customer
+        order = Order.objects.create(customer=Customer.objects.create(name='DONE CO'), quantity=Decimal('10'), status='completed')
+        self.client.force_login(self.staff)
+        response = self.client.get(reverse('order_edit', args=[order.pk]))
+        self.assertRedirects(response, reverse('order_detail', args=[order.pk]))
+
     def test_manual_order_page_offers_product_types(self):
         from materials.models import ProductType
         ProductType.objects.get_or_create(name='Flat Bright Bar', defaults={'code': 'FBX'})[0]

@@ -18,7 +18,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from ..models import ProductType, ProductCode, Customer, Query, Order, GradeOption
-from ..forms import CustomerOrderForm, OrderItemFormSet
+from ..forms import CustomerOrderForm, OrderEditForm, OrderItemFormSet
 from ..order_pdf import generate_order_summary_pdf
 from ..decorators import redirect_to_admin_login, staff_required
 from .common import _first_form_error, _first_formset_error, _match_product_code
@@ -153,6 +153,7 @@ def order_dashboard(request):
             order = form.save(commit=False)
             order.customer = customer
             order.product_code = chosen_code
+            order.product_type = product_type or (chosen_code.product_type if chosen_code else None)
             order.status = 'confirmed'
             order.save()
             return redirect('order_dashboard')
@@ -198,6 +199,34 @@ def order_dashboard(request):
         'error': error,
         'post': request.POST if error else {},
         'quote_base_url': _public_quote_base_url(request),
+    })
+
+
+@staff_required(on_denied=redirect_to_admin_login)
+def order_edit(request, pk):
+    """Staff correct an order after it was placed (a wrong grade or size, a missing product code, a changed
+    quantity or delivery date...). Who ordered it, its status and its source stay as they are; a finished
+    (completed or cancelled) order is read-only."""
+    order = get_object_or_404(Order.objects.select_related('customer', 'product_code__product_type'), pk=pk)
+    if order.status in ('completed', 'cancelled'):
+        messages.error(request, f"A {order.get_status_display().lower()} order can't be edited.")
+        return redirect('order_detail', pk=order.pk)
+    form = OrderEditForm(request.POST or None, request.FILES or None, instance=order)
+    if request.method == 'POST' and form.is_valid():
+        order = form.save(commit=False)
+        # A type and a grade with no code picked: use the catalogue's code for that pair, as on the other forms.
+        if order.product_code_id is None and order.product_type_id:
+            order.product_code = _match_product_code(order.grade, order.product_type)
+        if order.product_code_id and order.product_code.product_type_id:
+            order.product_type = order.product_code.product_type
+        order.save()
+        messages.success(request, f"ORD-{order.order_no:04d} updated.")
+        return redirect('order_detail', pk=order.pk)
+    return render(request, 'materials/order_edit.html', {
+        'order': order,
+        'form': form,
+        'grade_options': list(GradeOption.objects.values_list('name', flat=True)),
+        'has_picks': order.coil_picks.exists(),
     })
 
 
@@ -381,6 +410,7 @@ def quote_form(request, token):
                         order.customer = customer
                         order.source_query = query
                         order.product_code = item.shown_code
+                        order.product_type = item.shown_type
                         order.grade = item.grade
                         order.width = item.width
                         order.thickness = item.thickness
@@ -406,8 +436,8 @@ def quote_form(request, token):
             order = form.save(commit=False)
             order.customer = customer
             order.source_query = query
-            order.product_code = _match_product_code(
-                order.grade, ProductType.objects.filter(pk=request.POST.get('product_type') or 0).first())
+            order.product_type = ProductType.objects.filter(pk=request.POST.get('product_type') or 0).first()
+            order.product_code = _match_product_code(order.grade, order.product_type)
             order.status = 'pending'
             order.save()
             return _finish(query)
@@ -430,6 +460,7 @@ def quote_form(request, token):
     return render(request, 'materials/quote_form.html', {
         'customer': customer,
         'product_types': ProductType.objects.all(),
+        'grade_options': list(GradeOption.objects.values_list('name', flat=True)),
         'error': error,
         'post': request.POST if error else initial,
     })

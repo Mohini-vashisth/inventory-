@@ -3,7 +3,7 @@ import re
 from django import forms
 from django.core.validators import FileExtensionValidator
 from django.forms import formset_factory, inlineformset_factory
-from .models import NonCoilBillLine, BILL_EXTENSIONS, GSTIN_PATTERN, GateEntry, NonCoilEntry, validate_bill_size, Material, GradeOption, SizeOption, Order, Query, QueryItem
+from .models import NonCoilBillLine, BILL_EXTENSIONS, GSTIN_PATTERN, GateEntry, NonCoilEntry, validate_bill_size, Material, GradeOption, SizeOption, Order, ProductCode, Query, QueryItem
 
 
 class GateEntryForm(forms.ModelForm):
@@ -254,6 +254,43 @@ class CustomerOrderForm(DeliveryDetailsMixin, OrderForm):
             'drawing_file', *_TOLERANCE_FIELDS, 'other_tolerances', *_DELIVERY_FIELDS]
         widgets = {**_TOLERANCE_WIDGETS, **_DELIVERY_WIDGETS,
                    'other_tolerances': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Any other tolerance, e.g. straightness, ovality, length'})}
+
+
+class OrderEditForm(DeliveryDetailsMixin, forms.ModelForm):
+    """Staff correcting an order after it was placed: everything about the product and the delivery, but not
+    who ordered it, its status or where it came from."""
+
+    class Meta:
+        model = Order
+        fields = [
+            'product_code', 'product_type', 'grade', 'width', 'thickness', 'mill_make', 'mechanical_properties',
+            'drawing_dimensions', 'drawing_file', *_TOLERANCE_FIELDS, 'other_tolerances', 'processes', 'end_usage',
+            'quantity', 'delivery_form', 'frequency', *_DELIVERY_FIELDS, 'delivery_date', 'notes', 'purchase_order',
+        ]
+        widgets = {
+            **_TOLERANCE_WIDGETS, **_DELIVERY_WIDGETS,
+            'grade': forms.TextInput(attrs={'list': 'grade-options', 'autocomplete': 'off'}),
+            'delivery_date': forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d'),
+            'mechanical_properties': forms.Textarea(attrs={'rows': 2}),
+            'drawing_dimensions': forms.Textarea(attrs={'rows': 2}),
+            'other_tolerances': forms.Textarea(attrs={'rows': 2}),
+            'drawing_file': forms.ClearableFileInput(attrs={'accept': '.pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,.step,.stp,.igs,.iges,.zip'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['product_code'].queryset = ProductCode.objects.order_by('item_code')
+        for name in ('product_code', 'product_type'):
+            self.fields[name].empty_label = '— none —'
+        for name in ('delivery_form', 'frequency'):
+            self.fields[name].choices = [('', '— none —')] + [c for c in self.fields[name].choices if c[0]]
+
+    def clean(self):
+        cleaned = super().clean()
+        code, product_type = cleaned.get('product_code'), cleaned.get('product_type')
+        if code and product_type and code.product_type_id != product_type.pk:
+            self.add_error('product_code', f"{code.item_code} is not a {product_type.name} code.")
+        return cleaned
 
 
 class OrderItemForm(DeliveryDetailsMixin, forms.ModelForm):
