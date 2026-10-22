@@ -15,7 +15,7 @@ from django.db import transaction
 from django.db.models import Sum
 from django.http import JsonResponse
 
-from ..models import ProductType, ProductCode, Customer, Query, Order
+from ..models import ProductType, ProductCode, Customer, Query, Order, GradeOption
 from ..forms import CustomerOrderForm, OrderForm, OrderItemFormSet
 from ..order_pdf import generate_order_summary_pdf
 from ..decorators import redirect_to_admin_login, staff_required
@@ -109,17 +109,26 @@ def order_dashboard(request):
     customers = Customer.objects.order_by('name')
     product_codes = ProductCode.objects.order_by('item_code')
     product_code_data = {
-        str(pt.pk): {'grade': pt.grade}
+        str(pt.pk): {'grade': pt.grade, 'product_type': pt.product_type_id}
         for pt in product_codes
     }
     error = None
 
     if request.method == 'POST':
-        customer_name = request.POST.get('name', '').strip()
+        customer_name = request.POST.get('name', '').strip().upper()
         form = OrderForm(request.POST)
+
+        # The product type (one of the 7) and the product code: a code picked by hand wins; with only a
+        # type and a grade the catalogue's code for that pair is used, as on the quote form.
+        product_type = ProductType.objects.filter(pk=request.POST.get('product_type') or None).first()
+        chosen_code = ProductCode.objects.filter(pk=request.POST.get('product_code') or None).first()
+        if chosen_code is None and product_type is not None:
+            chosen_code = _match_product_code(request.POST.get('grade', ''), product_type)
 
         if not customer_name:
             error = "Company name is required."
+        elif product_type and chosen_code and chosen_code.product_type_id != product_type.pk:
+            error = f"{chosen_code.item_code} is not a {product_type.name} code. Pick a matching product code."
         elif not form.is_valid():
             error = _first_form_error(form)
         else:
@@ -135,6 +144,7 @@ def order_dashboard(request):
 
             order = form.save(commit=False)
             order.customer = customer
+            order.product_code = chosen_code
             order.status = 'confirmed'
             order.save()
             return redirect('order_dashboard')
@@ -174,7 +184,9 @@ def order_dashboard(request):
         'orders': orders,
         'customers': customers,
         'product_codes': product_codes,
+        'product_types': ProductType.objects.all(),
         'product_code_data': product_code_data,
+        'grade_options': list(GradeOption.objects.values_list('name', flat=True)),
         'error': error,
         'post': request.POST if error else {},
         'quote_base_url': _public_quote_base_url(request),

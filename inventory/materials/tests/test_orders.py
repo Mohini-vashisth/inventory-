@@ -556,9 +556,40 @@ class OrderDashboardTests(TestCase):
             'name': 'New Dashboard Co', 'email': 'contact@newdash.co', 'quantity': '150',
         })
         self.assertRedirects(response, reverse('order_dashboard'))
-        order = Order.objects.get(customer__name='New Dashboard Co')
+        order = Order.objects.get(customer__name='NEW DASHBOARD CO')
         self.assertEqual(order.status, 'confirmed')
         self.assertEqual(order.customer.email, 'contact@newdash.co')
+
+    def test_company_name_is_stored_in_capitals(self):
+        self.client.force_login(self.staff)
+        self.client.post(reverse('order_dashboard'), {'name': 'sharma steel traders', 'quantity': '150'})
+        self.assertEqual(Order.objects.get().customer.name, 'SHARMA STEEL TRADERS')
+
+    def test_manual_order_takes_its_code_from_product_type_and_grade(self):
+        from materials.models import ProductType, ProductCode
+        t = ProductType.objects.get_or_create(name='Flat Bright Bar', defaults={'code': 'FBX'})[0]
+        code = ProductCode.objects.create(product_type=t, grade='EN8D')
+        self.client.force_login(self.staff)
+        self.client.post(reverse('order_dashboard'), {
+            'name': 'Type Co', 'product_type': str(t.pk), 'grade': 'EN8D', 'quantity': '100',
+        })
+        self.assertEqual(Order.objects.get().product_code, code)
+
+    def test_manual_order_page_offers_product_types(self):
+        from materials.models import ProductType
+        ProductType.objects.get_or_create(name='Flat Bright Bar', defaults={'code': 'FBX'})[0]
+        self.client.force_login(self.staff)
+        response = self.client.get(reverse('order_dashboard'))
+        self.assertContains(response, 'name="product_type"')
+        self.assertContains(response, 'Flat Bright Bar')
+
+    def test_grade_box_suggests_the_grade_list(self):
+        from materials.models import GradeOption
+        GradeOption.objects.create(name='SAE1008')
+        self.client.force_login(self.staff)
+        response = self.client.get(reverse('order_dashboard'))
+        self.assertContains(response, 'list="grade-options"')
+        self.assertContains(response, '<option value="SAE1008">')
 
     def test_missing_company_name_shows_error_instead_of_crashing(self):
         self.client.force_login(self.staff)

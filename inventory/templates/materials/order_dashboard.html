@@ -19,7 +19,7 @@
     }
     .section-label:first-child { margin-top: 0; }
     .cols-4 { grid-template-columns: 2fr 1fr 1fr 1fr; }
-    .cols-pt { grid-template-columns: 2fr 1fr 1fr 1fr; }
+    .cols-pt { grid-template-columns: 2fr 1.5fr 1fr 1fr 1fr; }
     .table-scroll { overflow-x: auto; }
     .form-group { display: flex; flex-direction: column; }
     textarea { resize: vertical; min-height: 60px; }
@@ -189,6 +189,15 @@
           <div class="section-label" style="margin-top:1.25rem;">Final Product</div>
           <div class="form-row cols-pt">
             <div class="form-group">
+              <label>Product Type</label>
+              <select name="product_type" id="dash-type">
+                <option value="">— select product type —</option>
+                {% for t in product_types %}
+                <option value="{{ t.pk }}" {% if post.product_type == t.pk|stringformat:"s" %}selected{% endif %}>{{ t.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="form-group">
               <label>Product Code</label>
               <select name="product_code" id="dash-product-type">
                 <option value="">— select product code —</option>
@@ -206,7 +215,9 @@
               <label>Grade</label>
               <input type="text" name="grade" id="dash-grade"
                      placeholder="e.g. EN8D, SS304"
+                     list="grade-options" autocomplete="off"
                      value="{{ post.grade|default:'' }}">
+              <datalist id="grade-options">{% for grade in grade_options %}<option value="{{ grade }}">{% endfor %}</datalist>
             </div>
             <div class="form-group">
               <label>Width (mm)</label>
@@ -452,7 +463,19 @@
     const data = productCodeData[this.value];
     if (data) {
       document.getElementById('dash-grade').value = data.grade || '';
+      if (data.product_type) document.getElementById('dash-type').value = String(data.product_type);
     }
+  });
+  // Choosing a product type narrows the product codes to that type.
+  document.getElementById('dash-type').addEventListener('change', function() {
+    const typeId = this.value, codeSelect = document.getElementById('dash-product-type');
+    Array.prototype.forEach.call(codeSelect.options, function(opt) {
+      const d = productCodeData[opt.value];
+      const show = !opt.value || !typeId || (d && String(d.product_type) === typeId);
+      opt.hidden = !show; opt.disabled = !show;
+    });
+    const picked = productCodeData[codeSelect.value];
+    if (picked && typeId && String(picked.product_type) !== typeId) codeSelect.value = '';
   });
 
   // ── Autocomplete on the single company name input ────────
@@ -532,5 +555,6 @@
   // ── Table helpers ────────────────────────────────────────
   function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 </script>
+{% include "materials/_company_name_caps.html" with ids="co-name" %}
 {% include "materials/_copy_link_script.html" %}
 {% endblock %}
