@@ -206,7 +206,7 @@ def quotation_form(request, pk=None):
         action = request.POST.get('action', 'send')
         form = QuotationForm(request.POST)
 
-        typed_name = request.POST.get('customer_name', '').strip()
+        typed_name = request.POST.get('customer_name', '').strip().upper()
         if query:
             customer_name = query.company_name or query.contact_phone or f"Query #{query.pk}"
         elif existing_customer:

@@ -1,0 +1,18 @@
+<script>
+  // Company name boxes: capitalised as you type (and the phone/tablet keyboard is asked for capitals).
+  // The server upper-cases again, so a submit without JavaScript is stored the same way.
+  (function () {
+    '{{ ids }}'.split(',').forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el) return;
+      el.setAttribute('autocapitalize', 'characters');
+      el.style.textTransform = 'uppercase';
+      el.addEventListener('input', function () {
+        if (el.value === el.value.toUpperCase()) return;
+        var start = el.selectionStart, end = el.selectionEnd;
+        el.value = el.value.toUpperCase();
+        try { el.setSelectionRange(start, end); } catch (e) {}
+      });
+    });
+  })();
+</script>

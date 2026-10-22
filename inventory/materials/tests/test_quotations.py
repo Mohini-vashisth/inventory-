@@ -196,7 +196,7 @@ class QuotationFormDispatchTests(TestCase):
         response = self.client.post(reverse('quotation_form'), self._item_data(**{
             'customer_name': 'Brand New Co', 'customer_email': 'new@example.com', 'customer_phone': '9999999999',
         }), follow=True)
-        customer = Customer.objects.get(name='Brand New Co')
+        customer = Customer.objects.get(name__iexact='Brand New Co')
         quotation = Quotation.objects.get(customer=customer)
         self.assertContains(response, f"Quotation {quotation.formatted_no()} sent to new@example.com")
         self.assertEqual(customer.email, 'new@example.com')
@@ -219,8 +219,8 @@ class QuotationFormDispatchTests(TestCase):
         response = self.client.post(reverse('quotation_form'), self._item_data(**{
             'customer_name': 'No Email Provided Co',
         }), follow=True)
-        self.assertTrue(Customer.objects.filter(name='No Email Provided Co').exists())
-        self.assertContains(response, "No email on file for No Email Provided Co")
+        self.assertTrue(Customer.objects.filter(name__iexact='No Email Provided Co').exists())
+        self.assertContains(response, "No email on file for NO EMAIL PROVIDED CO")
         self.assertEqual(len(mail.outbox), 0)
 
 
@@ -248,12 +248,12 @@ class QuotationDraftTests(TestCase):
         response = self.client.post(reverse('quotation_form'), self._draft_item_data(**{
             'customer_name': 'Draft Co',
         }), follow=True)
-        quotation = Quotation.objects.get(customer__name='Draft Co')
+        quotation = Quotation.objects.get(customer__name__iexact='Draft Co')
         self.assertEqual(quotation.status, 'draft')
         self.assertIsNone(quotation.quotation_no)
         self.assertEqual(quotation.formatted_no(), 'DRAFT')
         self.assertEqual(len(mail.outbox), 0)
-        self.assertContains(response, "Draft saved for Draft Co")
+        self.assertContains(response, "Draft saved for DRAFT CO")
 
     def test_draft_allows_incomplete_line_item(self):
         """A row with a description but no quantity/rate yet still saves —
@@ -262,7 +262,7 @@ class QuotationDraftTests(TestCase):
         self.client.post(reverse('quotation_form'), self._draft_item_data(**{
             'customer_name': 'Incomplete Item Co',
         }))
-        item = Quotation.objects.get(customer__name='Incomplete Item Co').line_items.get()
+        item = Quotation.objects.get(customer__name__iexact='Incomplete Item Co').line_items.get()
         self.assertEqual(item.description, 'Steel Bar')
         self.assertIsNone(item.quantity)
         self.assertIsNone(item.rate_per_kg)
@@ -273,7 +273,7 @@ class QuotationDraftTests(TestCase):
         self.client.force_login(self.staff)
         data = self._draft_item_data(**{'customer_name': 'Blank Item Co', 'item-0-description': ''})
         self.client.post(reverse('quotation_form'), data)
-        quotation = Quotation.objects.get(customer__name='Blank Item Co')
+        quotation = Quotation.objects.get(customer__name__iexact='Blank Item Co')
         self.assertEqual(quotation.line_items.count(), 0)
 
     def test_save_draft_still_requires_company_name(self):
@@ -297,22 +297,22 @@ class QuotationDraftTests(TestCase):
         self.client.post(reverse('quotation_form'), self._draft_item_data(**{
             'customer_name': 'Resume Co', 'item-0-quantity': '250', 'item-0-rate_per_kg': '99.50',
         }))
-        draft = Quotation.objects.get(customer__name='Resume Co')
+        draft = Quotation.objects.get(customer__name__iexact='Resume Co')
         response = self.client.get(reverse('quotation_edit', kwargs={'pk': draft.pk}))
         self.assertContains(response, 'Edit Draft Quotation')
         self.assertContains(response, 'value="250.000"')
         self.assertContains(response, 'value="99.50"')
-        self.assertContains(response, 'Resume Co')
+        self.assertContains(response, 'RESUME CO')
 
     def test_saving_a_resumed_draft_again_updates_in_place(self):
         self.client.force_login(self.staff)
         self.client.post(reverse('quotation_form'), self._draft_item_data(**{'customer_name': 'Update Co'}))
-        draft = Quotation.objects.get(customer__name='Update Co')
+        draft = Quotation.objects.get(customer__name__iexact='Update Co')
 
         self.client.post(reverse('quotation_edit', kwargs={'pk': draft.pk}), self._draft_item_data(**{
             'item-0-description': 'Updated Description',
         }))
-        self.assertEqual(Quotation.objects.filter(customer__name='Update Co').count(), 1)
+        self.assertEqual(Quotation.objects.filter(customer__name__iexact='Update Co').count(), 1)
         draft.refresh_from_db()
         self.assertEqual(draft.line_items.get().description, 'Updated Description')
         self.assertEqual(draft.status, 'draft')
@@ -322,7 +322,7 @@ class QuotationDraftTests(TestCase):
     def test_sending_a_resumed_draft_finalizes_it_in_place(self):
         self.client.force_login(self.staff)
         self.client.post(reverse('quotation_form'), self._draft_item_data(**{'customer_name': 'Finalize Co'}))
-        draft = Quotation.objects.get(customer__name='Finalize Co')
+        draft = Quotation.objects.get(customer__name__iexact='Finalize Co')
 
         self.client.post(reverse('quotation_edit', kwargs={'pk': draft.pk}), quotation_item_post_data(**{
             'customer_name': 'Finalize Co', 'customer_email': 'finalize@example.com', 'action': 'send',
@@ -330,7 +330,7 @@ class QuotationDraftTests(TestCase):
         draft.refresh_from_db()
         self.assertEqual(draft.status, 'sent')
         self.assertIsNotNone(draft.quotation_no)
-        self.assertEqual(Quotation.objects.filter(customer__name='Finalize Co').count(), 1)
+        self.assertEqual(Quotation.objects.filter(customer__name__iexact='Finalize Co').count(), 1)
         self.assertEqual(len(mail.outbox), 1)
 
     def test_finalizing_a_draft_from_a_query_flips_query_status(self):
@@ -356,7 +356,7 @@ class QuotationDraftTests(TestCase):
     def test_discarding_a_draft_deletes_it(self):
         self.client.force_login(self.staff)
         self.client.post(reverse('quotation_form'), self._draft_item_data(**{'customer_name': 'Discard Co'}))
-        draft = Quotation.objects.get(customer__name='Discard Co')
+        draft = Quotation.objects.get(customer__name__iexact='Discard Co')
 
         self.client.post(reverse('quotation_discard', kwargs={'pk': draft.pk}), follow=True)
         self.assertFalse(Quotation.objects.filter(pk=draft.pk).exists())
@@ -382,7 +382,7 @@ class QuotationDraftTests(TestCase):
         self.client.post(reverse('quotation_form'), quotation_item_post_data(**{
             'customer_name': 'Real Co', 'action': 'send',
         }))
-        quotation = Quotation.objects.get(customer__name='Real Co')
+        quotation = Quotation.objects.get(customer__name__iexact='Real Co')
         self.assertEqual(quotation.quotation_no, 1)
 
     def test_anonymous_cannot_view_drafts_list(self):
@@ -403,10 +403,10 @@ class QuotationDraftTests(TestCase):
     def test_drafts_list_shows_drafts_with_resume_and_discard(self):
         self.client.force_login(self.staff)
         self.client.post(reverse('quotation_form'), self._draft_item_data(**{'customer_name': 'Listed Co'}))
-        draft = Quotation.objects.get(customer__name='Listed Co')
+        draft = Quotation.objects.get(customer__name__iexact='Listed Co')
 
         response = self.client.get(reverse('quotation_drafts'))
-        self.assertContains(response, 'Listed Co')
+        self.assertContains(response, 'LISTED CO')
         self.assertContains(response, reverse('quotation_edit', kwargs={'pk': draft.pk}))
 
     def test_sent_quotations_do_not_appear_in_drafts_list(self):
