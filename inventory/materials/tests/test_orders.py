@@ -575,6 +575,37 @@ class OrderDashboardTests(TestCase):
         })
         self.assertEqual(Order.objects.get().product_code, code)
 
+    def test_manual_order_can_attach_a_drawing(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        with tempfile.TemporaryDirectory() as media, override_settings(MEDIA_ROOT=media):
+            self.client.force_login(self.staff)
+            self.client.post(reverse('order_dashboard'), {
+                'name': 'Drawing Co', 'quantity': '100',
+                'drawing_file': SimpleUploadedFile('part.pdf', b'%PDF-1.4 x', content_type='application/pdf'),
+            })
+            order = Order.objects.get()
+            self.assertTrue(order.drawing_file.name.endswith('.pdf'))
+
+    def test_manual_order_has_the_customer_forms_fields(self):
+        self.client.force_login(self.staff)
+        html = self.client.get(reverse('order_dashboard')).content.decode()
+        for name in ('drawing_file', 'width_tol_from', 'thickness_tol_to', 'other_tolerances',
+                     'bar_length', 'length_tol_from', 'coil_weight', 'purchase_order', 'delivery_date'):
+            self.assertIn(f'name="{name}"', html)
+
+    def test_manual_order_with_bar_needs_a_length_and_saves_tolerances(self):
+        self.client.force_login(self.staff)
+        bad = self.client.post(reverse('order_dashboard'), {'name': 'Bar Co', 'quantity': '100', 'delivery_form': 'bar'})
+        self.assertEqual(bad.status_code, 200)
+        self.assertFalse(Order.objects.exists())
+        self.client.post(reverse('order_dashboard'), {
+            'name': 'Bar Co', 'quantity': '100', 'delivery_form': 'bar', 'bar_length': '3000',
+            'width_tol_from': '49.95', 'width_tol_to': '50.05',
+        })
+        order = Order.objects.get()
+        self.assertEqual(order.bar_length, Decimal('3000'))
+        self.assertEqual(order.width_tol_to, Decimal('50.05'))
+
     def test_manual_order_page_offers_product_types(self):
         from materials.models import ProductType
         ProductType.objects.get_or_create(name='Flat Bright Bar', defaults={'code': 'FBX'})[0]

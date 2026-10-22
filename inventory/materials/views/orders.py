@@ -16,7 +16,7 @@ from django.db.models import Sum
 from django.http import JsonResponse
 
 from ..models import ProductType, ProductCode, Customer, Query, Order, GradeOption
-from ..forms import CustomerOrderForm, OrderForm, OrderItemFormSet
+from ..forms import CustomerOrderForm, OrderItemFormSet
 from ..order_pdf import generate_order_summary_pdf
 from ..decorators import redirect_to_admin_login, staff_required
 from .common import _first_form_error, _first_formset_error, _match_product_code
@@ -116,7 +116,7 @@ def order_dashboard(request):
 
     if request.method == 'POST':
         customer_name = request.POST.get('name', '').strip().upper()
-        form = OrderForm(request.POST)
+        form = CustomerOrderForm(request.POST, request.FILES)
 
         # The product type (one of the 7) and the product code: a code picked by hand wins; with only a
         # type and a grade the catalogue's code for that pair is used, as on the quote form.
