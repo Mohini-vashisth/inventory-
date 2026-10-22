@@ -487,7 +487,7 @@
           <td class="muted">{{ c.orders.count }}</td>
           <td>
             <button class="icon-btn"
-                    onclick="copyLink('{{ quote_base_url }}{% url 'quote_form' c.quote_token %}', this)">
+                    onclick="copyLink('{{ quote_base_url }}{% url 'quote_form' c.quote_token %}?open=1', this)">
               📋 Copy Link
             </button>
             <form method="post" action="{% url 'send_order_form' %}" style="display:inline;">

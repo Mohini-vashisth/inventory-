@@ -708,6 +708,17 @@ class OrderDashboardTests(TestCase):
         response = self.client.get(reverse('order_edit', args=[order.pk]))
         self.assertRedirects(response, reverse('order_detail', args=[order.pk]))
 
+    def test_copied_link_gives_the_plain_order_form_even_after_a_quotation(self):
+        from materials.models import Customer, Quotation, QuotationLineItem
+        customer = Customer.objects.create(name='COPY CO')
+        q = Quotation.objects.create(customer=customer, status='sent')
+        QuotationLineItem.objects.create(quotation=q, description='Locked item', quantity=5, rate_per_kg=1)
+        url = reverse('quote_form', kwargs={'token': customer.quote_token})
+        self.assertContains(self.client.get(url), 'Locked item')            # the plain link follows the quotation
+        self.assertNotContains(self.client.get(url + '?open=1'), 'Locked item')
+        self.client.force_login(self.staff)
+        self.assertContains(self.client.get(reverse('order_dashboard')), f'{url}?open=1')
+
     def test_manual_order_page_offers_product_types(self):
         from materials.models import ProductType
         ProductType.objects.get_or_create(name='Flat Bright Bar', defaults={'code': 'FBX'})[0]

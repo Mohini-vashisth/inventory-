@@ -357,7 +357,9 @@ def quote_form(request, token):
     customer = get_object_or_404(Customer, quote_token=token)
     # The query (if any) that led to this quote being sent.
     query = Query.objects.filter(customer=customer, status='quote_sent').order_by('-created_at').first()
-    quotation = None if customer.open_order_link else customer.quotations.filter(status='sent').order_by('-quotation_no').first()
+    # '?open=1' on the link (what the Orders page's Copy Link copies) asks for the plain order form like a sent-on-its-own link.
+    open_form = customer.open_order_link or request.GET.get('open') == '1'
+    quotation = None if open_form else customer.quotations.filter(status='sent').order_by('-quotation_no').first()
     items = list(quotation.line_items.select_related('product_code__product_type', 'product_type').order_by('order')) if quotation else []
     for item in items:
         # What the customer is shown (and what the order gets): the quoted code, else the catalogue's
