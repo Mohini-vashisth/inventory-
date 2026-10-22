@@ -393,6 +393,9 @@ def _dispatch_quote_email(request, customer, quotation):
         messages.error(request, "Email is not configured — set EMAIL_HOST, EMAIL_HOST_USER, and EMAIL_HOST_PASSWORD in your .env file.")
         return
 
+    if customer.open_order_link:   # a quotation now exists, so the form follows it again
+        customer.open_order_link = False
+        customer.save(update_fields=['open_order_link'])
     quote_path = reverse('quote_form', kwargs={'token': customer.quote_token})
     quote_url = f"{_public_quote_base_url(request)}{quote_path}"
     try:

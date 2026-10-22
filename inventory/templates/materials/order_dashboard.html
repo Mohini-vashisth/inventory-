@@ -173,13 +173,13 @@
             <label for="co-phone">Phone</label>
             <input type="text" id="co-phone" name="phone"
                    placeholder="+91 98765 43210"
-                   value="{{ post.phone|default:'' }}">
+                   value="{{ post.phone|default:'+91 ' }}">
           </div>
         </div>
 
         <!-- Choice buttons -->
         <div class="choice-row">
-          <button type="button" class="btn-send" onclick="goToQuotationForm()">
+          <button type="submit" class="btn-send" formaction="{% url 'send_order_form' %}" formnovalidate>
             📧 Send Form to Them
           </button>
           <button type="button" class="btn-manual" id="manual-btn" onclick="toggleManualFields()">
@@ -465,7 +465,7 @@
   <div class="card">
     <div class="card-header static">
       Companies
-      <span>Resend the quote form to any company</span>
+      <span>Send the order form again to any company</span>
     </div>
     <div class="table-scroll">
     <table>
@@ -490,9 +490,13 @@
                     onclick="copyLink('{{ quote_base_url }}{% url 'quote_form' c.quote_token %}', this)">
               📋 Copy Link
             </button>
-            <a href="{% url 'quotation_form' %}?customer={{ c.pk }}" class="icon-btn green">
-              📧 Send Quote{% if c.email %} to {{ c.email }}{% endif %}
-            </a>
+            <form method="post" action="{% url 'send_order_form' %}" style="display:inline;">
+              {% csrf_token %}
+              <input type="hidden" name="name" value="{{ c.name }}">
+              <input type="hidden" name="email" value="{{ c.email }}">
+              <input type="hidden" name="phone" value="{{ c.phone }}">
+              <button type="submit" class="icon-btn green">📧 Send Form{% if c.email %} to {{ c.email }}{% endif %}</button>
+            </form>
           </td>
         </tr>
         {% empty %}
@@ -571,7 +575,7 @@
       const it = currentItems[i];
       input.value = it.name;
       document.getElementById('co-email').value = it.email || '';
-      document.getElementById('co-phone').value = it.phone || '';
+      document.getElementById('co-phone').value = it.phone || '+91 ';
       close_();
     }
     function hi(els) { els.forEach(function(el, i) { el.classList.toggle('active', i === activeIndex); }); }
@@ -592,18 +596,6 @@
 
   // ── Send Form to Them → the quotation builder, carrying over whatever
   // was already typed into Company Name/Email/Phone so it isn't retyped.
-  function goToQuotationForm() {
-    const name  = document.getElementById('co-name').value.trim();
-    const email = document.getElementById('co-email').value.trim();
-    const phone = document.getElementById('co-phone').value.trim();
-    if (!name) {
-      document.getElementById('co-name').focus();
-      return;
-    }
-    const params = new URLSearchParams({name: name, email: email, phone: phone});
-    window.location.href = "{% url 'quotation_form' %}?" + params.toString();
-  }
-
   // ── Table helpers ────────────────────────────────────────
   function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 </script>

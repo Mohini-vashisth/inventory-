@@ -606,6 +606,39 @@ class OrderDashboardTests(TestCase):
         self.assertEqual(order.bar_length, Decimal('3000'))
         self.assertEqual(order.width_tol_to, Decimal('50.05'))
 
+    @override_settings(EMAIL_HOST_USER='x@y.z', PUBLIC_QUOTE_BASE_URL='https://example.test')
+    def test_send_form_emails_the_link_with_no_quotation(self):
+        from django.core import mail
+        from materials.models import Customer, Quotation
+        self.client.force_login(self.staff)
+        response = self.client.post(reverse('send_order_form'), {'name': 'open co', 'email': 'a@b.co'})
+        self.assertRedirects(response, reverse('order_dashboard'))
+        customer = Customer.objects.get(name='OPEN CO')
+        self.assertTrue(customer.open_order_link)
+        self.assertFalse(Quotation.objects.exists())
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].attachments, [])
+        self.assertIn(str(customer.quote_token), mail.outbox[0].body)
+
+    def test_open_link_ignores_an_earlier_quotation_and_is_cleared_after_ordering(self):
+        from materials.models import Customer, Quotation, QuotationLineItem
+        customer = Customer.objects.create(name='OLD QUOTE CO', open_order_link=True)
+        q = Quotation.objects.create(customer=customer, status='sent')
+        QuotationLineItem.objects.create(quotation=q, description='Locked item', quantity=5, rate_per_kg=1)
+        page = self.client.get(reverse('quote_form', kwargs={'token': customer.quote_token}))
+        self.assertNotContains(page, 'Locked item')
+        self.assertContains(page, 'name="grade"')
+        self.client.post(reverse('quote_form', kwargs={'token': customer.quote_token}), {'quantity': '10'})
+        customer.refresh_from_db()
+        self.assertFalse(customer.open_order_link)
+
+    def test_phone_box_starts_with_91_and_a_bare_prefix_saves_nothing(self):
+        from materials.models import Customer
+        self.client.force_login(self.staff)
+        self.assertContains(self.client.get(reverse('order_dashboard')), 'value="+91 "')
+        self.client.post(reverse('send_order_form'), {'name': 'No Phone Co', 'phone': '+91 '})
+        self.assertEqual(Customer.objects.get(name='NO PHONE CO').phone, '')
+
     def test_manual_order_page_offers_product_types(self):
         from materials.models import ProductType
         ProductType.objects.get_or_create(name='Flat Bright Bar', defaults={'code': 'FBX'})[0]
