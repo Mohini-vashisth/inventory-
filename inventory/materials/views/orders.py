@@ -14,6 +14,8 @@ from django.core.files.base import ContentFile
 from django.db import transaction
 from django.db.models import Sum
 from django.http import JsonResponse
+from django.urls import reverse
+from django.views.decorators.http import require_POST
 
 from ..models import ProductType, ProductCode, Customer, Query, Order, GradeOption
 from ..forms import CustomerOrderForm, OrderItemFormSet
@@ -23,6 +25,12 @@ from .common import _first_form_error, _first_formset_error, _match_product_code
 from .quotations import _public_quote_base_url
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_phone(value):
+    """The phone box starts with '+91 '; left like that it means no phone was entered."""
+    value = value.strip()
+    return '' if value.replace(' ', '') == '+91' else value
 
 
 def _send_order_confirmation_email(order):
@@ -134,7 +142,7 @@ def order_dashboard(request):
         else:
             customer, _ = Customer.objects.get_or_create(name=customer_name)
             email = request.POST.get('email', '').strip()
-            phone = request.POST.get('phone', '').strip()
+            phone = _clean_phone(request.POST.get('phone', ''))
             if email or phone:
                 if email:
                     customer.email = email
@@ -191,6 +199,47 @@ def order_dashboard(request):
         'post': request.POST if error else {},
         'quote_base_url': _public_quote_base_url(request),
     })
+
+
+@staff_required
+@require_POST
+def send_order_form(request):
+    """'Send Form to Them' on the Orders dashboard: emails the customer the order-form link on its own, with no
+    quotation (some orders come without one). The form then asks for the whole order (product, grade, size)
+    and nothing is locked. With no email on file the link is shown so staff can pass it on."""
+    name = request.POST.get('name', '').strip().upper()
+    email = request.POST.get('email', '').strip()
+    phone = _clean_phone(request.POST.get('phone', ''))
+    if not name:
+        messages.error(request, "Company name is required.")
+        return redirect('order_dashboard')
+    customer, _ = Customer.objects.get_or_create(name=name)
+    if email:
+        customer.email = email
+    if phone:
+        customer.phone = phone
+    customer.open_order_link = True
+    customer.save()
+    link = f"{_public_quote_base_url(request)}{reverse('quote_form', kwargs={'token': customer.quote_token})}"
+    if not customer.email:
+        messages.warning(request, f"No email for {customer.name}. Send them this link yourself: {link}")
+    elif not settings.EMAIL_HOST_USER:
+        messages.error(request, f"Email is not configured, so nothing was sent. The link for {customer.name} is {link}")
+    else:
+        try:
+            EmailMessage(
+                subject=f"Please place your order — {settings.COMPANY_NAME}",
+                body=(f"Dear {customer.name},\n\nPlease use the link below to give us the details of your order, "
+                      f"and attach your own Purchase Order there if you have one:\n\n{link}\n\n"
+                      f"This link is personal to your company and can be used once.\n\nRegards,\n{settings.COMPANY_NAME}"),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[customer.email],
+            ).send()
+            messages.success(request, f"Order form sent to {customer.email}.")
+        except Exception as e:
+            logger.warning("Order form email to %s failed: %s", customer.email, e)
+            messages.error(request, f"Failed to send email: {e}. The link is {link}")
+    return redirect('order_dashboard')
 
 
 @staff_required(on_denied=lambda request: JsonResponse([], safe=False))
@@ -275,7 +324,7 @@ def quote_form(request, token):
     customer = get_object_or_404(Customer, quote_token=token)
     # The query (if any) that led to this quote being sent.
     query = Query.objects.filter(customer=customer, status='quote_sent').order_by('-created_at').first()
-    quotation = customer.quotations.filter(status='sent').order_by('-quotation_no').first()
+    quotation = None if customer.open_order_link else customer.quotations.filter(status='sent').order_by('-quotation_no').first()
     items = list(quotation.line_items.select_related('product_code__product_type', 'product_type').order_by('order')) if quotation else []
     for item in items:
         # What the customer is shown (and what the order gets): the quoted code, else the catalogue's
@@ -290,7 +339,8 @@ def quote_form(request, token):
             query.save(update_fields=['status'])
         # Invalidate this link — regenerate token so the URL becomes a 404
         customer.quote_token = uuid.uuid4()
-        customer.save(update_fields=['quote_token'])
+        customer.open_order_link = False
+        customer.save(update_fields=['quote_token', 'open_order_link'])
         return render(request, 'materials/quote_submitted.html', {'customer': customer})
 
     # What the customer already told us on WhatsApp, so they aren't asked twice. The

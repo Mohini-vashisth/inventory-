@@ -602,6 +602,9 @@ class Customer(models.Model):
     email       = models.EmailField(blank=True)
     phone       = models.CharField(max_length=20, blank=True)
     quote_token = models.UUIDField(default=uuid.uuid4, unique=True)
+    # True while the current link was sent on its own, with no quotation: the order form then ignores any
+    # earlier quotation and asks for the whole order. Cleared when the order is placed or a quotation is sent.
+    open_order_link = models.BooleanField(default=False)
     created_at  = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
