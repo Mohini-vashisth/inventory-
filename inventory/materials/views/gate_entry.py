@@ -1,6 +1,7 @@
 """Employee gate entry: truck deliveries, lots, and registering coils (with QR tags)."""
 
 import base64
+from decimal import Decimal
 import io
 import qrcode
 
@@ -61,6 +62,12 @@ def non_coil_entry_form(request):
     return render(request, 'materials/non_coil_entry_form.html', {'form': form})
 
 
+def _lot_weights_exceed_total(entry_form, lot_formset):
+    """True when the lot weights that were entered add up to more than the delivery's total weight (a typo)."""
+    lot_total = sum((data.get('weight') or Decimal('0') for data in lot_formset.cleaned_data), Decimal('0'))
+    return lot_total > entry_form.cleaned_data['total_weight']
+
+
 @employee_required
 def gate_entry_form(request):
     """Log a truck's delivery in one submission: the truck's own details
@@ -75,13 +82,16 @@ def gate_entry_form(request):
     if request.method == "POST":
         entry_form = GateEntryForm(request.POST)
         lot_formset = GateEntryLotFormSet(request.POST, prefix='lot')
-        if entry_form.is_valid() and lot_formset.is_valid():
+        if entry_form.is_valid() and lot_formset.is_valid() and _lot_weights_exceed_total(entry_form, lot_formset):
+            error = "The lot weights add up to more than the total weight. Check them."
+        elif entry_form.is_valid() and lot_formset.is_valid():
             with transaction.atomic():
                 gate_entry = entry_form.save()
                 for lot_data in lot_formset.cleaned_data:
                     GateEntryLot.objects.create(gate_entry=gate_entry, **lot_data)
             return redirect('gate_entry_detail', gate_entry_pk=gate_entry.pk)
-        error = _first_form_error(entry_form) if not entry_form.is_valid() else _first_formset_error(lot_formset)
+        if error is None:
+            error = _first_form_error(entry_form) if not entry_form.is_valid() else _first_formset_error(lot_formset)
     else:
         entry_form = GateEntryForm()
         lot_formset = GateEntryLotFormSet(prefix='lot')
@@ -219,7 +229,7 @@ def material_form(request, lot_pk):
                     with transaction.atomic():
                         coil = form.save(commit=False)
                         coil.lot = lot
-                        coil.invoice_weight = gate_entry.weight_per_coil()
+                        coil.invoice_weight = lot.weight_per_coil()
                         coil.save()
                         # Two employees registering the same lot's last
                         # remaining slot at nearly the same moment could both

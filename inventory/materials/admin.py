@@ -16,7 +16,7 @@ from .models import QueryItem, GateEntry, GateEntryLot, NonCoilEntry, NonCoilBil
 class GateEntryLotInline(admin.TabularInline):
     model = GateEntryLot
     extra = 0
-    readonly_fields = ['company', 'grade', 'size', 'no_of_coils']
+    readonly_fields = ['company', 'grade', 'size', 'no_of_coils', 'weight']
 
     def has_add_permission(self, request, obj=None):
         return False  # lots are added via the employee portal, one at a time
@@ -69,7 +69,7 @@ class GateEntryAdmin(admin.ModelAdmin):
 
 @admin.register(GateEntryLot)
 class GateEntryLotAdmin(admin.ModelAdmin):
-    list_display = ['id', 'gate_entry', 'company', 'grade', 'size', 'no_of_coils', 'coils_registered', 'status_badge']
+    list_display = ['id', 'gate_entry', 'company', 'grade', 'size', 'no_of_coils', 'weight', 'coils_registered', 'status_badge']
     list_filter = ['grade', 'size']
     search_fields = ['gate_entry__vehicle_no', 'gate_entry__vendor', 'company']
 

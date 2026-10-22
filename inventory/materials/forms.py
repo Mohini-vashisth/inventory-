@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import re
 
 from django import forms
@@ -99,6 +101,7 @@ class GateEntryLotForm(forms.Form):
     grade = forms.CharField(max_length=10)
     size = forms.DecimalField(max_digits=10, decimal_places=3)
     no_of_coils = forms.IntegerField(min_value=1)
+    weight = forms.DecimalField(max_digits=10, decimal_places=3, min_value=Decimal('0.001'), required=False)
 
     def clean_company(self):
         return self.cleaned_data['company'].strip().upper()

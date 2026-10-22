@@ -634,3 +634,45 @@ class GateEntryUppercaseTests(TestCase):
                              'diameter_1': '1.215', 'diameter_2': '1.218', 'diameter_3': '1.212', 'diameter_4': '1.216', 'diameter_5': '1.214'})
         self.assertTrue(form.is_valid(), form.errors)
         self.assertEqual(form.cleaned_data['heat_no'], '21E02404')
+
+
+class LotWeightTests(TestCase):
+    """Each lot may carry its own weight; its per-coil reference is that weight over its coils, else the whole
+    delivery's total over all its coils."""
+
+    def setUp(self):
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
+        GradeOption.objects.get_or_create(name='EN8D')
+        SizeOption.objects.get_or_create(value='1.200')
+        SizeOption.objects.get_or_create(value='2.000')
+
+    def post(self, lots, total='1000'):
+        data = {'date': '2026-07-06', 'vendor': 'ABC', 'vehicle_no': 'MH12AB1234', 'invoice_no': 'INV1',
+                'total_weight': total, 'lot-TOTAL_FORMS': str(len(lots)), 'lot-INITIAL_FORMS': '0',
+                'lot-MIN_NUM_FORMS': '1', 'lot-MAX_NUM_FORMS': '1000'}
+        for i, lot in enumerate(lots):
+            for key, value in lot.items():
+                data[f'lot-{i}-{key}'] = value
+        return self.client.post(reverse('gate_entry_form'), data)
+
+    def lot(self, **extra):
+        return {'company': 'Tata', 'grade': 'EN8D', 'size': '1.200', 'no_of_coils': '2', **extra}
+
+    def test_lot_weight_sets_that_lots_per_coil_and_the_rest_use_the_total(self):
+        self.post([self.lot(weight='600'), self.lot(size='2.000', no_of_coils='3')])
+        a, b = GateEntryLot.objects.order_by('pk')
+        self.assertEqual(a.weight_per_coil(), Decimal('300.000'))
+        self.assertEqual(b.weight_per_coil(), Decimal('200.000'))   # 1000 total / 5 coils in all
+
+    def test_lot_weights_above_the_total_are_refused(self):
+        response = self.post([self.lot(weight='700'), self.lot(size='2.000', weight='400')])
+        self.assertContains(response, 'add up to more than the total weight')
+        self.assertFalse(GateEntry.objects.exists())
+
+    def test_registered_coil_takes_its_lots_per_coil_reference(self):
+        self.post([self.lot(weight='600')])
+        lot = GateEntryLot.objects.get()
+        self.client.post(reverse('material_form', args=[lot.pk]), {
+            'date': '2026-07-06', 'quantity': '290', 'heat_no': 'H1',
+            'diameter_1': '1', 'diameter_2': '1', 'diameter_3': '1', 'diameter_4': '1', 'diameter_5': '1'})
+        self.assertEqual(Material.objects.get().invoice_weight, Decimal('300.000'))

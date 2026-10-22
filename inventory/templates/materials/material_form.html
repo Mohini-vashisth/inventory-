@@ -36,7 +36,7 @@
     <span><strong>Gate Entry #{{ gate_entry.pk }}</strong> — {{ gate_entry.vehicle_no|default:"no vehicle no." }}</span>
     <span>{{ gate_entry.vendor|default:"—" }} / {{ lot.company|default:"—" }}</span>
     <span>{{ lot.grade }}, {{ lot.size }} mm</span>
-    <span>⚖️ {{ gate_entry.weight_per_coil }} kg / coil (invoice avg.)</span>
+    <span>⚖️ {{ lot.weight_per_coil }} kg / coil (invoice avg.)</span>
   </div>
 
   {% if complete %}
