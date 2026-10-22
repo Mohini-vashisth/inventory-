@@ -14,7 +14,7 @@ from decimal import Decimal, InvalidOperation
 from ..models import GradeOption, ProductType, ProductCode, Customer, Query, Quotation, QuotationLineItem
 from ..forms import QuotationForm, QuotationLineItemFormSet
 from ..pdf import generate_quotation_pdf
-from ..product_codes import canonical_grade, describe_product_code, grade_key
+from ..product_codes import canonical_grade, describe_product_code, find_product_code, grade_key
 from ..decorators import staff_required
 from .common import _first_form_error, _first_formset_error, _match_product_code, _safe_get
 
@@ -62,6 +62,8 @@ def product_code_lookup(request):
         product_type = None
     grade = request.GET.get('grade', '').strip()
     result = describe_product_code(product_type, grade)
+    if result['exists']:
+        result['id'] = find_product_code(product_type, grade).pk   # so a form can pick it in its dropdown
     if product_type and grade and not result['exists']:
         result['add_url'] = _admin_add_code_url(product_type, grade)   # for "add it in the admin"
     return JsonResponse(result)

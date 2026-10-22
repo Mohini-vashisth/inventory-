@@ -21,6 +21,7 @@ from ..models import ProductType, ProductCode, Customer, Query, Order, GradeOpti
 from ..forms import CustomerOrderForm, OrderEditForm, OrderItemFormSet
 from ..order_pdf import generate_order_summary_pdf
 from ..decorators import redirect_to_admin_login, staff_required
+from ..product_codes import grade_key
 from .common import _first_form_error, _first_formset_error, _match_product_code
 from .quotations import _public_quote_base_url
 
@@ -214,8 +215,10 @@ def order_edit(request, pk):
     form = OrderEditForm(request.POST or None, request.FILES or None, instance=order)
     if request.method == 'POST' and form.is_valid():
         order = form.save(commit=False)
-        # A type and a grade with no code picked: use the catalogue's code for that pair, as on the other forms.
-        if order.product_code_id is None and order.product_type_id:
+        # Type or grade changed and the code left alone (or none yet): follow the catalogue's code for the new
+        # type + grade, as on the other forms; a code picked by hand is kept.
+        retyped = {'product_type', 'grade'} & set(form.changed_data)
+        if order.product_type_id and (order.product_code_id is None or (retyped and 'product_code' not in form.changed_data)):
             order.product_code = _match_product_code(order.grade, order.product_type)
         if order.product_code_id and order.product_code.product_type_id:
             order.product_type = order.product_code.product_type
@@ -227,6 +230,7 @@ def order_edit(request, pk):
         'form': form,
         'grade_options': list(GradeOption.objects.values_list('name', flat=True)),
         'has_picks': order.coil_picks.exists(),
+        'code_map': {f"{c.product_type_id}|{grade_key(c.grade)}": c.pk for c in ProductCode.objects.exclude(product_type=None)},
     })
 
 

@@ -69,7 +69,23 @@
     </div>
   </form>
 </div>
+{{ code_map|json_script:"code-map" }}
 <script>
+  // The product code follows the type and grade as they are edited (a code picked by hand is left alone).
+  (function () {
+    var map = JSON.parse(document.getElementById('code-map').textContent);
+    var type = document.getElementById('id_product_type'), grade = document.getElementById('id_grade');
+    var code = document.getElementById('id_product_code'), byHand = false;
+    code.addEventListener('change', function () { byHand = true; });
+    function key(value) { return (value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+    function follow() {
+      if (byHand || !type.value) return;
+      code.value = map[type.value + '|' + key(grade.value)] || '';
+    }
+    type.addEventListener('change', follow);
+    grade.addEventListener('input', follow);
+    grade.addEventListener('change', follow);
+  })();
   // Bar asks for a length (and tolerance), Coil for an approximate weight; the other block is hidden.
   (function () {
     var select = document.getElementById('id_delivery_form');

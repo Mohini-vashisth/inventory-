@@ -663,6 +663,44 @@ class OrderDashboardTests(TestCase):
         order.refresh_from_db()
         self.assertEqual((order.quantity, order.grade, order.product_type), (Decimal('25'), 'EN8D', t))
 
+    def test_editing_type_and_grade_moves_the_code_with_them(self):
+        from materials.models import Customer, ProductCode, ProductType
+        t = ProductType.objects.get_or_create(name='Flat Bright Bar', defaults={'code': 'FBX'})[0]
+        old = ProductCode.objects.create(product_type=t, grade='EN8D')
+        new = ProductCode.objects.create(product_type=t, grade='EN9')
+        order = Order.objects.create(customer=Customer.objects.create(name='MOVE CO'), quantity=Decimal('10'),
+                                     status='pending', product_type=t, product_code=old, grade='EN8D')
+        self.client.force_login(self.staff)
+        self.client.post(reverse('order_edit', args=[order.pk]), {
+            'product_code': str(old.pk), 'product_type': str(t.pk), 'grade': 'EN9', 'quantity': '10'})
+        order.refresh_from_db()
+        self.assertEqual(order.product_code, new)
+
+    def test_admin_order_gets_its_code_from_type_and_grade(self):
+        from django.contrib.auth.models import User as U
+        from materials.models import Customer, ProductCode, ProductType
+        t = ProductType.objects.get_or_create(name='Flat Bright Bar', defaults={'code': 'FBX'})[0]
+        code = ProductCode.objects.create(product_type=t, grade='EN8D')
+        order = Order.objects.create(customer=Customer.objects.create(name='ADM CO'), quantity=Decimal('10'),
+                                     status='pending', product_type=t, grade='EN8D')
+        admin_user = U.objects.create_superuser('root', password='pw')
+        self.client.force_login(admin_user)
+        response = self.client.get(reverse('admin:materials_order_change', args=[order.pk]))
+        self.assertContains(response, 'admin_follow_code.js')
+        from materials.admin import OrderAdmin
+        from django.contrib import admin as dj_admin
+        OrderAdmin(Order, dj_admin.site).save_model(None, order, None, True)
+        order.refresh_from_db()
+        self.assertEqual(order.product_code, code)
+
+    def test_lookup_returns_the_existing_codes_id(self):
+        from materials.models import ProductCode, ProductType
+        t = ProductType.objects.get_or_create(name='Flat Bright Bar', defaults={'code': 'FBX'})[0]
+        code = ProductCode.objects.create(product_type=t, grade='EN8D')
+        self.client.force_login(self.staff)
+        data = self.client.get(reverse('product_code_lookup'), {'product_type': t.pk, 'grade': 'EN8D'}).json()
+        self.assertEqual(data['id'], code.pk)
+
     def test_a_completed_order_cannot_be_edited(self):
         from materials.models import Customer
         order = Order.objects.create(customer=Customer.objects.create(name='DONE CO'), quantity=Decimal('10'), status='completed')
