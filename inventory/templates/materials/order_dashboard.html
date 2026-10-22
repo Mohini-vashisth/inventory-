@@ -522,6 +522,25 @@
       if (data.product_type) document.getElementById('dash-type').value = String(data.product_type);
     }
   });
+  // The product code follows the type and grade as they are typed (a code picked by hand is left alone).
+  (function () {
+    var type = document.getElementById('dash-type'), grade = document.getElementById('dash-grade');
+    var code = document.getElementById('dash-product-type'), byHand = false;
+    code.addEventListener('change', function () { byHand = true; });
+    function key(v) { return (v || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+    function follow() {
+      if (byHand || !type.value) return;
+      var found = '';
+      Object.keys(productCodeData).forEach(function (pk) {
+        var d = productCodeData[pk];
+        if (String(d.product_type) === type.value && key(d.grade) === key(grade.value)) found = pk;
+      });
+      code.value = found;
+    }
+    type.addEventListener('change', follow);
+    grade.addEventListener('input', follow);
+    grade.addEventListener('change', follow);
+  })();
   // Choosing a product type narrows the product codes to that type.
   document.getElementById('dash-type').addEventListener('change', function() {
     const typeId = this.value, codeSelect = document.getElementById('dash-product-type');

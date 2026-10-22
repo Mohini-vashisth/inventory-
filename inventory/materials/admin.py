@@ -9,7 +9,7 @@ from django.db import models
 from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django import forms
-from .product_codes import canonical_grade, item_code_for, reserve_grade_number
+from .product_codes import canonical_grade, find_product_code, item_code_for, reserve_grade_number
 from .models import QueryItem, GateEntry, GateEntryLot, NonCoilEntry, NonCoilBillLine, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, ProductCode, AllowedCoilSpec, ProcessStep, ProductionJob, ProductionPart, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
 
 
@@ -599,6 +599,9 @@ class QueryItemInline(admin.TabularInline):
     fields = ['position', 'product_type', 'product_code', 'grade', 'width', 'thickness', 'quantity', 'delivery_form',
               'drawing', 'drawing_notes', 'technical_requirements', 'end_use']
 
+    class Media:
+        js = ('materials/admin_follow_code.js',)
+
 
 @admin.register(Query)
 class QueryAdmin(admin.ModelAdmin):
@@ -628,10 +631,13 @@ class OrderAdmin(admin.ModelAdmin):
     search_fields = ['customer__name', 'grade', 'mill_make', 'product_code__item_code']
     ordering      = ['-created_at']
     list_select_related = ['customer', 'product_code__product_type']
-    readonly_fields = ['product_type_label', 'purchase_order_link', 'drawing_link']
+    readonly_fields = ['purchase_order_link', 'drawing_link']
+
+    class Media:
+        js = ('materials/admin_follow_code.js',)
     fieldsets = (
         ('Order Info', {
-            'fields': ('customer', 'product_type_label', 'product_code', 'status', 'delivery_date', 'frequency', 'notes')
+            'fields': ('customer', 'product_type', 'product_code', 'status', 'delivery_date', 'frequency', 'notes')
         }),
         ('Material Requirements', {
             'fields': ('grade', 'width', 'thickness', 'mill_make', 'drawing_dimensions', 'drawing_file', 'drawing_link', 'mechanical_properties', 'processes', 'end_usage')
@@ -646,6 +652,14 @@ class OrderAdmin(admin.ModelAdmin):
             'fields': ('purchase_order_link',)
         }),
     )
+
+    def save_model(self, request, obj, form, change):
+        # Type + grade with no code picked: use the catalogue's code; a code always decides the type.
+        if obj.product_code_id is None and obj.product_type_id:
+            obj.product_code = find_product_code(obj.product_type, obj.grade)
+        if obj.product_code_id and obj.product_code.product_type_id:
+            obj.product_type = obj.product_code.product_type
+        super().save_model(request, obj, form, change)
 
     def product_type_label(self, obj):
         """The product type (e.g. Flat Bright Bar), taken from the order's product code."""
