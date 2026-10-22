@@ -84,6 +84,7 @@
       .container .subtitle { font-size: 1.15rem; margin-bottom: 2rem; }
       .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
       .tile-link { max-width: none; }
+      .tile-link:last-child:nth-child(odd) { grid-column: 1 / -1; }   /* an odd tile out spans the row */
       .tile { padding: 2.5rem 1.25rem; display: flex; flex-direction: column; justify-content: center; }
       .icon { font-size: 3.6rem; margin-bottom: 0.9rem; }
       .tile h2 { font-size: 1.4rem; margin-bottom: 0.6rem; }
@@ -140,6 +141,14 @@
         <div class="icon">🔄</div>
         <h2>Update Progress</h2>
         <p>Scan a coil to update its manufacturing step status</p>
+      </div>
+    </a>
+
+    <a href="{% url 'coil_lookup' %}" class="tile-link">
+      <div class="tile">
+        <div class="icon">🔍</div>
+        <h2>Coil Dashboard</h2>
+        <p>Look up any coil by its number or by scanning its tag</p>
       </div>
     </a>
 

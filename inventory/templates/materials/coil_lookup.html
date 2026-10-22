@@ -1,0 +1,100 @@
+{% extends "materials/base.html" %}
+{% block tablet_css %}{% include "materials/_portal_tablet.css" %}{% endblock %}
+{% load static %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}Coil Dashboard{% endblock %}
+
+{% block css %}
+    .scan-error { background: #fef3c7; border: 1px solid #fcd34d; border-radius: 10px; padding: 0.7rem 1rem; margin-bottom: 1rem; color: #92400e; font-size: 0.88rem; }
+    .scan-form { display: flex; gap: 0.6rem; margin-bottom: 1.5rem; }
+    .scan-form input[type="text"] { flex: 1; padding: 0.65rem 0.9rem; border: none; border-radius: 8px; font-size: 16px; font-family: monospace; }
+    .scan-form button { padding: 0.65rem 1.1rem; border: none; border-radius: 8px; background: #2f7d5b; color: white; font-weight: 700; cursor: pointer; }
+    .scan-camera-btn { padding: 0.65rem 0.9rem; border: none; border-radius: 8px; background: #256349; color: white; font-size: 1.1rem; cursor: pointer; }
+    .scan-modal { position: fixed; inset: 0; background: #000; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .scan-modal[hidden] { display: none; }
+    .scan-modal video { width: 100%; max-width: 500px; border-radius: 12px; }
+    .scan-modal-status { color: white; font-size: 0.95rem; margin: 1rem 0; text-align: center; padding: 0 1rem; }
+    .scan-modal-cancel { padding: 0.65rem 1.5rem; border: none; border-radius: 8px; background: rgba(255,255,255,0.2); color: white; font-weight: 700; cursor: pointer; }
+    .rows { display: grid; grid-template-columns: 11rem 1fr; gap: 0.6rem 1rem; font-size: 0.92rem; }
+    .rows dt { font-size: 0.72rem; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding-top: 0.15rem; }
+    .status { display: inline-block; padding: 0.15rem 0.7rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700; background: #e5e7eb; color: #374151; }
+    .status-Unused { background: #dcfce7; color: #166534; } .status-Partly { background: #fef3c7; color: #92400e; }
+    .status-Used { background: #fee2e2; color: #991b1b; }
+    table.picks { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    table.picks th { text-align: left; font-size: 0.72rem; text-transform: uppercase; color: #888; padding: 0.4rem 0.5rem; }
+    table.picks td { padding: 0.5rem; border-top: 1px solid #f0f0f0; }
+    @media (max-width: 560px) { .rows { grid-template-columns: 1fr; gap: 0.1rem; } .rows dd { margin-bottom: 0.5rem; } }
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <a href="{% url 'employee' %}" class="back-link">← Back to portal</a>
+  <h1>Coil Dashboard</h1>
+  <p class="subtitle">Type or scan a coil's number to see everything about it.</p>
+
+  {% if scan_error %}<div class="scan-error">⚠️ {{ scan_error }}</div>{% endif %}
+
+  <form method="GET" class="scan-form" id="coil-scan-form">
+    {% include "materials/_coil_no_field.html" %}
+    <button type="button" class="scan-camera-btn" id="camera-scan-btn" title="Scan QR with camera">📷</button>
+    <button type="submit">Look up →</button>
+  </form>
+
+  {% if coil %}
+  <div class="card"><div class="card-body">
+    <h2 style="margin-bottom:0.8rem;">{{ coil.formatted_coil }} <span class="status status-{{ status|cut:" used"|cut:" up" }}">{{ status }}</span></h2>
+    <dl class="rows">
+      <dt>Grade</dt><dd>{{ coil.grade|default:"—" }}</dd>
+      <dt>Size</dt><dd>{{ coil.size|default:"—" }} mm</dd>
+      <dt>Company</dt><dd>{{ coil.company|default:"—" }}</dd>
+      <dt>Vendor</dt><dd>{{ coil.vendor|default:"—" }}</dd>
+      <dt>Heat no.</dt><dd>{{ coil.heat_no|default:"—" }}</dd>
+      <dt>Date</dt><dd>{{ coil.date|date:"d M Y"|default:"—" }}</dd>
+      <dt>Coil weight</dt><dd>{% if coil.quantity %}{{ coil.quantity }} kg{% else %}—{% endif %}</dd>
+      <dt>Used</dt><dd>{{ used }} kg{% if coil.legacy_used_weight %} (of which {{ coil.legacy_used_weight }} kg before the app){% endif %}</dd>
+      <dt>Remaining</dt><dd>{{ remaining }} kg</dd>
+      <dt>Actual Diameter</dt><dd>{% if coil.diameter_readings %}{{ coil.diameter_readings|join:" · " }} mm{% else %}—{% endif %}</dd>
+      <dt>Gate entry</dt><dd>{% if gate_entry %}{{ gate_entry.date|date:"d M Y" }} · {{ gate_entry.vendor }}{% if gate_entry.vehicle_no %} · {{ gate_entry.vehicle_no }}{% endif %}{% if gate_entry.invoice_no %} · invoice {{ gate_entry.invoice_no }}{% endif %}{% else %}—{% endif %}</dd>
+    </dl>
+    <p style="margin-top:1rem;"><a href="{% url 'coil_tag' coil.pk %}" target="_blank" class="link" style="color:#2f7d5b; font-weight:600;">🏷 Open QR tag</a></p>
+  </div></div>
+
+  <div class="card"><div class="card-body">
+    <h2 style="margin-bottom:0.6rem;">Picked for orders</h2>
+    {% if picks %}
+    <table class="picks">
+      <thead><tr><th>Order</th><th>Company</th><th>Weight</th><th>Job</th></tr></thead>
+      <tbody>
+        {% for pick in picks %}
+        <tr>
+          <td>ORD-{{ pick.order.order_no|stringformat:"04d" }}</td>
+          <td>{{ pick.order.customer.name }}</td>
+          <td>{{ pick.weight_allocated }} kg</td>
+          <td>{% for job in pick.jobs.all %}{{ job.job_no }} ({{ job.get_status_display }}){% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Not picked for any order yet.</p>
+    {% endif %}
+  </div></div>
+  {% endif %}
+
+  <div class="scan-modal" id="scan-modal" hidden>
+    <video id="scan-video" autoplay playsinline muted></video>
+    <div class="scan-modal-status" id="scan-modal-status">Point the camera at the coil's QR tag</div>
+    <button type="button" class="scan-modal-cancel" id="scan-modal-cancel">✕ Cancel</button>
+  </div>
+</div>
+
+<script src="{% static 'materials/jsQR.min.js' %}"></script>
+<script src="{% static 'materials/coil_scan.js' %}"></script>
+<script>
+  if (window.matchMedia && window.matchMedia('(pointer: fine)').matches) {
+    document.getElementById('coil-no-input').focus();
+  }
+</script>
+{% include "materials/_screen_off_welcome.html" %}
+{% endblock %}
