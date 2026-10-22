@@ -172,7 +172,7 @@ class ScreenOffReturnsToWelcomeTests(TestCase):
     again). The script lives in one partial that only the employee portal pages include."""
 
     PORTAL_PAGES = ['select_gate_entry', 'gate_entry_form', 'gate_entry_lot_form', 'gate_entry_detail', 'gate_entry_edit',
-                    'select_order', 'select_coil_for_order', 'pick_coil_for_order', 'picked_coil_detail', 'select_job_for_coil', 'part_detail',
+                    'select_order', 'select_coil_for_order', 'pick_coil_for_order', 'picked_coil_detail', 'coil_lookup', 'select_job_for_coil', 'part_detail',
                     'job_overview', 'production_board', 'material_form', 'employee_landing', 'non_coil_entry_form', 'gate_entry_choice']
 
     @staticmethod

@@ -476,3 +476,32 @@ class UnpickCoilTests(TestCase):
         self.client.force_login(User.objects.create_user('boss', password='pw', is_staff=True))
         self.client.post(reverse('unpick_coil', args=[self.order.pk, self.pick.pk]))
         self.assertFalse(OrderCoilPick.objects.exists())
+
+
+class CoilDashboardTests(TestCase):
+    def setUp(self):
+        self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
+        self.coil = Material.objects.create(
+            date='2026-07-01', grade='EN8D', size='1.2', company='Tata', vendor='ABC', quantity=500, heat_no='H001')
+
+    def test_portal_has_a_coil_dashboard_tile(self):
+        self.assertContains(self.client.get(reverse('employee')), reverse('coil_lookup'))
+
+    def test_lookup_by_number_or_tag_text_shows_the_coil(self):
+        for typed in (str(self.coil.coil_no), self.coil.formatted_coil()):
+            page = self.client.get(reverse('coil_lookup'), {'coil_no': typed})
+            for text in ('EN8D', 'Tata', 'H001', 'Unused', 'Not picked for any order yet'):
+                self.assertContains(page, text)
+
+    def test_unknown_coil_says_so(self):
+        page = self.client.get(reverse('coil_lookup'), {'coil_no': '99999'})
+        self.assertContains(page, 'Coil not found')
+
+    def test_a_picked_coil_lists_its_orders_and_is_partly_used(self):
+        code = ProductCode.objects.create(item_code='Bar 1.2mm', grade='EN8D')
+        order = Order.objects.create(customer=Customer.objects.create(name='Dash Co'), product_code=code,
+                                     quantity=100, status='confirmed', grade='EN8D')
+        self.client.post(reverse('pick_coil_for_order', args=[order.pk, self.coil.pk]), {'weight_allocated': '100'})
+        page = self.client.get(reverse('coil_lookup'), {'coil_no': self.coil.coil_no})
+        self.assertContains(page, 'Partly used')
+        self.assertContains(page, 'Dash Co')

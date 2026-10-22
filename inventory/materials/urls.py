@@ -32,6 +32,7 @@ urlpatterns = [
     path("employee-logout/", auth.employee_logout, name="employee_logout"),
     path('coil/<int:pk>/tag/', gate_entry.coil_tag, name='coil_tag'),
     path('select-order/', picking.select_order, name='select_order'),
+    path('coil-lookup/', picking.coil_lookup, name='coil_lookup'),
     path('order/<int:order_pk>/select-coil/', picking.select_coil_for_order, name='select_coil_for_order'),
     path('order/<int:order_pk>/pick-coil/<int:coil_pk>/', picking.pick_coil_for_order, name='pick_coil_for_order'),
     path('order/<int:order_pk>/picked/<int:pick_pk>/', picking.picked_coil_detail, name='picked_coil_detail'),

@@ -288,3 +288,35 @@ def unpick_coil(request, order_pk, pick_pk):
             order.save(update_fields=['status'])
     messages.success(request, f"{coil_label} unpicked. Its weight is back on the coil.")
     return redirect('select_coil_for_order', order_pk=order.pk)
+
+
+@employee_or_staff_required
+def coil_lookup(request):
+    """The coil dashboard: type or scan any coil's number to see everything about it: its facts, how much is
+    left, which orders took how much, and the jobs made from it. Read-only."""
+    raw = request.GET.get('coil_no')
+    coil, scan_error = None, None
+    if raw is not None:
+        coil_no = _parse_coil_no(raw)
+        coil = _safe_get(Material.objects.select_related('lot__gate_entry'), coil_no) if coil_no is not None else None
+        if coil is None:
+            scan_error = "Coil not found. Check the number and try again."
+    context = {'coil': coil, 'scan_error': scan_error}
+    if coil:
+        picks = list(coil.order_picks.select_related('order__customer').prefetch_related('jobs').order_by('-picked_at'))
+        if coil.is_archived():
+            status = 'Archived'
+        elif coil.is_used_up():
+            status = 'Used up'
+        elif coil.weight_used() > 0:
+            status = 'Partly used'
+        else:
+            status = 'Unused'
+        context.update({
+            'picks': picks,
+            'status': status,
+            'gate_entry': coil.lot.gate_entry if coil.lot_id else None,
+            'used': coil.weight_used(),
+            'remaining': coil.weight_remaining(),
+        })
+    return render(request, 'materials/coil_lookup.html', context)
