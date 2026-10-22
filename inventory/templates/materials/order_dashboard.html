@@ -189,18 +189,9 @@
           <div class="section-label" style="margin-top:1.25rem;">Final Product</div>
           <div class="form-row cols-pt">
             <div class="form-group">
-              <label>Product Type</label>
-              <select name="product_type" id="dash-type">
-                <option value="">— select product type —</option>
-                {% for t in product_types %}
-                <option value="{{ t.pk }}" {% if post.product_type == t.pk|stringformat:"s" %}selected{% endif %}>{{ t.name }}</option>
-                {% endfor %}
-              </select>
-            </div>
-            <div class="form-group">
               <label>Product Code</label>
               <select name="product_code" id="dash-product-type">
-                <option value="">— select product code —</option>
+                <option value="">— select product code (optional) —</option>
                 {% for pt in product_codes %}
                 <option value="{{ pt.pk }}" {% if post.product_code == pt.pk|stringformat:"s" %}selected{% endif %}>
                   {{ pt.item_code }}
@@ -210,6 +201,15 @@
               <span style="font-size:0.72rem; color:#aaa; margin-top:0.25rem;">
                 Sets allowed raw material coils
               </span>
+            </div>
+            <div class="form-group">
+              <label>Product Type</label>
+              <select name="product_type" id="dash-type">
+                <option value="">— select product type —</option>
+                {% for t in product_types %}
+                <option value="{{ t.pk }}" {% if post.product_type == t.pk|stringformat:"s" %}selected{% endif %}>{{ t.name }}</option>
+                {% endfor %}
+              </select>
             </div>
             <div class="form-group">
               <label>Grade</label>
