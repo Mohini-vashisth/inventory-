@@ -10,7 +10,7 @@ from django.db.models import DecimalField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django import forms
 from .product_codes import canonical_grade, find_product_code, item_code_for, reserve_grade_number
-from .models import QueryItem, GateEntry, GateEntryLot, NonCoilEntry, NonCoilBillLine, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, ProductCode, AllowedCoilSpec, ProcessStep, ProductionJob, ProductionPart, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
+from .models import QueryItem, GateEntry, GateEntryCharge, GateEntryLot, NonCoilEntry, NonCoilBillLine, Material, OrderCoilPick, GradeOption, SizeOption, ProductType, ProductCode, AllowedCoilSpec, ProcessStep, ProductionJob, ProductionPart, StepLog, Customer, Query, Quotation, QuotationLineItem, Order
 
 
 class GateEntryLotInline(admin.TabularInline):
@@ -39,6 +39,11 @@ class NonCoilEntryAdmin(admin.ModelAdmin):
     bill_status.short_description = 'Bill'
 
 
+class GateEntryChargeInline(admin.TabularInline):
+    model = GateEntryCharge
+    extra = 0
+
+
 @admin.register(GateEntry)
 class GateEntryAdmin(admin.ModelAdmin):
     list_display = [
@@ -48,7 +53,7 @@ class GateEntryAdmin(admin.ModelAdmin):
     list_filter = ['vendor']
     search_fields = ['vehicle_no', 'vendor', 'invoice_no']
     ordering = ['-created_at']
-    inlines = [GateEntryLotInline]
+    inlines = [GateEntryLotInline, GateEntryChargeInline]
 
     def bill_status(self, obj):
         return 'Uploaded' if obj.has_bill() else 'Waiting for bill'

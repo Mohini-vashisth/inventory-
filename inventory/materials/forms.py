@@ -1,11 +1,18 @@
+import io
+import os
 from decimal import Decimal
 
 import re
 
 from django import forms
+from django.core.files.base import ContentFile
+from PIL import Image, ImageOps
 from django.core.validators import FileExtensionValidator
 from django.forms import formset_factory, inlineformset_factory
-from .models import NonCoilBillLine, BILL_EXTENSIONS, GSTIN_PATTERN, GateEntry, NonCoilEntry, validate_bill_size, Material, GradeOption, SizeOption, Order, ProductCode, Query, QueryItem
+from .models import GateEntryCharge, NonCoilBillLine, BILL_EXTENSIONS, GSTIN_PATTERN, GateEntry, NonCoilEntry, validate_bill_size, Material, GradeOption, SizeOption, Order, ProductCode, Query, QueryItem
+
+
+BILL_MAX_SIDE = 3000   # longest side, in pixels, of a bill photo once it is turned into a PDF
 
 
 class GateEntryForm(forms.ModelForm):
@@ -54,6 +61,22 @@ class BillUploadForm(forms.Form):
     """The finance team's bill upload: a photo or scan (pdf, png, jpg, jpeg, webp), at most 10 MB."""
     bill = forms.FileField(validators=[FileExtensionValidator(BILL_EXTENSIONS), validate_bill_size])
 
+    def clean_bill(self):
+        """Every bill is stored as a PDF: a photo or scan is converted here (turned upright, shrunk to a sensible
+        size) so bills open quickly; a PDF is kept as it is. A file that isn't really an image is refused."""
+        upload = self.cleaned_data['bill']
+        if upload.name.lower().endswith('.pdf'):
+            return upload
+        try:
+            with Image.open(upload) as image:
+                image = ImageOps.exif_transpose(image).convert('RGB')
+                image.thumbnail((BILL_MAX_SIDE, BILL_MAX_SIDE))
+                buffer = io.BytesIO()
+                image.save(buffer, format='PDF', quality=85)
+        except Exception:
+            raise forms.ValidationError("That file isn't a readable image. Please upload a clear photo, scan or PDF.")
+        return ContentFile(buffer.getvalue(), name=os.path.splitext(os.path.basename(upload.name))[0] + '.pdf')
+
 
 class BillLineForm(forms.ModelForm):
     """One product row on a non-coil bill: description, quantity, unit. Used one row at a time by the finance
@@ -67,6 +90,16 @@ class BillLineForm(forms.ModelForm):
 
     def clean_unit(self):
         return self.cleaned_data['unit'].strip().upper()   # NOS, KG, PCS... one spelling, whoever types it
+
+
+class ChargeForm(forms.ModelForm):
+    """One 'other amount' row on a coil bill (freight, loading...)."""
+    class Meta:
+        model = GateEntryCharge
+        fields = ['description', 'amount']
+
+    def clean_description(self):
+        return self.cleaned_data['description'].strip()
 
 
 class AccessCodeChangeForm(forms.Form):

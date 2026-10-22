@@ -10,8 +10,10 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from ..decorators import finance_required
-from ..forms import BillLineForm, BillUploadForm
-from ..models import GateEntry, NonCoilBillLine, NonCoilEntry
+from decimal import Decimal, InvalidOperation
+
+from ..forms import BillLineForm, BillUploadForm, ChargeForm
+from ..models import GateEntry, GateEntryCharge, NonCoilBillLine, NonCoilEntry
 
 # Entries that already have a bill stay listed (newest first, after the ones still waiting), but only the
 # latest few so the page stays short; the admin shows everything.
@@ -58,7 +60,7 @@ def _save_bill(request, entry, after_upload='finance'):
 
 @finance_required
 def finance_upload_coil_bill(request, pk):
-    return _save_bill(request, get_object_or_404(GateEntry, pk=pk))
+    return _save_bill(request, get_object_or_404(GateEntry, pk=pk), after_upload='finance_coil_bill_details')
 
 
 @finance_required
@@ -140,3 +142,83 @@ def finance_bill_details(request, pk):
                  'unit': line.unit, 'errors': []} for line in entry.lines.all()]
         error = None
     return render(request, 'materials/finance_bill_details.html', {'entry': entry, 'rows': rows, 'error': error})
+
+
+def _parse_charges(post):
+    """The 'other amounts' rows (charge-<i>-description/amount with charge-TOTAL_FORMS), like the product rows on a
+    non-coil bill: blank rows are ignored, a half-filled one is an error. Returns (valid forms, rows to show, wrong)."""
+    try:
+        total = min(max(int(post.get('charge-TOTAL_FORMS', 0)), 0), MAX_BILL_LINES)
+    except ValueError:
+        total = 0
+    valid, shown, wrong = [], [], False
+    for index in range(total):
+        form = ChargeForm(post, prefix=f'charge-{index}')
+        if not form.has_changed():
+            continue
+        if form.is_valid():
+            valid.append(form)
+        else:
+            wrong = True
+        shown.append({'description': form['description'].value() or '', 'amount': form['amount'].value() or '',
+                      'errors': [e for errs in form.errors.values() for e in errs]})
+    return valid, shown, wrong
+
+
+def _parse_rates(post, lots):
+    """Each lot's rate per kg from rate-<lot id>; blank clears it. Returns ({lot id: Decimal|None}, {lot id: error})."""
+    rates, errors = {}, {}
+    for lot in lots:
+        raw = (post.get(f'rate-{lot.pk}') or '').strip()
+        if not raw:
+            rates[lot.pk] = None
+            continue
+        try:
+            value = Decimal(raw)
+            if value <= 0 or value.as_tuple().exponent < -2:
+                raise InvalidOperation
+        except InvalidOperation:
+            errors[lot.pk] = "Enter a rate above 0 with at most 2 decimals."
+            continue
+        rates[lot.pk] = value
+    return rates, errors
+
+
+@finance_required
+def finance_coil_bill_details(request, pk):
+    """What a coil delivery's bill charges: the delivery's lots are filled in automatically, each gets a rate per kg,
+    and any other amounts on the bill (freight...) are added below. Reached right after the bill is uploaded and
+    from the list's Details button. Saving replaces the rates and the list of other amounts."""
+    entry = get_object_or_404(GateEntry, pk=pk)
+    if not entry.has_bill():
+        messages.error(request, "Upload the bill first; its rates are entered from it.")
+        return redirect('finance')
+    lots = list(entry.lots.order_by('pk'))
+    error, rate_errors = None, {}
+    if request.method == 'POST':
+        rates, rate_errors = _parse_rates(request.POST, lots)
+        valid, shown, wrong = _parse_charges(request.POST)
+        if not rate_errors and not wrong:
+            with transaction.atomic():
+                for lot in lots:
+                    lot.rate = rates[lot.pk]
+                    lot.save(update_fields=['rate'])
+                entry.charges.all().delete()
+                GateEntryCharge.objects.bulk_create([
+                    GateEntryCharge(gate_entry=entry, position=position, **form.cleaned_data)
+                    for position, form in enumerate(valid, start=1)])
+            messages.success(request, f"Saved the bill details for gate entry #{entry.pk}.")
+            return redirect('finance')
+        error = "Please fix the rows marked below."
+        for lot in lots:   # show what was typed, not what is stored
+            lot.rate_shown = request.POST.get(f'rate-{lot.pk}', '')
+        charge_rows = shown
+    else:
+        for lot in lots:
+            lot.rate_shown = format(lot.rate.normalize(), 'f') if lot.rate else ''
+        charge_rows = [{'description': c.description, 'amount': format(c.amount, 'f'), 'errors': []} for c in entry.charges.all()]
+    for lot in lots:
+        lot.error = rate_errors.get(lot.pk)
+    return render(request, 'materials/finance_coil_bill_details.html', {
+        'entry': entry, 'lots': lots, 'charge_rows': charge_rows, 'error': error,
+    })

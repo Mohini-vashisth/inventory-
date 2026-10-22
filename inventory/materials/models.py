@@ -126,6 +126,14 @@ class GateEntryLot(models.Model):
     # This lot's share of the delivery's weight (kg), if the invoice says. Blank means "not mentioned": the lot's
     # per-coil figure then falls back to the whole delivery's total weight over all its coils.
     weight = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, validators=[MinValueValidator(Decimal('0.001'))])
+    # What the supplier's bill charges for this lot, per kg (₹), entered by the finance team from the bill.
+    rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal('0.01'))])
+
+    def amount(self):
+        """The lot's cost on the bill: rate per kg times the lot's weight; None until both are known."""
+        if self.rate and self.weight:
+            return (self.rate * self.weight).quantize(Decimal('0.01'))
+        return None
 
     def weight_per_coil(self):
         """Paper reference weight per coil for this lot: the lot's own weight over its coils when it was entered,
@@ -145,6 +153,21 @@ class GateEntryLot(models.Model):
 
     def __str__(self):
         return f"{self.gate_entry} — {self.grade}, {self.size} mm ({self.no_of_coils} coils)"
+
+
+class GateEntryCharge(models.Model):
+    """Any other amount on a coil delivery's bill besides the coils themselves (freight, loading...), entered by
+    the finance team from the bill."""
+    gate_entry = models.ForeignKey(GateEntry, on_delete=models.CASCADE, related_name='charges')
+    position = models.PositiveIntegerField(default=0)
+    description = models.CharField(max_length=200, help_text="e.g. Freight, Loading, Insurance.")
+    amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
+
+    class Meta:
+        ordering = ['position', 'pk']
+
+    def __str__(self):
+        return f"{self.description} — {self.amount}"
 
 
 class AccessCode(models.Model):
