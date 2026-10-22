@@ -114,6 +114,13 @@
       .btn-send, .btn-manual { width: 100%; text-align: center; }
     }
   
+    .tolerance { margin: 0.4rem 0 0.9rem; padding: 0.8rem 0.9rem; border: 1px solid #e5e7eb; border-radius: 10px; background: #fafbfc; }
+    .tolerance-title { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; margin-bottom: 0.5rem; }
+    .tolerance-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.9rem; margin-bottom: 0.55rem; }
+    .tolerance-name { min-width: 9rem; font-size: 0.9rem; }
+    .tolerance-row label { flex: 1 1 8rem; min-width: 0; display: flex; align-items: center; gap: 0.4rem; margin: 0; text-transform: none; letter-spacing: 0; font-size: 0.85rem; color: #555; }
+    .tolerance-row input { flex: 1 1 0; min-width: 0; width: 100%; }
+    .delivery-extra[hidden] { display: none; }
 {% endblock %}
 
 {% block content %}
@@ -142,7 +149,7 @@
     <div class="card-body">
       {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
 
-      <form method="post" action="{% url 'order_dashboard' %}" id="order-form">
+      <form method="post" action="{% url 'order_dashboard' %}" id="order-form" enctype="multipart/form-data">
         {% csrf_token %}
 
         <!-- Company info — filled once, shared by both paths -->
@@ -233,24 +240,11 @@
             </div>
           </div>
 
-          <div class="section-label">Material Requirements</div>
-          <div class="form-row cols-3">
+          <div class="form-row cols-2">
             <div class="form-group">
               <label>Specific Mill Make</label>
               <input type="text" name="mill_make" placeholder="e.g. SAIL, Tata, Any"
                      value="{{ post.mill_make|default:'' }}">
-            </div>
-            <div class="form-group">
-              <label>Processes Required</label>
-              <input type="text" name="processes" placeholder="e.g. Drilling, Tapping"
-                     value="{{ post.processes|default:'' }}">
-            </div>
-          </div>
-          <div class="form-row cols-2">
-            <div class="form-group">
-              <label>Drawing / Dimensions</label>
-              <textarea name="drawing_dimensions"
-                        placeholder="Describe dimensions or paste drawing reference...">{{ post.drawing_dimensions|default:'' }}</textarea>
             </div>
             <div class="form-group">
               <label>Mechanical Properties</label>
@@ -258,11 +252,48 @@
                         placeholder="e.g. Tensile: 700 MPa, Hardness: 200 HB">{{ post.mechanical_properties|default:'' }}</textarea>
             </div>
           </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Attach Drawing</label>
+              <input type="file" name="drawing_file" accept=".pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,.step,.stp,.igs,.iges,.zip">
+              <span style="font-size:0.72rem; color:#aaa; margin-top:0.25rem;">The final dimension drawing: PDF, image, DWG/DXF, STEP/IGES or ZIP, up to 10 MB</span>
+            </div>
+          </div>
+          <div class="tolerance">
+            <div class="tolerance-title">Tolerance</div>
+            <div class="tolerance-row">
+              <span class="tolerance-name">Width</span>
+              <label>From <input type="number" step="any" name="width_tol_from" placeholder="from" value="{{ post.width_tol_from|default:'' }}"></label>
+              <label>To <input type="number" step="any" name="width_tol_to" placeholder="to" value="{{ post.width_tol_to|default:'' }}"></label>
+            </div>
+            <div class="tolerance-row">
+              <span class="tolerance-name">Thickness</span>
+              <label>From <input type="number" step="any" name="thickness_tol_from" placeholder="from" value="{{ post.thickness_tol_from|default:'' }}"></label>
+              <label>To <input type="number" step="any" name="thickness_tol_to" placeholder="to" value="{{ post.thickness_tol_to|default:'' }}"></label>
+            </div>
+            <div class="form-group">
+              <label>Tolerance for anything else</label>
+              <textarea name="other_tolerances" rows="2"
+                        placeholder="Any other tolerance, e.g. straightness, ovality, length">{{ post.other_tolerances|default:'' }}</textarea>
+            </div>
+          </div>
+          <div class="form-row cols-2">
+            <div class="form-group">
+              <label>Processes Required</label>
+              <input type="text" name="processes" placeholder="e.g. Drilling, Tapping, Machining, Heat treatment"
+                     value="{{ post.processes|default:'' }}">
+            </div>
+            <div class="form-group">
+              <label>End Usage / Application</label>
+              <input type="text" name="end_usage" placeholder="e.g. Automotive axle, Gear shaft, Structural component"
+                     value="{{ post.end_usage|default:'' }}">
+            </div>
+          </div>
 
-          <div class="section-label">Quotation</div>
+          <div class="section-label">Quotation Details</div>
           <div class="form-row cols-3">
             <div class="form-group">
-              <label>Required Quantity (kg) *</label>
+              <label>Required Quantity (kgs only) *</label>
               <input type="number" name="quantity" step="0.001" min="0" placeholder="0.000"
                      value="{{ post.quantity|default:'' }}">
             </div>
@@ -285,22 +316,43 @@
               </select>
             </div>
           </div>
-
-          <div class="section-label">Delivery & Notes</div>
-          <div class="form-row cols-3">
-            <div class="form-group">
-              <label>End Usage / Application</label>
-              <input type="text" name="end_usage" placeholder="e.g. Automotive axle"
-                     value="{{ post.end_usage|default:'' }}">
+          <div class="delivery-extra" data-for="bar" {% if post.delivery_form != 'bar' %}hidden{% endif %}>
+            <div class="tolerance">
+              <div class="tolerance-title">Bar length</div>
+              <div class="tolerance-row">
+                <span class="tolerance-name">Length (mm) *</span>
+                <input type="number" step="any" min="0" name="bar_length" placeholder="e.g. 3000" value="{{ post.bar_length|default:'' }}">
+              </div>
+              <div class="tolerance-row">
+                <span class="tolerance-name">Length tolerance</span>
+                <label>From <input type="number" step="any" name="length_tol_from" placeholder="from" value="{{ post.length_tol_from|default:'' }}"></label>
+                <label>To <input type="number" step="any" name="length_tol_to" placeholder="to" value="{{ post.length_tol_to|default:'' }}"></label>
+              </div>
             </div>
+          </div>
+          <div class="delivery-extra" data-for="coil" {% if post.delivery_form != 'coil' %}hidden{% endif %}>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Approx. Coil Weight (kg) *</label>
+                <input type="number" step="any" min="0" name="coil_weight" placeholder="e.g. 2000" value="{{ post.coil_weight|default:'' }}">
+              </div>
+            </div>
+          </div>
+          <div class="form-row cols-2">
             <div class="form-group">
-              <label>Delivery Date</label>
+              <label>Expected Delivery Date</label>
               <input type="date" name="delivery_date" value="{{ post.delivery_date|default:'' }}">
             </div>
             <div class="form-group">
-              <label>Notes</label>
-              <input type="text" name="notes" placeholder="Any additional remarks"
+              <label>Additional Notes</label>
+              <input type="text" name="notes" placeholder="Any other requirements"
                      value="{{ post.notes|default:'' }}">
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Attach Purchase Order (optional)</label>
+              <input type="file" name="purchase_order" accept=".pdf,.doc,.docx,.jpg,.jpeg,.png">
             </div>
           </div>
 
@@ -554,6 +606,23 @@
 
   // ── Table helpers ────────────────────────────────────────
   function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+</script>
+<script>
+  // Choosing Bar asks for its length (and a tolerance); choosing Coil asks for an approximate weight.
+  // The other block is hidden and disabled, so what isn't asked isn't sent (the server drops it too).
+  (function () {
+    var select = document.querySelector('#manual-fields select[name="delivery_form"]');
+    if (!select) return;
+    function show(value) {
+      document.querySelectorAll('#manual-fields .delivery-extra').forEach(function (block) {
+        var on = block.dataset.for === value;
+        block.hidden = !on;
+        block.querySelectorAll('input').forEach(function (input) { input.disabled = !on; });
+      });
+    }
+    select.addEventListener('change', function () { show(select.value); });
+    show(select.value);
+  })();
 </script>
 {% include "materials/_company_name_caps.html" with ids="co-name" %}
 {% include "materials/_copy_link_script.html" %}

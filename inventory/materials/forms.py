@@ -172,10 +172,13 @@ class OrderForm(forms.ModelForm):
     class Meta:
         model = Order
         fields = [
-            'drawing_dimensions', 'grade', 'width', 'thickness', 'mill_make',
+            'drawing_dimensions', 'drawing_file', 'grade', 'width', 'thickness', 'mill_make',
             'mechanical_properties', 'processes', 'end_usage', 'delivery_form',
             'quantity', 'frequency', 'delivery_date', 'notes', 'purchase_order',
         ]
+        widgets = {
+            'drawing_file': forms.ClearableFileInput(attrs={'accept': '.pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,.step,.stp,.igs,.iges,.zip'}),
+        }
 
 
 class QueryItemForm(forms.ModelForm):
