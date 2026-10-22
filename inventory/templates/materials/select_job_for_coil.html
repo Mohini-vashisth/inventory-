@@ -61,7 +61,7 @@
 
   <form method="POST" class="scan-form" id="coil-scan-form">
     {% csrf_token %}
-    <input type="text" name="coil_no" id="coil-no-input" placeholder="Scan or type coil number (e.g. COIL0007)">
+    {% include "materials/_coil_no_field.html" %}
     <button type="button" class="scan-camera-btn" id="camera-scan-btn" title="Scan QR with camera">📷</button>
     <button type="submit">Go →</button>
   </form>
