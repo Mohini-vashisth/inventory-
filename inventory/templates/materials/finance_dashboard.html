@@ -54,6 +54,7 @@
               {% if entry.has_bill %}
                 <span class="badge badge-done">Bill uploaded</span>
                 <a class="view-link" href="{% url 'finance_coil_bill' entry.pk %}" target="_blank">View</a>
+                <a class="view-link" href="{% url 'finance_coil_bill_details' entry.pk %}">Details</a>
               {% else %}
                 <span class="badge badge-waiting">No bill yet</span>
               {% endif %}

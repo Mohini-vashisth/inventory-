@@ -1,0 +1,150 @@
+{% extends "materials/base.html" %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}Coil bill details{% endblock %}
+
+{% block css %}
+  .ds .page { max-width: 960px; }
+  .entry-card dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1rem; font-size: 0.92rem; }
+  .entry-card dt { color: var(--ds-muted); }
+  .lots { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  .lots th { text-align: left; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ds-muted); padding: 0.4rem 0.5rem; }
+  .lots td { padding: 0.55rem 0.5rem; border-top: 1px solid var(--ds-border); vertical-align: top; }
+  .lots input { width: 8rem; }
+  .lots .err { color: #b91c1c; font-size: 0.8rem; margin-top: 0.2rem; }
+  .lots .num { text-align: right; white-space: nowrap; }
+  .charge-head, .charge-row { display: grid; grid-template-columns: 3fr 1.4fr 2.4rem; gap: 0.6rem; align-items: start; }
+  .charge-head { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ds-muted); margin: 0.6rem 0 0.4rem; }
+  .charge-row { margin-bottom: 0.6rem; }
+  .charge-row.has-error input { border-color: #b91c1c; }
+  .charge-row .row-error { grid-column: 1 / -1; color: #b91c1c; font-size: 0.8rem; margin-top: -0.2rem; }
+  .remove-row { background: none; border: 1px solid var(--ds-border); border-radius: 8px; height: 2.6rem; cursor: pointer; color: var(--ds-muted); font-size: 1rem; }
+  .remove-row:hover { color: #b91c1c; border-color: #b91c1c; }
+  .add-row { background: var(--ds-accent-soft); color: var(--ds-accent-dark); border: 1px dashed var(--ds-accent); border-radius: 8px; padding: 0.55rem 1rem; font-weight: 600; cursor: pointer; margin: 0.3rem 0 1.2rem; }
+  .total { display: flex; justify-content: space-between; font-weight: 700; font-size: 1.05rem; border-top: 2px solid var(--ds-border); padding-top: 0.8rem; margin: 0.4rem 0 1.2rem; }
+  h2.sub { font-size: 1rem; margin-bottom: 0.4rem; }
+  @media (max-width: 640px) { .lots th:nth-child(n+4), .lots td:nth-child(n+4) { display: none; } .lots input { width: 6rem; } }
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="ds-top">
+    <a href="{% url 'finance' %}" class="back-link">← Back to finance</a>
+  </div>
+  <h1>Coil bill details</h1>
+  <p class="subtitle">The lots are filled in from the gate entry. Enter the rate on the bill for each, then any other amounts.</p>
+
+  {% for msg in messages %}
+  <div class="alert {% if msg.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ msg }}</div>
+  {% endfor %}
+
+  <div class="card entry-card">
+    <dl>
+      <dt>Gate entry</dt><dd>#{{ entry.pk }} · {{ entry.created_at|date:"d M Y, H:i" }}</dd>
+      <dt>Vendor</dt><dd>{{ entry.vendor|default:"—" }}</dd>
+      <dt>Invoice no.</dt><dd>{{ entry.invoice_no|default:"—" }}</dd>
+      <dt>Vehicle</dt><dd>{{ entry.vehicle_no|default:"—" }}</dd>
+      <dt>Total weight</dt><dd>{{ entry.total_weight|floatformat:"-3" }} kg</dd>
+      <dt>Bill</dt><dd><a href="{% url 'finance_coil_bill' entry.pk %}" target="_blank">View the bill</a></dd>
+    </dl>
+  </div>
+
+  <form method="POST" id="details-form">
+    {% csrf_token %}
+    {% if error %}<div class="error-msg" style="margin-top:1rem;">{{ error }}</div>{% endif %}
+
+    <div class="card" style="margin-top:1rem;">
+      <h2 class="sub">Lots</h2>
+      <table class="lots">
+        <thead><tr><th>Grade · size</th><th>Company</th><th>Coils</th><th class="num">Weight (kg)</th><th>Rate (₹ / kg)</th><th class="num">Amount (₹)</th></tr></thead>
+        <tbody>
+          {% for lot in lots %}
+          <tr data-weight="{{ lot.weight|default:'' }}">
+            <td>{{ lot.grade|default:"—" }} · {{ lot.size|default:"—" }} mm</td>
+            <td>{{ lot.company|default:"—" }}</td>
+            <td>{{ lot.no_of_coils }}</td>
+            <td class="num">{% if lot.weight %}{{ lot.weight|floatformat:"-3" }}{% else %}<span class="muted">not entered</span>{% endif %}</td>
+            <td>
+              <input type="number" class="rate" name="rate-{{ lot.pk }}" value="{{ lot.rate_shown }}" step="0.01" min="0.01" inputmode="decimal" placeholder="0.00">
+              {% if lot.error %}<div class="err">{{ lot.error }}</div>{% endif %}
+            </td>
+            <td class="num amount">—</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="muted">This gate entry has no lots.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="muted" style="font-size:0.8rem; margin-top:0.6rem;">A lot's amount is its rate times its weight; a lot with no weight entered at the gate has no amount yet.</p>
+    </div>
+
+    <div class="card" style="margin-top:1rem;">
+      <h2 class="sub">Other amounts on the bill</h2>
+      <p class="muted" style="font-size:0.85rem;">Freight, loading, insurance, anything else charged besides the coils.</p>
+      <input type="hidden" name="charge-TOTAL_FORMS" id="charge-total" value="{{ charge_rows|length }}">
+      <div class="charge-head"><span>What for</span><span>Amount (₹)</span><span></span></div>
+      <div id="charges">
+        {% for row in charge_rows %}
+        <div class="charge-row{% if row.errors %} has-error{% endif %}">
+          <input type="text" data-field="description" name="charge-{{ forloop.counter0 }}-description" value="{{ row.description }}" list="charge-options" placeholder="e.g. Freight" maxlength="200">
+          <input type="number" class="charge-amount" data-field="amount" name="charge-{{ forloop.counter0 }}-amount" value="{{ row.amount }}" step="0.01" min="0.01" placeholder="0.00" inputmode="decimal">
+          <button type="button" class="remove-row" title="Remove" aria-label="Remove">✕</button>
+          {% for message in row.errors %}<div class="row-error">{{ message }}</div>{% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+      <button type="button" class="add-row" id="add-charge">+ Add amount</button>
+      <datalist id="charge-options"><option value="Freight"><option value="Loading"><option value="Unloading"><option value="Insurance"><option value="Other"></datalist>
+
+      <div class="total"><span>Bill total</span><span id="grand-total">—</span></div>
+      <button type="submit" class="btn-submit">Save bill details</button>
+    </div>
+  </form>
+</div>
+
+<template id="charge-template">
+  <div class="charge-row">
+    <input type="text" data-field="description" list="charge-options" placeholder="e.g. Freight" maxlength="200">
+    <input type="number" class="charge-amount" data-field="amount" step="0.01" min="0.01" placeholder="0.00" inputmode="decimal">
+    <button type="button" class="remove-row" title="Remove" aria-label="Remove">✕</button>
+  </div>
+</template>
+
+<script>
+  (function () {
+    var list = document.getElementById('charges'), total = document.getElementById('charge-total');
+    function money(n) { return n.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+    function recalc() {
+      var sum = 0, any = false;
+      document.querySelectorAll('.lots tbody tr[data-weight]').forEach(function (row) {
+        var weight = parseFloat(row.dataset.weight), rate = parseFloat(row.querySelector('.rate').value);
+        var cell = row.querySelector('.amount');
+        if (weight > 0 && rate > 0) { var a = weight * rate; cell.textContent = money(a); sum += a; any = true; }
+        else cell.textContent = '—';
+      });
+      document.querySelectorAll('.charge-amount').forEach(function (input) {
+        var v = parseFloat(input.value); if (v > 0) { sum += v; any = true; }
+      });
+      document.getElementById('grand-total').textContent = any ? '₹ ' + money(sum) : '—';
+    }
+    function renumber() {
+      Array.prototype.forEach.call(list.children, function (row, index) {
+        row.querySelectorAll('[data-field]').forEach(function (input) { input.name = 'charge-' + index + '-' + input.dataset.field; });
+      });
+      total.value = list.children.length;
+      recalc();
+    }
+    document.getElementById('add-charge').addEventListener('click', function () {
+      var row = document.getElementById('charge-template').content.firstElementChild.cloneNode(true);
+      list.appendChild(row); renumber(); row.querySelector('input').focus();
+    });
+    list.addEventListener('click', function (event) {
+      var button = event.target.closest('.remove-row');
+      if (!button) return;
+      button.closest('.charge-row').remove(); renumber();
+    });
+    document.getElementById('details-form').addEventListener('input', recalc);
+    recalc();
+  })();
+</script>
+{% endblock %}

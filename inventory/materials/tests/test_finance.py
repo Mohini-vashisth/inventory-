@@ -378,10 +378,10 @@ class BillDetailsPageTests(FinanceTestCase):
         response = self.client.post(reverse('finance_upload_other_bill', args=[entry.pk]), {'bill': bill_file('x.html', b'<b>')})
         self.assertRedirects(response, reverse('finance'))
 
-    def test_a_coil_bill_still_returns_to_the_list(self):
+    def test_a_coil_bill_now_opens_its_details_page(self):
         coil = GateEntry.objects.create(vendor='TATA', invoice_no='I1', total_weight=100)
         response = self.client.post(reverse('finance_upload_coil_bill', args=[coil.pk]), {'bill': bill_file()})
-        self.assertRedirects(response, reverse('finance'))
+        self.assertRedirects(response, reverse('finance_coil_bill_details', args=[coil.pk]))
 
     def test_the_page_shows_the_entry_and_the_bill(self):
         page = self.client.get(self.url)
@@ -440,10 +440,12 @@ class BillDetailsPageTests(FinanceTestCase):
         self.assertContains(self.client.get(reverse('finance')), 'No products yet')
         other.delete()
 
-    def test_a_coil_row_has_no_details_link(self):
+    def test_a_coil_row_links_to_its_own_details_page(self):
         self.entry.delete()   # leave only a coil entry on the page
-        GateEntry.objects.create(vendor='TATA', invoice_no='I1', total_weight=100, bill=bill_file())
-        self.assertNotContains(self.client.get(reverse('finance')), 'Details</a>')
+        coil = GateEntry.objects.create(vendor='TATA', invoice_no='I1', total_weight=100, bill=bill_file())
+        page = self.client.get(reverse('finance'))
+        self.assertContains(page, reverse('finance_coil_bill_details', args=[coil.pk]))
+        self.assertNotContains(page, reverse('finance_bill_details', args=[coil.pk]))
 
     def test_the_page_confirms_a_fresh_upload(self):
         entry = NonCoilEntry.objects.create(category='BEARINGS', company='XYZ')
@@ -456,3 +458,98 @@ class BillDetailsPageTests(FinanceTestCase):
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 302)
         self.assertIn(reverse('login'), response['Location'])
+
+
+class CoilBillDetailsTests(FinanceTestCase):
+    def setUp(self):
+        from decimal import Decimal
+        finance_login(self.client)
+        self.entry = GateEntry.objects.create(vendor='TATA', invoice_no='I1', total_weight=1000)
+        self.entry.bill = bill_file()
+        self.entry.save()
+        from ..models import GateEntryLot
+        self.a = GateEntryLot.objects.create(gate_entry=self.entry, company='TATA', grade='EN8D', size=Decimal('1.2'), no_of_coils=2, weight=Decimal('600'))
+        self.b = GateEntryLot.objects.create(gate_entry=self.entry, company='JSW', grade='EN9', size=Decimal('2'), no_of_coils=3)
+        self.url = reverse('finance_coil_bill_details', args=[self.entry.pk])
+
+    def post(self, **data):
+        base = {f'rate-{self.a.pk}': '', f'rate-{self.b.pk}': '', 'charge-TOTAL_FORMS': '0'}
+        base.update(data)
+        return self.client.post(self.url, base)
+
+    def test_page_fills_in_the_lots_and_links_the_bill(self):
+        page = self.client.get(self.url)
+        for text in ('EN8D', 'EN9', 'TATA', 'JSW', 'View the bill'):
+            self.assertContains(page, text)
+        self.assertContains(self.client.get(reverse('finance')), self.url)
+
+    def test_saving_rates_and_other_amounts(self):
+        from decimal import Decimal
+        response = self.post(**{f'rate-{self.a.pk}': '52.50', 'charge-TOTAL_FORMS': '2',
+                                'charge-0-description': 'Freight', 'charge-0-amount': '1200',
+                                'charge-1-description': '', 'charge-1-amount': ''})
+        self.assertRedirects(response, reverse('finance'))
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.rate, Decimal('52.50'))
+        self.assertEqual(self.a.amount(), Decimal('31500.00'))
+        self.assertIsNone(self.b.amount())
+        charge = self.entry.charges.get()
+        self.assertEqual((charge.description, charge.amount), ('Freight', Decimal('1200.00')))
+
+    def test_saving_again_replaces_the_amounts_and_a_blank_rate_clears_it(self):
+        self.post(**{f'rate-{self.a.pk}': '50', 'charge-TOTAL_FORMS': '1', 'charge-0-description': 'Freight', 'charge-0-amount': '10'})
+        self.post(**{'charge-TOTAL_FORMS': '1', 'charge-0-description': 'Loading', 'charge-0-amount': '5'})
+        self.a.refresh_from_db()
+        self.assertIsNone(self.a.rate)
+        self.assertEqual(list(self.entry.charges.values_list('description', flat=True)), ['Loading'])
+
+    def test_a_bad_rate_or_half_filled_amount_saves_nothing(self):
+        response = self.post(**{f'rate-{self.a.pk}': '-3'})
+        self.assertContains(response, 'Enter a rate above 0')
+        response = self.post(**{'charge-TOTAL_FORMS': '1', 'charge-0-description': 'Freight', 'charge-0-amount': ''})
+        self.assertContains(response, 'Please fix the rows marked below')
+        self.assertFalse(self.entry.charges.exists())
+
+    def test_needs_the_bill_first_and_finance_or_staff(self):
+        bare = GateEntry.objects.create(vendor='X', invoice_no='I2', total_weight=10)
+        response = self.client.get(reverse('finance_coil_bill_details', args=[bare.pk]))
+        self.assertRedirects(response, reverse('finance'))
+        self.client.logout()
+        self.assertEqual(self.client.get(self.url).status_code, 302)
+
+
+class BillsAreStoredAsPdfTests(FinanceTestCase):
+    def setUp(self):
+        finance_login(self.client)
+        self.entry = GateEntry.objects.create(vendor='TATA', invoice_no='I1', total_weight=100)
+
+    def image(self, name, fmt):
+        import io
+        from PIL import Image
+        buffer = io.BytesIO()
+        Image.new('RGB', (40, 60), (200, 30, 30)).save(buffer, format=fmt)
+        return SimpleUploadedFile(name, buffer.getvalue())
+
+    def test_a_photo_is_stored_as_a_pdf(self):
+        for name, fmt in (('scan.jpg', 'JPEG'), ('scan.png', 'PNG'), ('scan.webp', 'WEBP')):
+            with self.subTest(name=name):
+                self.client.post(reverse('finance_upload_coil_bill', args=[self.entry.pk]), {'bill': self.image(name, fmt)})
+                self.entry.refresh_from_db()
+                self.assertTrue(self.entry.bill.name.endswith('.pdf'))
+                self.entry.bill.open('rb')
+                self.assertEqual(self.entry.bill.read(5), b'%PDF-')
+                self.entry.bill.close()
+
+    def test_a_pdf_is_kept_as_it_is(self):
+        self.client.post(reverse('finance_upload_coil_bill', args=[self.entry.pk]), {'bill': bill_file('mine.pdf')})
+        self.entry.refresh_from_db()
+        self.entry.bill.open('rb')
+        self.assertEqual(self.entry.bill.read(), b'%PDF-1.4 fake bill')
+        self.entry.bill.close()
+
+    def test_a_fake_image_is_refused(self):
+        response = self.client.post(reverse('finance_upload_coil_bill', args=[self.entry.pk]),
+                                    {'bill': SimpleUploadedFile('x.jpg', b'not an image')}, follow=True)
+        self.assertContains(response, "isn&#x27;t a readable image")
+        self.entry.refresh_from_db()
+        self.assertFalse(self.entry.has_bill())
