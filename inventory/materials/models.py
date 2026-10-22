@@ -123,6 +123,16 @@ class GateEntryLot(models.Model):
     grade = GradeField(max_length=10, null=True, blank=True)
     size = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
     no_of_coils = models.PositiveIntegerField()
+    # This lot's share of the delivery's weight (kg), if the invoice says. Blank means "not mentioned": the lot's
+    # per-coil figure then falls back to the whole delivery's total weight over all its coils.
+    weight = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True, validators=[MinValueValidator(Decimal('0.001'))])
+
+    def weight_per_coil(self):
+        """Paper reference weight per coil for this lot: the lot's own weight over its coils when it was entered,
+        otherwise the delivery's total weight over all of its coils. Real weights are entered per coil."""
+        if self.weight and self.no_of_coils:
+            return (Decimal(str(self.weight)) / self.no_of_coils).quantize(Decimal('0.001'))
+        return self.gate_entry.weight_per_coil()
 
     def coils_registered(self):
         return self.coils.count()

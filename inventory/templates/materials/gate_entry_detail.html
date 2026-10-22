@@ -89,7 +89,7 @@
     <div class="lot-link" style="cursor:default;">
       <div class="lot-left">
         <div class="lot-title">{{ lot.grade }}, {{ lot.size }} mm</div>
-        <div class="lot-meta">{{ lot.company|default:"—" }} · {{ lot.no_of_coils }} coil(s)</div>
+        <div class="lot-meta">{{ lot.company|default:"—" }} · {{ lot.no_of_coils }} coil(s){% if lot.weight %} · {{ lot.weight|floatformat:"-3" }} kg{% endif %}</div>
       </div>
       <div class="lot-right">
         <span class="badge-complete">Complete</span>
@@ -99,7 +99,7 @@
     <a href="{% url 'material_form' lot.pk %}" class="lot-link">
       <div class="lot-left">
         <div class="lot-title">{{ lot.grade }}, {{ lot.size }} mm</div>
-        <div class="lot-meta">{{ lot.company|default:"—" }} · {{ lot.no_of_coils }} coil(s)</div>
+        <div class="lot-meta">{{ lot.company|default:"—" }} · {{ lot.no_of_coils }} coil(s){% if lot.weight %} · {{ lot.weight|floatformat:"-3" }} kg{% endif %}</div>
       </div>
       <div class="lot-right">
         <div class="remaining-label">Coils left</div>
