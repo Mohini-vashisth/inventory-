@@ -12,3 +12,6 @@ inventory/media/
 
 .env
 .envrc
+
+# graphify knowledge graph output
+graphify-out/
