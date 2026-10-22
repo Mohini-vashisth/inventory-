@@ -1,0 +1,17 @@
+<style>
+  .coil-field { flex: 1; display: flex; align-items: center; background: #fff; border-radius: 8px; min-width: 0; }
+  .coil-field .coil-prefix { padding-left: 0.9rem; font-family: monospace; font-size: 16px; font-weight: 700; color: #6b7280; }
+  .coil-field input[type="text"] { background: transparent; padding-left: 0.15rem; outline: none; min-width: 0; }
+</style>
+<div class="coil-field">
+  <span class="coil-prefix">COIL</span>
+  <input type="text" name="coil_no" id="coil-no-input" inputmode="numeric" autocomplete="off" placeholder="0007">
+</div>
+<script>
+  // "COIL" is already there, so only the number is typed. A scanner or a pasted tag ("COIL0007") is cut down
+  // to its number as well; the server accepts either form.
+  document.getElementById('coil-no-input').addEventListener('input', function () {
+    var cleaned = this.value.replace(/^\s*coil/i, '').replace(/\D/g, '');
+    if (cleaned !== this.value) this.value = cleaned;
+  });
+</script>
