@@ -111,7 +111,7 @@ class RealRenameKeepsRelationsTests(TransactionTestCase):
             def columns(table):
                 return {col.name for col in connection.introspection.get_table_description(cursor, table)}
             self.assertIn('product_code_id', columns('materials_order'))
-            self.assertNotIn('product_type_id', columns('materials_order'))
+            # (orders gained a real product_type_id column of their own in 0067: the chosen type, not the code)
             self.assertEqual({'product_type_id', 'product_code_id'} <= columns('materials_queryitem'), True)
             self.assertNotIn('product_category_id', columns('materials_queryitem'))
             self.assertIn('product_type_id', columns('materials_productcode'))

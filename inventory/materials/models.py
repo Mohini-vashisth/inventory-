@@ -1083,6 +1083,9 @@ class Order(models.Model):
     customer              = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='orders')
     source_query          = models.ForeignKey(Query, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
     product_code          = models.ForeignKey(ProductCode, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Code")
+    # The type the customer or staff chose. Kept on the order itself because a type + grade may have no product code
+    # in the catalogue yet; when there is a code, the code's type is the one shown (product_type_name).
+    product_type          = models.ForeignKey(ProductType, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Type")
     # 1. Drawing / dimensions
     drawing_dimensions    = models.TextField(blank=True, verbose_name="Drawing / Dimensions")   # typed text: staff entry and older orders
     # What the customer attaches on the order form (instead of typing dimensions), and their tolerances:
@@ -1307,8 +1310,8 @@ class Order(models.Model):
         return ''
 
     def product_type_name(self):
-        """The product type (e.g. Flat Bright Bar), taken from the order's product code."""
-        product_type = self.product_code.product_type if self.product_code_id else None
+        """The product type (e.g. Flat Bright Bar): the product code's, else the one chosen on the order."""
+        product_type = (self.product_code.product_type if self.product_code_id else None) or self.product_type
         return product_type.name if product_type else ''
 
     def spec_text(self):

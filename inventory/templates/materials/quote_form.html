@@ -165,8 +165,9 @@
       <div class="form-row cols-3">
         <div class="form-group">
           <label>Grade of Material</label>
-          <input type="text" name="grade" id="q-grade" placeholder="e.g. EN8D, SS304"
+          <input type="text" name="grade" id="q-grade" placeholder="e.g. EN8D, SS304" list="grade-options" autocomplete="off"
                  value="{{ post.grade|default:'' }}">
+          <datalist id="grade-options">{% for grade in grade_options %}<option value="{{ grade }}">{% endfor %}</datalist>
         </div>
         <div class="form-group">
           <label>Width (mm)</label>

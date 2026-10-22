@@ -1,0 +1,87 @@
+{% extends "materials/base.html" %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}Edit ORD-{{ order.order_no|stringformat:"04d" }}{% endblock %}
+
+{% block css %}
+    .content { max-width: 760px; margin: 2rem auto; padding: 0 1.5rem; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem 1rem; }
+    .grid .wide { grid-column: 1 / -1; }
+    .grid label { display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #888; margin-bottom: 0.25rem; }
+    .grid input, .grid select, .grid textarea { width: 100%; }
+    .errorlist { list-style: none; padding: 0; margin: 0.25rem 0 0; color: #b91c1c; font-size: 0.8rem; }
+    .note { font-size: 0.85rem; color: #b45309; margin-bottom: 0.9rem; }
+    .section { font-size: 0.8rem; font-weight: 700; margin: 1.1rem 0 0.5rem; color: #374151; }
+    .delivery-extra[hidden] { display: none; }
+    @media (max-width: 640px) { .content { padding: 0 0.85rem; } .grid { grid-template-columns: 1fr; } }
+{% endblock %}
+
+{% block content %}
+<div class="content">
+  <div class="ds-top">
+    <a href="{% url 'order_detail' order.pk %}" class="back-link">← Back to order</a>
+  </div>
+  <h1>Edit ORD-{{ order.order_no|stringformat:"04d" }} · {{ order.customer.name }}</h1>
+  <form method="post" enctype="multipart/form-data" class="card">
+    {% csrf_token %}
+    <div class="card-body">
+      {% if has_picks %}<p class="note">Coils are already picked for this order. Changing its grade, size or product code does not move them.</p>{% endif %}
+      {% if form.non_field_errors %}<div class="alert alert-error">{{ form.non_field_errors }}</div>{% endif %}
+      <div class="section">Product</div>
+      <div class="grid">
+        <div>{{ form.product_code.label_tag }}{{ form.product_code }}{{ form.product_code.errors }}</div>
+        <div>{{ form.product_type.label_tag }}{{ form.product_type }}{{ form.product_type.errors }}</div>
+        <div>{{ form.grade.label_tag }}{{ form.grade }}{{ form.grade.errors }}</div>
+        <div>{{ form.quantity.label_tag }}{{ form.quantity }}{{ form.quantity.errors }}</div>
+        <div>{{ form.width.label_tag }}{{ form.width }}{{ form.width.errors }}</div>
+        <div>{{ form.thickness.label_tag }}{{ form.thickness }}{{ form.thickness.errors }}</div>
+        <div>{{ form.mill_make.label_tag }}{{ form.mill_make }}{{ form.mill_make.errors }}</div>
+        <div>{{ form.mechanical_properties.label_tag }}{{ form.mechanical_properties }}{{ form.mechanical_properties.errors }}</div>
+        <div class="wide">{{ form.drawing_dimensions.label_tag }}{{ form.drawing_dimensions }}{{ form.drawing_dimensions.errors }}</div>
+        <div class="wide">{{ form.drawing_file.label_tag }}{{ form.drawing_file }}{{ form.drawing_file.errors }}</div>
+      </div>
+      <div class="section">Tolerance</div>
+      <div class="grid">
+        <div>{{ form.width_tol_from.label_tag }}{{ form.width_tol_from }}{{ form.width_tol_from.errors }}</div>
+        <div>{{ form.width_tol_to.label_tag }}{{ form.width_tol_to }}{{ form.width_tol_to.errors }}</div>
+        <div>{{ form.thickness_tol_from.label_tag }}{{ form.thickness_tol_from }}{{ form.thickness_tol_from.errors }}</div>
+        <div>{{ form.thickness_tol_to.label_tag }}{{ form.thickness_tol_to }}{{ form.thickness_tol_to.errors }}</div>
+        <div class="wide">{{ form.other_tolerances.label_tag }}{{ form.other_tolerances }}{{ form.other_tolerances.errors }}</div>
+      </div>
+      <div class="section">Delivery</div>
+      <div class="grid">
+        <div>{{ form.delivery_form.label_tag }}{{ form.delivery_form }}{{ form.delivery_form.errors }}</div>
+        <div>{{ form.frequency.label_tag }}{{ form.frequency }}{{ form.frequency.errors }}</div>
+        <div class="delivery-extra" data-for="bar">{{ form.bar_length.label_tag }}{{ form.bar_length }}{{ form.bar_length.errors }}</div>
+        <div class="delivery-extra" data-for="bar">{{ form.length_tol_from.label_tag }}{{ form.length_tol_from }}{{ form.length_tol_from.errors }}</div>
+        <div class="delivery-extra" data-for="bar">{{ form.length_tol_to.label_tag }}{{ form.length_tol_to }}{{ form.length_tol_to.errors }}</div>
+        <div class="delivery-extra" data-for="coil">{{ form.coil_weight.label_tag }}{{ form.coil_weight }}{{ form.coil_weight.errors }}</div>
+        <div>{{ form.delivery_date.label_tag }}{{ form.delivery_date }}{{ form.delivery_date.errors }}</div>
+        <div>{{ form.processes.label_tag }}{{ form.processes }}{{ form.processes.errors }}</div>
+        <div>{{ form.end_usage.label_tag }}{{ form.end_usage }}{{ form.end_usage.errors }}</div>
+        <div>{{ form.notes.label_tag }}{{ form.notes }}{{ form.notes.errors }}</div>
+        <div class="wide">{{ form.purchase_order.label_tag }}{{ form.purchase_order }}{{ form.purchase_order.errors }}</div>
+      </div>
+      <datalist id="grade-options">{% for grade in grade_options %}<option value="{{ grade }}">{% endfor %}</datalist>
+      <div class="submit-row" style="margin-top:1.2rem;">
+        <button type="submit" class="btn-primary">Save changes</button>
+      </div>
+    </div>
+  </form>
+</div>
+<script>
+  // Bar asks for a length (and tolerance), Coil for an approximate weight; the other block is hidden.
+  (function () {
+    var select = document.getElementById('id_delivery_form');
+    function show() {
+      document.querySelectorAll('.delivery-extra').forEach(function (block) {
+        var on = block.dataset.for === select.value;
+        block.hidden = !on;
+        block.querySelectorAll('input').forEach(function (input) { input.disabled = !on; });
+      });
+    }
+    select.addEventListener('change', show);
+    show();
+  })();
+</script>
+{% endblock %}

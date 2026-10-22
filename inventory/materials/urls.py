@@ -59,6 +59,7 @@ urlpatterns = [
     path('orders/send-form/', orders.send_order_form, name='send_order_form'),
     path('orders/customer-autocomplete/', orders.customer_autocomplete, name='customer_autocomplete'),
     path('orders/<int:pk>/', orders.order_detail, name='order_detail'),
+    path('orders/<int:pk>/edit/', orders.order_edit, name='order_edit'),
     path('orders/<int:pk>/confirm/', orders.order_confirm, name='order_confirm'),
     path('orders/<int:pk>/reject/', orders.order_reject, name='order_reject'),
     path('orders/<int:pk>/dispatch/', orders.order_dispatch, name='order_dispatch'),
