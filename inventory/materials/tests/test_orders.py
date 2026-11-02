@@ -712,6 +712,17 @@ class OrderDashboardTests(TestCase):
         order.refresh_from_db()
         self.assertEqual(order.quantity, Decimal('10'))
 
+    def test_edit_toggle_script_waits_for_the_page_to_load(self):
+        # The cards the toggle hides come after the script in the page, so it must run on DOMContentLoaded;
+        # run straight away it found nothing to hide and the Edit button did nothing.
+        from materials.models import Customer
+        order = Order.objects.create(customer=Customer.objects.create(name='JS CO'), quantity=Decimal('10'), status='pending')
+        self.client.force_login(self.staff)
+        html = self.client.get(reverse('order_detail', args=[order.pk])).content.decode()
+        self.assertLess(html.index("addEventListener('DOMContentLoaded'"), html.index("getElementById('edit-form')"))
+        self.assertIn('id="edit-btn"', html)
+        self.assertIn('id="view-cards"', html)
+
     def test_the_old_edit_address_opens_the_details_page_in_edit_mode(self):
         from materials.models import Customer
         order = Order.objects.create(customer=Customer.objects.create(name='OLD URL CO'), quantity=Decimal('10'), status='pending')

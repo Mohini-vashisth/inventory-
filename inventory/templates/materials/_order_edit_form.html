@@ -90,7 +90,7 @@
 </script>
 <script>
   // The Edit button swaps the read-only cards for the form on this same page; Cancel puts them back.
-  (function () {
+  document.addEventListener('DOMContentLoaded', function () {
     var form = document.getElementById('edit-form'), view = document.getElementById('view-cards');
     if (!form || !view) return;
     function open(on) { form.hidden = !on; view.hidden = on; if (on) form.scrollIntoView({block: 'start'}); }
@@ -98,5 +98,5 @@
     if (edit) edit.addEventListener('click', function () { open(true); });
     if (cancel) cancel.addEventListener('click', function () { open(false); });
     open(!form.hidden);
-  })();
+  });
 </script>
