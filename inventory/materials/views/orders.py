@@ -12,7 +12,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.core.files.base import ContentFile
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Count, Sum
 from django.http import JsonResponse
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -150,7 +150,6 @@ def order_dashboard(request):
               .select_related('customer', 'product_code__product_type')
               .annotate(weight_cut=Sum('coil_picks__weight_allocated'))
               .order_by('-created_at'))
-    customers = Customer.objects.order_by('name')
     product_codes = ProductCode.objects.order_by('item_code')
     product_code_data = {
         str(pt.pk): {'grade': pt.grade, 'product_type': pt.product_type_id}
@@ -227,15 +226,28 @@ def order_dashboard(request):
 
     return render(request, 'materials/order_dashboard.html', {
         'orders': orders,
-        'customers': customers,
         'product_codes': product_codes,
         'product_types': ProductType.objects.all(),
         'product_code_data': product_code_data,
         'grade_options': list(GradeOption.objects.values_list('name', flat=True)),
         'error': error,
         'post': request.POST if error else {},
+    })
+
+
+@staff_required(on_denied=redirect_to_admin_login)
+def company_dashboard(request):
+    """The companies, on their own page of the owners' dashboard: each company's order form link, portal link
+    (copy or reset) and a button to send the order form again."""
+    return render(request, 'materials/company_dashboard.html', {
+        'customers': Customer.objects.annotate(order_count=Count('orders')).order_by('name'),
         'quote_base_url': _public_quote_base_url(request),
     })
+
+
+def _back_to(request):
+    """Where a company action returns to: the companies page when it came from there, else the Orders page."""
+    return redirect('company_dashboard' if request.POST.get('next') == 'company_dashboard' else 'order_dashboard')
 
 
 @staff_required(on_denied=redirect_to_admin_login)
@@ -252,7 +264,7 @@ def reset_portal_link(request, pk):
     customer.portal_token = uuid.uuid4()
     customer.save(update_fields=['portal_token'])
     messages.success(request, f"{customer.name} has a new portal link. The old one no longer works.")
-    return redirect('order_dashboard')
+    return _back_to(request)
 
 
 @staff_required
@@ -266,7 +278,7 @@ def send_order_form(request):
     phone = _clean_phone(request.POST.get('phone', ''))
     if not name:
         messages.error(request, "Company name is required.")
-        return redirect('order_dashboard')
+        return _back_to(request)
     customer, _ = Customer.objects.get_or_create(name=name)
     if email:
         customer.email = email
@@ -293,7 +305,7 @@ def send_order_form(request):
         except Exception as e:
             logger.warning("Order form email to %s failed: %s", customer.email, e)
             messages.error(request, f"Failed to send email: {e}. The link is {link}")
-    return redirect('order_dashboard')
+    return _back_to(request)
 
 
 @staff_required(on_denied=lambda request: JsonResponse([], safe=False))

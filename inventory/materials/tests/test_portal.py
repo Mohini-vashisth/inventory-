@@ -136,8 +136,39 @@ class PortalStaffControlsTests(TestCase):
         self.assertEqual(self.acme.portal_token, old)
 
     def test_company_list_offers_the_portal_link_and_the_tracking_switch_is_on_the_order(self):
-        page = self.client.get(reverse('order_dashboard'))
+        page = self.client.get(reverse('company_dashboard'))
         self.assertContains(page, reverse('portal_home', args=[self.acme.portal_token]))
         self.client.post(reverse('order_detail', args=[self.order.pk]), {'quantity': '100', 'customer_can_track': 'on'})
         self.order.refresh_from_db()
         self.assertTrue(self.order.customer_can_track)
+
+
+class CompaniesPageTests(TestCase):
+    def setUp(self):
+        self.staff = User.objects.create_user('boss', password='pw', is_staff=True)
+        self.client.force_login(self.staff)
+        self.acme = Customer.objects.create(name='ACME', email='a@acme.co')
+        make_order(self.acme)
+
+    def test_the_dashboard_has_a_companies_tile_and_the_page_lists_companies(self):
+        self.assertContains(self.client.get(reverse('staff_home')), reverse('company_dashboard'))
+        page = self.client.get(reverse('company_dashboard'))
+        self.assertContains(page, 'ACME')
+        self.assertContains(page, 'Send Form')
+
+    def test_the_orders_page_no_longer_carries_the_company_list(self):
+        page = self.client.get(reverse('order_dashboard'))
+        self.assertNotContains(page, 'Portal link')
+        self.assertNotContains(page, 'Reset</button>')
+
+    def test_actions_from_the_companies_page_come_back_to_it(self):
+        back = self.client.post(reverse('reset_portal_link', args=[self.acme.pk]), {'next': 'company_dashboard'})
+        self.assertRedirects(back, reverse('company_dashboard'))
+        back = self.client.post(reverse('send_order_form'), {'name': 'ACME', 'next': 'company_dashboard'})
+        self.assertRedirects(back, reverse('company_dashboard'))
+        back = self.client.post(reverse('send_order_form'), {'name': 'ACME'})
+        self.assertRedirects(back, reverse('order_dashboard'))
+
+    def test_only_staff_can_open_it(self):
+        self.client.logout()
+        self.assertEqual(self.client.get(reverse('company_dashboard')).status_code, 302)
