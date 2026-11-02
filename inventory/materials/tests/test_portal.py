@@ -89,6 +89,29 @@ class PortalTests(TestCase):
         self.assertContains(self.client.get(self.home), 'rel="manifest"')
 
 
+class PortalPageContentTests(TestCase):
+    def setUp(self):
+        self.acme = Customer.objects.create(name='ACME')
+        make_order(self.acme)
+        self.home = reverse('portal_home', args=[self.acme.portal_token])
+
+    def test_welcome_heading_company_name_and_footer_details(self):
+        with self.settings(COMPANY_NAME='Matta Drawing Works', COMPANY_ADDRESS='Plot 12 MIDC', COMPANY_PHONE='+91 99999 00000',
+                           COMPANY_EMAIL='info@example.com', COMPANY_GST='27ABCDE1234F1Z5'):
+            page = self.client.get(self.home)
+        self.assertContains(page, 'Welcome to Matta Drawing Works')
+        for text in ('ACME', 'Plot 12 MIDC', '+91 99999 00000', 'info@example.com', '27ABCDE1234F1Z5'):
+            self.assertContains(page, text)
+
+    def test_chat_button_opens_whatsapp_when_a_number_is_set_and_is_hidden_otherwise(self):
+        with self.settings(WHATSAPP_CHAT_NUMBER='919876543210'):
+            page = self.client.get(self.home)
+        self.assertContains(page, 'https://wa.me/919876543210?text=')
+        self.assertContains(page, 'Chat with us')
+        with self.settings(WHATSAPP_CHAT_NUMBER=''):
+            self.assertNotContains(self.client.get(self.home), 'wa.me')
+
+
 class PortalStaffControlsTests(TestCase):
     def setUp(self):
         self.staff = User.objects.create_user('boss', password='pw', is_staff=True)

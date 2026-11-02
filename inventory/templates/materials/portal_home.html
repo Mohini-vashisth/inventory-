@@ -5,24 +5,21 @@
 {% block head_extra %}<link rel="manifest" href="{% url 'portal_manifest' token %}"><meta name="theme-color" content="#2f7d5b">{% endblock %}
 
 {% block css %}
-  .portal { max-width: 720px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
-  .portal h1 { margin-bottom: 0.2rem; }
-  .order { display: flex; justify-content: space-between; align-items: center; gap: 0.8rem; padding: 0.8rem 0; border-top: 1px solid var(--ds-border); }
+{% include "materials/_portal_css.html" %}
+  .order { display: flex; justify-content: space-between; align-items: center; gap: 0.8rem; padding: 0.9rem 0; border-top: 1px solid var(--ds-border); }
   .order:first-child { border-top: 0; }
-  .order .what { font-weight: 600; }
+  .order .what { font-weight: 700; }
   .order .meta { font-size: 0.85rem; color: var(--ds-muted); margin-top: 0.15rem; }
-  .status { display: inline-block; margin-top: 0.3rem; padding: 0.1rem 0.6rem; border-radius: 999px; background: #e5e7eb; color: #374151; font-size: 0.78rem; font-weight: 700; }
-  .status.s-in_production { background: #d1fae5; color: #065f46; } .status.s-completed { background: #dcfce7; color: #166534; }
-  .again { white-space: nowrap; text-decoration: none; background: var(--ds-accent-soft); color: var(--ds-accent-dark); border: 1px solid var(--ds-accent); border-radius: 8px; padding: 0.45rem 0.9rem; font-weight: 600; font-size: 0.88rem; }
-  #install { display: none; background: var(--ds-accent-soft); border: 1px solid var(--ds-accent); border-radius: 10px; padding: 0.7rem 1rem; margin: 1rem 0; font-size: 0.9rem; }
+  .status { display: inline-block; margin-top: 0.35rem; padding: 0.12rem 0.65rem; border-radius: 999px; background: #e5e7eb; color: #374151; font-size: 0.78rem; font-weight: 700; }
+  .status.s-pending { background: #fef3c7; color: #92400e; } .status.s-in_production { background: #d1fae5; color: #065f46; } .status.s-completed { background: #dcfce7; color: #166534; }
+  .again { white-space: nowrap; text-decoration: none; background: var(--ds-accent-soft); color: var(--ds-accent-dark); border: 1px solid var(--ds-accent); border-radius: 8px; padding: 0.5rem 1rem; font-weight: 600; font-size: 0.88rem; }
+  #install { display: none; background: #fff; border: 1px solid var(--ds-accent); border-radius: 12px; padding: 0.8rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; box-shadow: 0 6px 22px rgba(31,42,37,0.10); }
   #install button { margin-left: 0.6rem; }
-  .note { font-size: 0.85rem; color: var(--ds-muted); margin-top: 1.5rem; }
 {% endblock %}
 
 {% block content %}
-<div class="portal">
-  <h1>{{ customer.name }}</h1>
-  <p class="subtitle">Your orders with Matta Drawing Works</p>
+{% include "materials/_portal_hero.html" %}
+<div class="p-main">
 
   <div id="install"><span id="install-text">Install this as an app on your phone or computer.</span> <button type="button" class="btn-submit" id="install-btn" hidden>Install app</button></div>
 
@@ -52,8 +49,8 @@
     {% empty %}<p class="muted">Nothing here yet.</p>{% endfor %}
   </div></div>
 
-  <p class="note">Want a product that is not listed here? Please contact us and we will quote it for you.{% if company_phone %} {{ company_phone }}{% endif %}</p>
 </div>
+{% include "materials/_portal_footer.html" %}
 
 <script>
   // Offer to install the portal as an app. Chrome and Edge raise an install event; iPhone has no such event, so it gets a hint.

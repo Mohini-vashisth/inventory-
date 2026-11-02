@@ -4,16 +4,16 @@
 {% block title %}Order again{% endblock %}
 
 {% block css %}
-  .portal { max-width: 560px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+{% include "materials/_portal_css.html" %}
   .spec { font-size: 0.92rem; line-height: 1.6; }
   .errorlist { list-style: none; padding: 0; margin: 0.25rem 0 0; color: #b91c1c; font-size: 0.85rem; }
 {% endblock %}
 
 {% block content %}
-<div class="portal">
-  <a href="{% url 'portal_home' token %}" class="back-link">← Back to my orders</a>
-  <h1>Order again</h1>
-  <p class="subtitle">{{ customer.name }}</p>
+{% include "materials/_portal_hero.html" %}
+<div class="p-main">
+  <a href="{% url 'portal_home' token %}" class="back-link" style="background:#fff;">← Back to my orders</a>
+  <h2 style="margin:0.8rem 0;">Order again</h2>
 
   <div class="card"><div class="card-header">The product</div><div class="card-body spec">
     <strong>{{ title }}</strong>
@@ -36,4 +36,5 @@
     </div>
   </form>
 </div>
+{% include "materials/_portal_footer.html" %}
 {% endblock %}

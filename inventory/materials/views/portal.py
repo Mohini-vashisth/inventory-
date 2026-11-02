@@ -9,6 +9,7 @@ the pages load nothing from /static, and a company can only ever see its own ord
 import datetime
 import json
 import os
+from urllib.parse import quote
 
 from django import forms
 from django.conf import settings
@@ -40,6 +41,19 @@ REORDER_COPIED = [
 ]
 
 
+def _branding(customer):
+    """The header, footer and chat button every portal page shares: who we are, and a WhatsApp link that opens the
+    chat with a first message naming the company (the number comes from WHATSAPP_CHAT_NUMBER; blank hides the button)."""
+    chat = ''
+    if settings.WHATSAPP_CHAT_NUMBER:
+        chat = f"https://wa.me/{settings.WHATSAPP_CHAT_NUMBER}?text=" + quote(f"Hello, this is {customer.name}.")
+    return {
+        'brand': {'name': settings.COMPANY_NAME, 'address': settings.COMPANY_ADDRESS, 'phone': settings.COMPANY_PHONE,
+                  'email': settings.COMPANY_EMAIL, 'gst': settings.COMPANY_GST, 'website': settings.COMPANY_WEBSITE},
+        'chat_url': chat,
+    }
+
+
 def _company(token):
     """The company behind a portal link; a link whose company has never ordered (or was reset) is simply not found."""
     customer = get_object_or_404(Customer, portal_token=token)
@@ -64,7 +78,7 @@ def portal_home(request, token):
     return render(request, 'materials/portal_home.html', {
         'customer': customer,
         'token': token,
-        'company_phone': settings.COMPANY_PHONE,
+        **_branding(customer),
         'current': [_card(o) for o in orders if o.status in CURRENT],
         'past': [_card(o) for o in orders if o.status == 'completed'],
     })
@@ -103,9 +117,9 @@ def portal_reorder(request, token, order_pk):
     form = ReorderForm(request.POST or None, initial={'quantity': source.quantity})
     if request.method == 'POST' and form.is_valid():
         _repeat(source, form.cleaned_data['quantity'], form.cleaned_data['delivery_date'])
-        return render(request, 'materials/portal_reordered.html', {'customer': customer, 'token': token})
+        return render(request, 'materials/portal_reordered.html', {**_branding(customer), 'customer': customer, 'token': token})
     return render(request, 'materials/portal_reorder.html', {
-        'customer': customer, 'token': token, 'source': source, 'title': source.spec_text() or 'Order', 'form': form,
+        **_branding(customer), 'customer': customer, 'token': token, 'source': source, 'title': source.spec_text() or 'Order', 'form': form,
         'details': [line for line in (source.delivery_detail_text(), *source.tolerance_lines()) if line],
     })
 
