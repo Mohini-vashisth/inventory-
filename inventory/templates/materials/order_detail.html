@@ -70,7 +70,7 @@
         {% else %}
         <span class="muted">No action needed.</span>
         {% endif %}
-        {% if order.status != 'completed' and order.status != 'cancelled' %}<a href="{% url 'order_edit' order.pk %}" class="action-btn" style="text-decoration:none;">✏️ Edit</a>{% endif %}
+        {% if form %}<button type="button" class="action-btn" id="edit-btn">✏️ Edit</button>{% endif %}
       </div>
       {% if not order.product_code %}<p class="warn">⚠ No product code is set, so this order can't be confirmed yet. Set one in the admin (Orders → this order).</p>{% endif %}
       {% if shortfall %}<div class="warn shortfall"><span class="shortfall-title">⚠️ Low stock:</span><div><div>Needs {{ shortfall.needed|floatformat:"0g" }} kg{% if shortfall.picked %} more{% endif %}</div><div>Available {{ shortfall.available|floatformat:"0g" }} kg</div></div></div>{% endif %}
@@ -102,6 +102,9 @@
     </div>
   </div>
 
+  {% if form %}{% include "materials/_order_edit_form.html" %}{% endif %}
+
+  <div id="view-cards"{% if edit_open %} hidden{% endif %}>
   <div class="card">
     <div class="card-header">Product</div>
     <div class="card-body">
@@ -142,6 +145,8 @@
         <dt>Notes</dt><dd class="pre">{{ order.notes|default:"—" }}</dd>
       </dl>
     </div>
+  </div>
+
   </div>
 
   <div class="card">

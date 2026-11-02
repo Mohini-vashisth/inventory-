@@ -656,8 +656,8 @@ class OrderDashboardTests(TestCase):
         t = ProductType.objects.get_or_create(name='Flat Bright Bar', defaults={'code': 'FBX'})[0]
         order = Order.objects.create(customer=Customer.objects.create(name='EDIT CO'), quantity=Decimal('10'), status='pending')
         self.client.force_login(self.staff)
-        self.assertContains(self.client.get(reverse('order_edit', args=[order.pk])), 'Save changes')
-        response = self.client.post(reverse('order_edit', args=[order.pk]), {
+        self.assertContains(self.client.get(reverse('order_detail', args=[order.pk])), 'Save changes')   # the form is on the details page
+        response = self.client.post(reverse('order_detail', args=[order.pk]), {
             'product_type': str(t.pk), 'grade': 'en8d', 'quantity': '25', 'width': '50'})
         self.assertRedirects(response, reverse('order_detail', args=[order.pk]))
         order.refresh_from_db()
@@ -671,7 +671,7 @@ class OrderDashboardTests(TestCase):
         order = Order.objects.create(customer=Customer.objects.create(name='MOVE CO'), quantity=Decimal('10'),
                                      status='pending', product_type=t, product_code=old, grade='EN8D')
         self.client.force_login(self.staff)
-        self.client.post(reverse('order_edit', args=[order.pk]), {
+        self.client.post(reverse('order_detail', args=[order.pk]), {
             'product_code': str(old.pk), 'product_type': str(t.pk), 'grade': 'EN9', 'quantity': '10'})
         order.refresh_from_db()
         self.assertEqual(order.product_code, new)
@@ -705,8 +705,30 @@ class OrderDashboardTests(TestCase):
         from materials.models import Customer
         order = Order.objects.create(customer=Customer.objects.create(name='DONE CO'), quantity=Decimal('10'), status='completed')
         self.client.force_login(self.staff)
+        page = self.client.get(reverse('order_detail', args=[order.pk]))
+        self.assertNotContains(page, 'Save changes')
+        self.assertNotContains(page, 'id="edit-btn"')
+        self.client.post(reverse('order_detail', args=[order.pk]), {'quantity': '99'})
+        order.refresh_from_db()
+        self.assertEqual(order.quantity, Decimal('10'))
+
+    def test_the_old_edit_address_opens_the_details_page_in_edit_mode(self):
+        from materials.models import Customer
+        order = Order.objects.create(customer=Customer.objects.create(name='OLD URL CO'), quantity=Decimal('10'), status='pending')
+        self.client.force_login(self.staff)
         response = self.client.get(reverse('order_edit', args=[order.pk]))
-        self.assertRedirects(response, reverse('order_detail', args=[order.pk]))
+        self.assertRedirects(response, reverse('order_detail', args=[order.pk]) + '?edit=1')
+
+    def test_a_bad_edit_reopens_the_form_and_leaves_the_order_alone(self):
+        from materials.models import Customer
+        order = Order.objects.create(customer=Customer.objects.create(name='BAD CO'), quantity=Decimal('10'), status='pending', grade='EN8D')
+        self.client.force_login(self.staff)
+        page = self.client.post(reverse('order_detail', args=[order.pk]), {'quantity': '', 'grade': 'ZZ9'})
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'id="edit-form"')
+        self.assertNotContains(page, 'id="edit-form" hidden')
+        order.refresh_from_db()
+        self.assertEqual((order.quantity, order.grade), (Decimal('10'), 'EN8D'))
 
     def test_copied_link_gives_the_plain_order_form_even_after_a_quotation(self):
         from materials.models import Customer, Quotation, QuotationLineItem
