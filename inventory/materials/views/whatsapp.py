@@ -23,7 +23,7 @@ from django.views.decorators.http import require_http_methods
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
-from ..models import GSTIN_PATTERN, ProductType, Query, QueryItem, WhatsAppMessage
+from ..models import GSTIN_PATTERN, Customer, ProductType, Query, QueryItem, WhatsAppMessage
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +60,7 @@ WHATSAPP_QUERY_FIELDS = [
 # order; the product type (a tappable list), the Coil/Bar choice (tappable buttons) and the free-text answers
 # (drawing, make/properties/process, end use) are asked one product at a time, because a tap answers one
 # product and the text can contain commas.
+WHATSAPP_COMPANY_DETAIL_FIELDS = ('contact_email', 'gst_number', 'gst_address')
 WHATSAPP_LIST_ITEM_FIELDS = ('grade', 'width', 'thickness', 'quantity')
 WHATSAPP_SEQUENTIAL_ITEM_FIELDS = ('product_type', 'drawing', 'technical_requirements', 'end_use', 'delivery_form')
 WHATSAPP_PER_ITEM_FIELDS = tuple(f for f in ('product_type', 'drawing', 'grade', 'width', 'thickness',
@@ -388,6 +389,8 @@ def _next_target(query):
         elif field in WHATSAPP_PER_ITEM_FIELDS:
             if any(_item_value_missing(item, field) for item in items):
                 return field, None
+        elif field in WHATSAPP_COMPANY_DETAIL_FIELDS and query.skip_company_details:
+            continue   # a company already on file: its details are staff's to fill in, not asked again
         elif not getattr(query, field):
             return field, None
     return None, None
@@ -689,6 +692,94 @@ def _handle_whatsapp_message(msg, phone, profile_name, sent_at, send_next):
             _route_whatsapp_media(phone, media_id, media.get("mime_type", ""), sent_at)
 
 
+# ── Chat started from a company's portal ─────────────────────────────────────
+# The portal's "Chat with us" button opens WhatsApp with a first message that carries the company's ref (the first
+# 8 characters of its portal link). The bot recognises the company, asks Yes/No, and a company already on file goes
+# straight to the product questions; otherwise the normal intake runs. Messages without a ref are handled as before.
+WHATSAPP_PORTAL_REF = re.compile(r'\bref[:\s]*([0-9a-f]{8})\b', re.IGNORECASE)
+WHATSAPP_PORTAL_STAGES = ('portal_confirm', 'portal_name')
+WHATSAPP_PORTAL_CONFIRM_CHOICES = [('yes', "Yes, that's us"), ('no', 'No, someone else')]
+WHATSAPP_PORTAL_NAME_QUESTION = "Hi there! Please enter your company name."
+WHATSAPP_PORTAL_THANKS = "Thank you! Let us note down what you need.\n\n"
+
+
+def portal_chat_ref(customer):
+    """The short ref the portal's chat button puts in its first message."""
+    return customer.portal_token.hex[:8]
+
+
+def _customer_for_portal_ref(ref):
+    matches = list(Customer.objects.filter(portal_token__startswith=ref)[:2])
+    return matches[0] if len(matches) == 1 else None
+
+
+def _company_on_file(name):
+    """The Customer whose name matches `name` (ignoring case and extra spaces), or None."""
+    name = ' '.join(name.split())
+    return Customer.objects.filter(name__iexact=name).first() if name else None
+
+
+def _start_portal_chat(phone, ref, sent_at, send_next=True):
+    customer = _customer_for_portal_ref(ref)
+    query = Query.objects.create(
+        source='whatsapp', contact_phone=phone, last_inbound_at=sent_at or timezone.now(),
+        bot_stage='portal_confirm' if customer else 'portal_name',
+        pending_value={'customer': customer.pk} if customer else {})
+    if not send_next:
+        return
+    if customer:
+        _send_whatsapp_buttons_message_background(
+            phone, f"Hi there! I see you are from {customer.name}. Is that right?", WHATSAPP_PORTAL_CONFIRM_CHOICES)
+    else:
+        _send_whatsapp_text_message_background(phone, WHATSAPP_PORTAL_NAME_QUESTION)
+    return query
+
+
+def _adopt_company(query, customer, send_next=True):
+    """The chat is from a company already on file: use its details and go straight to the product questions."""
+    known = (Query.objects.filter(company_name__iexact=customer.name).exclude(pk=query.pk).exclude(gst_number='')
+             .order_by('-created_at').first())
+    query.company_name = customer.name
+    query.contact_email = customer.email or ''
+    if known:
+        query.gst_number, query.gst_address = known.gst_number, known.gst_address
+    query.skip_company_details = True
+    query.bot_stage = ''
+    query.pending_value = {}
+    query.save(update_fields=['company_name', 'contact_email', 'gst_number', 'gst_address',
+                              'skip_company_details', 'bot_stage', 'pending_value'])
+    if send_next:
+        _advance_whatsapp_query(query, intro=WHATSAPP_PORTAL_THANKS)
+
+
+def _portal_reply(query, text, send_next=True):
+    """The customer's answer while the bot is confirming who they are (stages portal_confirm / portal_name)."""
+    if query.bot_stage == 'portal_confirm':
+        customer = Customer.objects.filter(pk=query.pending_value.get('customer') or 0).first()
+        if customer and _says_yes(text):
+            _adopt_company(query, customer, send_next)
+        elif _says_no(text) or not customer:
+            query.bot_stage, query.pending_value = 'portal_name', {}
+            query.save(update_fields=['bot_stage', 'pending_value'])
+            if send_next:
+                _send_whatsapp_text_message_background(query.contact_phone, "No problem. " + WHATSAPP_PORTAL_NAME_QUESTION)
+        elif send_next:   # not a yes or no: ask again with the buttons
+            _send_whatsapp_buttons_message_background(
+                query.contact_phone, f"Please tap Yes if you are from {customer.name}, or No if not.", WHATSAPP_PORTAL_CONFIRM_CHOICES)
+        return
+    name = ' '.join(text.split())
+    if not name:
+        return
+    customer = _company_on_file(name)
+    if customer:
+        _adopt_company(query, customer, send_next)
+        return
+    query.company_name, query.bot_stage, query.pending_value = name, '', {}   # a new company: the normal intake runs
+    query.save(update_fields=['company_name', 'bot_stage', 'pending_value'])
+    if send_next:
+        _advance_whatsapp_query(query, intro=WHATSAPP_PORTAL_THANKS)
+
+
 def _route_whatsapp_message(phone, text, profile_name, sent_at=None, send_next=True):
     """Route an inbound message to whichever open Query is mid-intake for
     this phone number. A message from a number with no in-progress query —
@@ -705,6 +796,8 @@ def _route_whatsapp_message(phone, text, profile_name, sent_at=None, send_next=T
     )
     if query:
         _process_whatsapp_answer(query.pk, text, sent_at, send_next)
+    elif WHATSAPP_PORTAL_REF.search(text):
+        _start_portal_chat(phone, WHATSAPP_PORTAL_REF.search(text).group(1).lower(), sent_at, send_next)
     else:
         Query.objects.create(source='whatsapp', company_name=profile_name, contact_phone=phone, notes=text,
                              last_inbound_at=sent_at or timezone.now())
@@ -909,6 +1002,10 @@ def _process_whatsapp_answer(query_pk, text, sent_at=None, send_next=True):
                 _send_whatsapp_question(query.contact_phone, field_name, count,
                                         lead=_question_lead(field_name, index if field_name == field else None, count))
 
+        if query.bot_stage in WHATSAPP_PORTAL_STAGES:
+            _portal_reply(query, text, send_next and window_open)
+            return
+
         if query.bot_stage in WHATSAPP_REVIEW_STAGES:
             _review_reply(query, text, window_open)
             return
@@ -934,7 +1031,7 @@ def _process_whatsapp_answer(query_pk, text, sent_at=None, send_next=True):
             _advance_whatsapp_query(query)
 
 
-def _advance_whatsapp_query(query):
+def _advance_whatsapp_query(query, intro=''):
     """Sends the next question in the intake sequence — or, once every question is answered, a summary
     of the answers with Confirm / Change buttons (the review, see _review_reply). Shared by the
     text-answer path above and the drawing-media path (_process_whatsapp_drawing_media_background),
@@ -957,7 +1054,7 @@ def _advance_whatsapp_query(query):
     query.last_asked_field = asked
     query.save(update_fields=['last_asked_field'])
     count = query.items.count()
-    _send_whatsapp_question(query.contact_phone, next_field, count, lead=_question_lead(next_field, index, count))
+    _send_whatsapp_question(query.contact_phone, next_field, count, lead=intro + _question_lead(next_field, index, count))
 
 
 # ── Answer parsing ────────────────────────────────────────────────────────────

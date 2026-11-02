@@ -107,6 +107,7 @@ class PortalPageContentTests(TestCase):
         with self.settings(WHATSAPP_CHAT_NUMBER='919876543210'):
             page = self.client.get(self.home)
         self.assertContains(page, 'https://wa.me/919876543210?text=')
+        self.assertContains(page, f'Ref%3A%20{self.acme.portal_token.hex[:8]}')
         self.assertContains(page, 'Chat with us')
         with self.settings(WHATSAPP_CHAT_NUMBER=''):
             self.assertNotContains(self.client.get(self.home), 'wa.me')

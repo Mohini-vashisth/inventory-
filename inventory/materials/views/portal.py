@@ -20,6 +20,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_GET
 
 from ..models import Customer, Order
+from .whatsapp import portal_chat_ref
 
 CURRENT = ('pending', 'confirmed', 'in_production')
 
@@ -46,7 +47,7 @@ def _branding(customer):
     chat with a first message naming the company (the number comes from WHATSAPP_CHAT_NUMBER; blank hides the button)."""
     chat = ''
     if settings.WHATSAPP_CHAT_NUMBER:
-        chat = f"https://wa.me/{settings.WHATSAPP_CHAT_NUMBER}?text=" + quote(f"Hello, this is {customer.name}.")
+        chat = f"https://wa.me/{settings.WHATSAPP_CHAT_NUMBER}?text=" + quote(f"Hi, I'm from {customer.name}. Ref: {portal_chat_ref(customer)}")
     return {
         'brand': {'name': settings.COMPANY_NAME, 'address': settings.COMPANY_ADDRESS, 'phone': settings.COMPANY_PHONE,
                   'email': settings.COMPANY_EMAIL, 'gst': settings.COMPANY_GST, 'website': settings.COMPANY_WEBSITE},

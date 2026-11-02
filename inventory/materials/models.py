@@ -734,6 +734,9 @@ class Query(models.Model):
     # query that finished before the review existed), 'done' = they confirmed.
     bot_stage        = models.CharField(max_length=20, blank=True, editable=False)
     edit_field       = models.CharField(max_length=30, blank=True, editable=False)
+    # A company already on file chatted in from its portal: its email and GST details are known (or are staff's to
+    # fill in), so the bot goes straight to the product questions and skips the company-detail ones.
+    skip_company_details = models.BooleanField(default=False, editable=False)
     pending_value    = models.JSONField(default=dict, blank=True, editable=False)
     pending_drawing  = models.FileField(upload_to='query_drawings/pending/%Y/%m/', blank=True, null=True, editable=False)
     intake_confirmed_at = models.DateTimeField(null=True, blank=True, editable=False)
