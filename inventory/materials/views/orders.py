@@ -90,6 +90,33 @@ def order_detail(request, pk):
     with the same Confirm / Reject / Dispatch actions as the Orders list."""
     order = get_object_or_404(
         Order.objects.select_related('customer', 'product_code__product_type', 'source_query'), pk=pk)
+    # Staff correct an order right on this page (a wrong grade or size, a missing product code, a changed quantity
+    # or delivery date...). Who ordered it, its status and its source stay as they are; a completed or cancelled
+    # order is read-only.
+    editable = order.status not in ('completed', 'cancelled')
+    form, edit_open = None, False
+    if editable:
+        form = OrderEditForm(request.POST or None, request.FILES or None, instance=order)
+        edit_open = request.GET.get('edit') == '1'
+        if request.method == 'POST':
+            if form.is_valid():
+                saved = form.save(commit=False)
+                # Type or grade changed and the code left alone (or none yet): follow the catalogue's code for the
+                # new type + grade, as on the other forms; a code picked by hand is kept.
+                retyped = {'product_type', 'grade'} & set(form.changed_data)
+                if saved.product_type_id and (saved.product_code_id is None or (retyped and 'product_code' not in form.changed_data)):
+                    saved.product_code = _match_product_code(saved.grade, saved.product_type)
+                if saved.product_code_id and saved.product_code.product_type_id:
+                    saved.product_type = saved.product_code.product_type
+                saved.save()
+                messages.success(request, f"ORD-{saved.order_no:04d} updated.")
+                return redirect('order_detail', pk=saved.pk)
+            edit_open = True
+            # the form has already copied the typed values onto `order`; show the stored order in the read-only cards
+            order = get_object_or_404(
+                Order.objects.select_related('customer', 'product_code__product_type', 'source_query'), pk=pk)
+    elif request.GET.get('edit') == '1':
+        messages.error(request, f"A {order.get_status_display().lower()} order can't be edited.")
     picks = list(order.coil_picks.select_related('coil').order_by('pk'))
     weight_picked = sum((pick.weight_allocated for pick in picks), Decimal('0'))
     position = order.stock_position()
@@ -105,6 +132,11 @@ def order_detail(request, pk):
         'shortfall': shortfall,
         'in_stock': in_stock,
         'quotation': order.source_query.latest_sent_quotation() if order.source_query else None,
+        'form': form,
+        'edit_open': edit_open,
+        'has_picks': bool(picks),
+        'grade_options': list(GradeOption.objects.values_list('name', flat=True)),
+        'code_map': {f"{c.product_type_id}|{grade_key(c.grade)}": c.pk for c in ProductCode.objects.exclude(product_type=None)},
     })
 
 
@@ -205,33 +237,8 @@ def order_dashboard(request):
 
 @staff_required(on_denied=redirect_to_admin_login)
 def order_edit(request, pk):
-    """Staff correct an order after it was placed (a wrong grade or size, a missing product code, a changed
-    quantity or delivery date...). Who ordered it, its status and its source stay as they are; a finished
-    (completed or cancelled) order is read-only."""
-    order = get_object_or_404(Order.objects.select_related('customer', 'product_code__product_type'), pk=pk)
-    if order.status in ('completed', 'cancelled'):
-        messages.error(request, f"A {order.get_status_display().lower()} order can't be edited.")
-        return redirect('order_detail', pk=order.pk)
-    form = OrderEditForm(request.POST or None, request.FILES or None, instance=order)
-    if request.method == 'POST' and form.is_valid():
-        order = form.save(commit=False)
-        # Type or grade changed and the code left alone (or none yet): follow the catalogue's code for the new
-        # type + grade, as on the other forms; a code picked by hand is kept.
-        retyped = {'product_type', 'grade'} & set(form.changed_data)
-        if order.product_type_id and (order.product_code_id is None or (retyped and 'product_code' not in form.changed_data)):
-            order.product_code = _match_product_code(order.grade, order.product_type)
-        if order.product_code_id and order.product_code.product_type_id:
-            order.product_type = order.product_code.product_type
-        order.save()
-        messages.success(request, f"ORD-{order.order_no:04d} updated.")
-        return redirect('order_detail', pk=order.pk)
-    return render(request, 'materials/order_edit.html', {
-        'order': order,
-        'form': form,
-        'grade_options': list(GradeOption.objects.values_list('name', flat=True)),
-        'has_picks': order.coil_picks.exists(),
-        'code_map': {f"{c.product_type_id}|{grade_key(c.grade)}": c.pk for c in ProductCode.objects.exclude(product_type=None)},
-    })
+    """The old edit page's address: editing now happens on the order's own page."""
+    return redirect(f"{reverse('order_detail', args=[pk])}?edit=1")
 
 
 @staff_required
