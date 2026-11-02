@@ -1,0 +1,78 @@
+{% extends "materials/base.html" %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}{{ customer.name }} · Orders{% endblock %}
+{% block head_extra %}<link rel="manifest" href="{% url 'portal_manifest' token %}"><meta name="theme-color" content="#2f7d5b">{% endblock %}
+
+{% block css %}
+  .portal { max-width: 720px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+  .portal h1 { margin-bottom: 0.2rem; }
+  .order { display: flex; justify-content: space-between; align-items: center; gap: 0.8rem; padding: 0.8rem 0; border-top: 1px solid var(--ds-border); }
+  .order:first-child { border-top: 0; }
+  .order .what { font-weight: 600; }
+  .order .meta { font-size: 0.85rem; color: var(--ds-muted); margin-top: 0.15rem; }
+  .status { display: inline-block; margin-top: 0.3rem; padding: 0.1rem 0.6rem; border-radius: 999px; background: #e5e7eb; color: #374151; font-size: 0.78rem; font-weight: 700; }
+  .status.s-in_production { background: #d1fae5; color: #065f46; } .status.s-completed { background: #dcfce7; color: #166534; }
+  .again { white-space: nowrap; text-decoration: none; background: var(--ds-accent-soft); color: var(--ds-accent-dark); border: 1px solid var(--ds-accent); border-radius: 8px; padding: 0.45rem 0.9rem; font-weight: 600; font-size: 0.88rem; }
+  #install { display: none; background: var(--ds-accent-soft); border: 1px solid var(--ds-accent); border-radius: 10px; padding: 0.7rem 1rem; margin: 1rem 0; font-size: 0.9rem; }
+  #install button { margin-left: 0.6rem; }
+  .note { font-size: 0.85rem; color: var(--ds-muted); margin-top: 1.5rem; }
+{% endblock %}
+
+{% block content %}
+<div class="portal">
+  <h1>{{ customer.name }}</h1>
+  <p class="subtitle">Your orders with Matta Drawing Works</p>
+
+  <div id="install"><span id="install-text">Install this as an app on your phone or computer.</span> <button type="button" class="btn-submit" id="install-btn" hidden>Install app</button></div>
+
+  <div class="card"><div class="card-header">Current orders</div><div class="card-body">
+    {% for c in current %}
+    <div class="order">
+      <div>
+        <div class="what">{{ c.title }}</div>
+        <div class="meta">{{ c.order.quantity_text }} kg · placed {{ c.order.created_at|date:"d M Y" }}{% if c.order.delivery_date %} · delivery {{ c.order.delivery_date|date:"d M Y" }}{% endif %}</div>
+        {% if c.status %}<span class="status s-{{ c.order.status }}">{{ c.status }}</span>{% endif %}
+      </div>
+      {% if c.can_repeat %}<a class="again" href="{% url 'portal_reorder' token c.order.pk %}">Order again</a>{% endif %}
+    </div>
+    {% empty %}<p class="muted">No current orders.</p>{% endfor %}
+  </div></div>
+
+  <div class="card" style="margin-top:1rem;"><div class="card-header">Past orders</div><div class="card-body">
+    {% for c in past %}
+    <div class="order">
+      <div>
+        <div class="what">{{ c.title }}</div>
+        <div class="meta">{{ c.order.quantity_text }} kg · placed {{ c.order.created_at|date:"d M Y" }}</div>
+        {% if c.status %}<span class="status s-{{ c.order.status }}">{{ c.status }}</span>{% endif %}
+      </div>
+      {% if c.can_repeat %}<a class="again" href="{% url 'portal_reorder' token c.order.pk %}">Order again</a>{% endif %}
+    </div>
+    {% empty %}<p class="muted">Nothing here yet.</p>{% endfor %}
+  </div></div>
+
+  <p class="note">Want a product that is not listed here? Please contact us and we will quote it for you.{% if company_phone %} {{ company_phone }}{% endif %}</p>
+</div>
+
+<script>
+  // Offer to install the portal as an app. Chrome and Edge raise an install event; iPhone has no such event, so it gets a hint.
+  (function () {
+    var box = document.getElementById('install'), btn = document.getElementById('install-btn'), text = document.getElementById('install-text');
+    var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone;
+    if (standalone) return;
+    var deferred = null;
+    window.addEventListener('beforeinstallprompt', function (event) {
+      event.preventDefault(); deferred = event; box.style.display = 'block'; btn.hidden = false;
+    });
+    btn.addEventListener('click', function () {
+      if (!deferred) return;
+      deferred.prompt(); deferred.userChoice.then(function () { box.style.display = 'none'; deferred = null; });
+    });
+    if (/iphone|ipad/i.test(navigator.userAgent)) {
+      text.textContent = 'To install this as an app: tap Share, then Add to Home Screen.'; box.style.display = 'block';
+    }
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('{% url "portal_service_worker" %}', {scope: '/portal/'});
+  })();
+</script>
+{% endblock %}

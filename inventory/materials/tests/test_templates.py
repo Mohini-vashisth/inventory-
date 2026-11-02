@@ -12,7 +12,7 @@ from django.template.loader import render_to_string
 from django.test import TestCase
 from django.urls import reverse
 
-from ..models import Customer
+from ..models import Customer, Order
 
 
 class TemplateStructureTests(TestCase):
@@ -36,6 +36,10 @@ class TemplateStructureTests(TestCase):
             'quote form': self.client.get(f'/quote/{customer.quote_token}/').content.decode(),
             'quote submitted': render_to_string('materials/quote_submitted.html', {'customer': customer}),
         }
+        Order.objects.create(customer=customer, quantity=5, status='completed')
+        portal = f'/portal/{customer.portal_token}/'
+        pages['portal'] = self.client.get(portal).content.decode()
+        pages['portal reorder'] = self.client.get(f'{portal}reorder/{Order.objects.get().pk}/').content.decode()
         for name, html in pages.items():
             with self.subTest(page=name):
                 self.assertIn('<style>', html)  # styled inline

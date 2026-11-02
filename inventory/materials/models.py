@@ -644,6 +644,9 @@ class Customer(models.Model):
     # True while the current link was sent on its own, with no quotation: the order form then ignores any
     # earlier quotation and asks for the whole order. Cleared when the order is placed or a quotation is sent.
     open_order_link = models.BooleanField(default=False)
+    # The company's permanent portal link (past and current orders, Order again). Unlike quote_token, which is used
+    # up when an order is placed, this one stays until staff reset it.
+    portal_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     created_at  = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -1121,6 +1124,10 @@ class Order(models.Model):
     )
     customer              = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='orders')
     source_query          = models.ForeignKey(Query, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
+    # Whether the customer may follow this order's status in their portal (staff switch it on per order).
+    customer_can_track    = models.BooleanField(default=False, verbose_name="Customer can track this order")
+    # The earlier order this one repeats, when the customer used 'Order again' in their portal.
+    reordered_from        = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='reorders')
     product_code          = models.ForeignKey(ProductCode, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Code")
     # The type the customer or staff chose. Kept on the order itself because a type + grade may have no product code
     # in the catalogue yet; when there is a code, the code's type is the one shown (product_type_name).

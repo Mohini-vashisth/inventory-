@@ -92,6 +92,8 @@
         <dt>Email</dt><dd>{{ order.customer.email|default:"—" }}</dd>
         <dt>Phone</dt><dd>{{ order.customer.phone|default:"—" }}</dd>
         <dt>Placed</dt><dd>{{ order.created_at|date:"d M Y, H:i" }}</dd>
+        <dt>Portal tracking</dt><dd>{% if order.customer_can_track %}On: the customer sees this order's status{% else %}Off{% endif %}</dd>
+        {% if order.reordered_from_id %}<dt>Repeat of</dt><dd><a class="link" href="{% url 'order_detail' order.reordered_from_id %}">ORD-{{ order.reordered_from.order_no|stringformat:"04d" }}</a></dd>{% endif %}
         {% if order.source_query %}
         <dt>From query</dt><dd><a class="link" href="{% url 'query_detail' order.source_query.pk %}">{{ order.source_query.company_name|default:order.source_query.contact_phone }}</a></dd>
         {% endif %}
