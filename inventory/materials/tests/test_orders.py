@@ -750,7 +750,7 @@ class OrderDashboardTests(TestCase):
         self.assertContains(self.client.get(url), 'Locked item')            # the plain link follows the quotation
         self.assertNotContains(self.client.get(url + '?open=1'), 'Locked item')
         self.client.force_login(self.staff)
-        self.assertContains(self.client.get(reverse('order_dashboard')), f'{url}?open=1')
+        self.assertContains(self.client.get(reverse('company_dashboard')), f'{url}?open=1')
 
     def test_manual_order_page_offers_product_types(self):
         from materials.models import ProductType

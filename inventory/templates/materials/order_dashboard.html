@@ -461,63 +461,6 @@
     </div>
   </div>
 
-  <!-- ── Companies & Quote Links ──────────────────────────── -->
-  <div class="card">
-    <div class="card-header static">
-      Companies
-      <span>Send the order form again to any company</span>
-    </div>
-    <div class="table-scroll">
-    <table>
-      <thead>
-        <tr>
-          <th>Company</th>
-          <th>Email</th>
-          <th>Phone</th>
-          <th>Orders</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for c in customers %}
-        <tr>
-          <td style="font-weight:600;">{{ c.name }}</td>
-          <td>{{ c.email|default:"—" }}</td>
-          <td>{{ c.phone|default:"—" }}</td>
-          <td class="muted">{{ c.orders.count }}</td>
-          <td>
-            <button class="icon-btn"
-                    onclick="copyLink('{{ quote_base_url }}{% url 'quote_form' c.quote_token %}?open=1', this)">
-              📋 Copy Link
-            </button>
-            {% if c.orders.count %}
-            <button class="icon-btn" title="The company's permanent link to its orders"
-                    onclick="copyLink('{{ quote_base_url }}{% url 'portal_home' c.portal_token %}', this)">
-              📱 Portal link
-            </button>
-            <form method="post" action="{% url 'reset_portal_link' c.pk %}" style="display:inline;"
-                  onsubmit="return confirm('Give {{ c.name|escapejs }} a new portal link? The old link will stop working.');">
-              {% csrf_token %}
-              <button type="submit" class="icon-btn" title="Make the old portal link stop working">↺ Reset</button>
-            </form>
-            {% endif %}
-            <form method="post" action="{% url 'send_order_form' %}" style="display:inline;">
-              {% csrf_token %}
-              <input type="hidden" name="name" value="{{ c.name }}">
-              <input type="hidden" name="email" value="{{ c.email }}">
-              <input type="hidden" name="phone" value="{{ c.phone }}">
-              <button type="submit" class="icon-btn green">📧 Send Form{% if c.email %} to {{ c.email }}{% endif %}</button>
-            </form>
-          </td>
-        </tr>
-        {% empty %}
-        <tr class="empty-row"><td colspan="5">No companies yet.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-  </div>
-
 </div>
 
 {{ product_code_data|json_script:"product-type-data" }}
@@ -647,5 +590,4 @@
   })();
 </script>
 {% include "materials/_company_name_caps.html" with ids="co-name" %}
-{% include "materials/_copy_link_script.html" %}
 {% endblock %}

@@ -60,6 +60,7 @@ urlpatterns = [
     # machine — see CLAUDE.md.
     path('webhooks/whatsapp/', whatsapp.whatsapp_webhook, name='whatsapp_webhook'),
     path('orders/', orders.order_dashboard, name='order_dashboard'),
+    path('companies/', orders.company_dashboard, name='company_dashboard'),
     path('portal/sw.js', portal.portal_service_worker, name='portal_service_worker'),
     path('portal/icon-<int:size>.png', portal.portal_icon, name='portal_icon'),
     path('portal/<uuid:token>/', portal.portal_home, name='portal_home'),

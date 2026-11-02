@@ -1,0 +1,99 @@
+{% extends "materials/base.html" %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}Companies{% endblock %}
+
+{% block css %}
+    .content { max-width: 1100px; margin: 2rem auto; padding: 0 1.5rem; }
+    .card-header.static { cursor: default; }
+    .card-header span { color: #aaa; font-size: 0.85rem; font-weight: 400; }
+    .table-scroll { overflow-x: auto; }
+    .empty-row td { text-align: center; color: #999; padding: 1.5rem; }
+    .search { width: 100%; max-width: 360px; margin-bottom: 1rem; }
+    @media (max-width: 640px) { .content { padding: 0 0.85rem; margin: 1rem auto; } .card-header { flex-direction: column; align-items: flex-start; gap: 0.3rem; } }
+{% endblock %}
+
+{% block content %}
+<div class="content">
+  <div class="ds-top">
+    <a href="{% url 'staff_home' %}" class="back-link">← Back to dashboard</a>
+    <a href="{% url 'order_dashboard' %}" class="back-link">← Orders</a>
+  </div>
+  <h1>Companies</h1>
+
+  {% for msg in messages %}
+  <div class="alert {% if msg.tags == 'success' %}alert-success{% elif msg.tags == 'warning' %}alert-warning{% else %}alert-error{% endif %}">{{ msg }}</div>
+  {% endfor %}
+
+  <input type="search" class="search" id="company-search" placeholder="Search companies…" autocomplete="off">
+
+  <!-- ── Companies & Quote Links ──────────────────────────── -->
+  <div class="card">
+    <div class="card-header static">
+      Companies
+      <span>{{ customers|length }} total · open an order form, a portal link or send the form again</span>
+    </div>
+    <div class="table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Company</th>
+          <th>Email</th>
+          <th>Phone</th>
+          <th>Orders</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in customers %}
+        <tr>
+          <td style="font-weight:600;">{{ c.name }}</td>
+          <td>{{ c.email|default:"—" }}</td>
+          <td>{{ c.phone|default:"—" }}</td>
+          <td class="muted">{{ c.orders.count }}</td>
+          <td>
+            <button class="icon-btn"
+                    onclick="copyLink('{{ quote_base_url }}{% url 'quote_form' c.quote_token %}?open=1', this)">
+              📋 Copy Link
+            </button>
+            {% if c.orders.count %}
+            <button class="icon-btn" title="The company's permanent link to its orders"
+                    onclick="copyLink('{{ quote_base_url }}{% url 'portal_home' c.portal_token %}', this)">
+              📱 Portal link
+            </button>
+            <form method="post" action="{% url 'reset_portal_link' c.pk %}" style="display:inline;"
+                  onsubmit="return confirm('Give {{ c.name|escapejs }} a new portal link? The old link will stop working.');">
+              {% csrf_token %}
+              <button type="submit" class="icon-btn" title="Make the old portal link stop working">↺ Reset</button>
+            </form>
+            {% endif %}
+            <form method="post" action="{% url 'send_order_form' %}" style="display:inline;">
+              {% csrf_token %}
+              <input type="hidden" name="next" value="company_dashboard">
+              <input type="hidden" name="name" value="{{ c.name }}">
+              <input type="hidden" name="email" value="{{ c.email }}">
+              <input type="hidden" name="phone" value="{{ c.phone }}">
+              <button type="submit" class="icon-btn green">📧 Send Form{% if c.email %} to {{ c.email }}{% endif %}</button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr class="empty-row"><td colspan="5">No companies yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  document.getElementById('company-search').addEventListener('input', function () {
+    var q = this.value.trim().toLowerCase();
+    document.querySelectorAll('tbody tr:not(.empty-row)').forEach(function (row) {
+      row.hidden = q && row.textContent.toLowerCase().indexOf(q) === -1;
+    });
+  });
+</script>
+{% include "materials/_copy_link_script.html" %}
+{% endblock %}
