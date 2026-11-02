@@ -83,6 +83,9 @@ COMPANY_PHONE = os.environ.get('COMPANY_PHONE', '')
 COMPANY_EMAIL = os.environ.get('COMPANY_EMAIL', '')
 COMPANY_GST = os.environ.get('COMPANY_GST', '')
 COMPANY_WEBSITE = os.environ.get('COMPANY_WEBSITE', '')
+# The WhatsApp number the portal's 'Chat with us' button opens (digits with country code, no +, e.g. 919876543210).
+# Blank hides the button.
+WHATSAPP_CHAT_NUMBER = ''.join(ch for ch in os.environ.get('WHATSAPP_CHAT_NUMBER', '') if ch.isdigit())
 
 
 # Application definition

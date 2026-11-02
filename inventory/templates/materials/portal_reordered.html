@@ -4,18 +4,20 @@
 {% block title %}Order received{% endblock %}
 
 {% block css %}
-  .portal { max-width: 460px; margin: 3rem auto; padding: 0 1rem; text-align: center; }
-  .portal .card { padding: 2.5rem 2rem; }
+{% include "materials/_portal_css.html" %}
+  .done { text-align: center; padding: 2rem 1.5rem; }
   .icon { font-size: 3rem; margin-bottom: 0.8rem; }
 {% endblock %}
 
 {% block content %}
-<div class="portal">
-  <div class="card">
+{% include "materials/_portal_hero.html" %}
+<div class="p-main">
+  <div class="card done">
     <div class="icon">✅</div>
     <h1>Order received</h1>
     <p>Thank you, {{ customer.name }}. We will confirm your order shortly.</p>
     <p style="margin-top:1.2rem;"><a class="link" href="{% url 'portal_home' token %}">Back to my orders</a></p>
   </div>
 </div>
+{% include "materials/_portal_footer.html" %}
 {% endblock %}
