@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import auth, finance, gate_entry, media, orders, picking, production, queries, quotations, whatsapp
+from .views import portal, auth, finance, gate_entry, media, orders, picking, production, queries, quotations, whatsapp
 
 urlpatterns = [
     path("", auth.welcome, name="home"),
@@ -60,6 +60,12 @@ urlpatterns = [
     # machine — see CLAUDE.md.
     path('webhooks/whatsapp/', whatsapp.whatsapp_webhook, name='whatsapp_webhook'),
     path('orders/', orders.order_dashboard, name='order_dashboard'),
+    path('portal/sw.js', portal.portal_service_worker, name='portal_service_worker'),
+    path('portal/icon-<int:size>.png', portal.portal_icon, name='portal_icon'),
+    path('portal/<uuid:token>/', portal.portal_home, name='portal_home'),
+    path('portal/<uuid:token>/manifest.webmanifest', portal.portal_manifest, name='portal_manifest'),
+    path('portal/<uuid:token>/reorder/<int:order_pk>/', portal.portal_reorder, name='portal_reorder'),
+    path('orders/company/<int:pk>/reset-portal-link/', orders.reset_portal_link, name='reset_portal_link'),
     path('orders/send-form/', orders.send_order_form, name='send_order_form'),
     path('orders/customer-autocomplete/', orders.customer_autocomplete, name='customer_autocomplete'),
     path('orders/<int:pk>/', orders.order_detail, name='order_detail'),

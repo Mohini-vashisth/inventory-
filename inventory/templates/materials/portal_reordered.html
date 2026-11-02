@@ -1,0 +1,21 @@
+{% extends "materials/base.html" %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}Order received{% endblock %}
+
+{% block css %}
+  .portal { max-width: 460px; margin: 3rem auto; padding: 0 1rem; text-align: center; }
+  .portal .card { padding: 2.5rem 2rem; }
+  .icon { font-size: 3rem; margin-bottom: 0.8rem; }
+{% endblock %}
+
+{% block content %}
+<div class="portal">
+  <div class="card">
+    <div class="icon">✅</div>
+    <h1>Order received</h1>
+    <p>Thank you, {{ customer.name }}. We will confirm your order shortly.</p>
+    <p style="margin-top:1.2rem;"><a class="link" href="{% url 'portal_home' token %}">Back to my orders</a></p>
+  </div>
+</div>
+{% endblock %}

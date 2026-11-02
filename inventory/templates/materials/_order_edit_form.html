@@ -3,6 +3,7 @@
   .eg .wide { grid-column: 1 / -1; }
   .eg label { display: block; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: #888; margin-bottom: 0.25rem; }
   .eg input, .eg select, .eg textarea { width: 100%; }
+  .eg input[type="checkbox"] { width: auto; margin-right: 0.4rem; }
   .eg .errorlist { list-style: none; padding: 0; margin: 0.25rem 0 0; color: #b91c1c; font-size: 0.8rem; }
   .esec { font-size: 0.8rem; font-weight: 700; margin: 1.1rem 0 0.5rem; color: #374151; }
   .enote { font-size: 0.85rem; color: #b45309; margin-bottom: 0.9rem; }
@@ -49,6 +50,7 @@
         <div>{{ form.end_usage.label_tag }}{{ form.end_usage }}{{ form.end_usage.errors }}</div>
         <div>{{ form.notes.label_tag }}{{ form.notes }}{{ form.notes.errors }}</div>
         <div class="wide">{{ form.purchase_order.label_tag }}{{ form.purchase_order }}{{ form.purchase_order.errors }}</div>
+        <div class="wide"><label style="text-transform:none; letter-spacing:0; font-size:0.9rem;">{{ form.customer_can_track }} Customer can follow this order's status in their portal</label></div>
       </div>
       <datalist id="grade-options">{% for grade in grade_options %}<option value="{{ grade }}">{% endfor %}</datalist>
       <div class="submit-row" style="margin-top:1.2rem;">

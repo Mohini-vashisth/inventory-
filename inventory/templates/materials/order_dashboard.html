@@ -490,6 +490,17 @@
                     onclick="copyLink('{{ quote_base_url }}{% url 'quote_form' c.quote_token %}?open=1', this)">
               📋 Copy Link
             </button>
+            {% if c.orders.count %}
+            <button class="icon-btn" title="The company's permanent link to its orders"
+                    onclick="copyLink('{{ quote_base_url }}{% url 'portal_home' c.portal_token %}', this)">
+              📱 Portal link
+            </button>
+            <form method="post" action="{% url 'reset_portal_link' c.pk %}" style="display:inline;"
+                  onsubmit="return confirm('Give {{ c.name|escapejs }} a new portal link? The old link will stop working.');">
+              {% csrf_token %}
+              <button type="submit" class="icon-btn" title="Make the old portal link stop working">↺ Reset</button>
+            </form>
+            {% endif %}
             <form method="post" action="{% url 'send_order_form' %}" style="display:inline;">
               {% csrf_token %}
               <input type="hidden" name="name" value="{{ c.name }}">

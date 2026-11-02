@@ -1,0 +1,39 @@
+{% extends "materials/base.html" %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}Order again{% endblock %}
+
+{% block css %}
+  .portal { max-width: 560px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+  .spec { font-size: 0.92rem; line-height: 1.6; }
+  .errorlist { list-style: none; padding: 0; margin: 0.25rem 0 0; color: #b91c1c; font-size: 0.85rem; }
+{% endblock %}
+
+{% block content %}
+<div class="portal">
+  <a href="{% url 'portal_home' token %}" class="back-link">← Back to my orders</a>
+  <h1>Order again</h1>
+  <p class="subtitle">{{ customer.name }}</p>
+
+  <div class="card"><div class="card-header">The product</div><div class="card-body spec">
+    <strong>{{ title }}</strong>
+    {% for line in details %}<div>{{ line }}</div>{% endfor %}
+    <p class="muted" style="margin-top:0.6rem;">Everything else is the same as your earlier order. Only the quantity and delivery date can change.</p>
+  </div></div>
+
+  <form method="post" class="card" style="margin-top:1rem;">
+    {% csrf_token %}
+    <div class="card-body">
+      <div class="form-group">
+        <label for="id_quantity">Quantity (kg) *</label>
+        {{ form.quantity }}{{ form.quantity.errors }}
+      </div>
+      <div class="form-group" style="margin-top:0.9rem;">
+        <label for="id_delivery_date">Expected delivery date</label>
+        {{ form.delivery_date }}{{ form.delivery_date.errors }}
+      </div>
+      <div class="submit-row" style="margin-top:1.2rem;"><button type="submit" class="btn-primary">Place order →</button></div>
+    </div>
+  </form>
+</div>
+{% endblock %}

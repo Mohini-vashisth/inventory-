@@ -302,6 +302,7 @@ class OrderEditForm(DeliveryDetailsMixin, forms.ModelForm):
             'product_code', 'product_type', 'grade', 'width', 'thickness', 'mill_make', 'mechanical_properties',
             'drawing_dimensions', 'drawing_file', *_TOLERANCE_FIELDS, 'other_tolerances', 'processes', 'end_usage',
             'quantity', 'delivery_form', 'frequency', *_DELIVERY_FIELDS, 'delivery_date', 'notes', 'purchase_order',
+            'customer_can_track',
         ]
         widgets = {
             **_TOLERANCE_WIDGETS, **_DELIVERY_WIDGETS,

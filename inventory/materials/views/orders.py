@@ -34,7 +34,7 @@ def _clean_phone(value):
     return '' if value.replace(' ', '') == '+91' else value
 
 
-def _send_order_confirmation_email(order):
+def _send_order_confirmation_email(order, base_url=''):
     """Emails the customer that staff have confirmed their order, with what was ordered:
     product type, grade, width x thickness, quantity, product code and delivery details.
     Returns 'sent', 'no_email' (nothing on file for the customer), 'not_configured' (no
@@ -59,6 +59,8 @@ def _send_order_confirmation_email(order):
     if order.drawing_file:
         lines.append("  Drawing: received")
     contact = ' or '.join(part for part in (settings.COMPANY_PHONE, settings.COMPANY_EMAIL) if part)
+    portal = (f"Your orders are always here, and you can place a repeat order from the same page:\n"
+              f"{base_url}{reverse('portal_home', args=[customer.portal_token])}\n\n") if base_url else ''
     try:
         email = EmailMessage(
             subject=f"Order confirmed — {settings.COMPANY_NAME}",
@@ -67,6 +69,7 @@ def _send_order_confirmation_email(order):
                 f"Your order has been confirmed. Production will start shortly.\n\n"
                 f"Order details:\n" + '\n'.join(lines) + "\n\n"
                 "A summary of your order is attached.\n\n"
+                + portal
                 + (f"If anything needs correcting, please contact us at {contact}.\n\n" if contact else '')
                 + f"Regards,\n{settings.COMPANY_NAME}"
             ),
@@ -243,6 +246,17 @@ def order_edit(request, pk):
 
 @staff_required
 @require_POST
+def reset_portal_link(request, pk):
+    """Gives a company a new portal link; the old one stops working at once (use it if a link was shared by mistake)."""
+    customer = get_object_or_404(Customer, pk=pk)
+    customer.portal_token = uuid.uuid4()
+    customer.save(update_fields=['portal_token'])
+    messages.success(request, f"{customer.name} has a new portal link. The old one no longer works.")
+    return redirect('order_dashboard')
+
+
+@staff_required
+@require_POST
 def send_order_form(request):
     """'Send Form to Them' on the Orders dashboard: emails the customer the order-form link on its own, with no
     quotation (some orders come without one). The form then asks for the whole order (product, grade, size)
@@ -309,7 +323,7 @@ def order_confirm(request, pk):
     order.status = 'confirmed'
     order.save(update_fields=['status'])
     messages.success(request, f"ORD-{order.order_no:04d} confirmed.")
-    emailed = _send_order_confirmation_email(order)
+    emailed = _send_order_confirmation_email(order, base_url=_public_quote_base_url(request))
     if emailed == 'sent':
         messages.success(request, f"Confirmation email sent to {order.customer.email}.")
     elif emailed == 'no_email':
