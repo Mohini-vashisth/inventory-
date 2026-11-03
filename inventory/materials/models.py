@@ -703,6 +703,7 @@ class Query(models.Model):
         ('other', 'Other'),
         ('whatsapp', 'WhatsApp'),
         ('call', 'Phone Call'),
+        ('reorder', 'Reorder'),   # a company's Order again click on its portal
     ]
     MANUAL_SOURCES = ('indiamart', 'google', 'referral', 'other')
     STATUS_CHOICES = [

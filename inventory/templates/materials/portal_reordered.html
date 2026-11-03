@@ -1,7 +1,7 @@
 {% extends "materials/base.html" %}
 
 {% block body_attrs %} class="ds"{% endblock %}
-{% block title %}Order received{% endblock %}
+{% block title %}Request received{% endblock %}
 
 {% block css %}
 {% include "materials/_portal_css.html" %}
@@ -14,8 +14,8 @@
 <div class="p-main">
   <div class="card done">
     <div class="icon">✅</div>
-    <h1>Order received</h1>
-    <p>Thank you, {{ customer.name }}. We will confirm your order shortly.</p>
+    <h1>Request received</h1>
+    <p>Thank you, {{ customer.name }}. We will send you a quotation shortly. Tell us how much you need and we will place the order.</p>
     <p style="margin-top:1.2rem;"><a class="link" href="{% url 'portal_home' token %}">Back to my orders</a></p>
   </div>
 </div>

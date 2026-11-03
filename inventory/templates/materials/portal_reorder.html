@@ -18,22 +18,12 @@
   <div class="card"><div class="card-header">The product</div><div class="card-body spec">
     <strong>{{ title }}</strong>
     {% for line in details %}<div>{{ line }}</div>{% endfor %}
-    <p class="muted" style="margin-top:0.6rem;">Everything else is the same as your earlier order. Only the quantity and delivery date can change.</p>
+    <p class="muted" style="margin-top:0.6rem;">We will send you a quotation for this product. Once you tell us how much you need, we place the order.</p>
   </div></div>
 
-  <form method="post" class="card" style="margin-top:1rem;">
+  <form method="post" style="margin-top:1rem;">
     {% csrf_token %}
-    <div class="card-body">
-      <div class="form-group">
-        <label for="id_quantity">Quantity (kg) *</label>
-        {{ form.quantity }}{{ form.quantity.errors }}
-      </div>
-      <div class="form-group" style="margin-top:0.9rem;">
-        <label for="id_delivery_date">Expected delivery date</label>
-        {{ form.delivery_date }}{{ form.delivery_date.errors }}
-      </div>
-      <div class="submit-row" style="margin-top:1.2rem;"><button type="submit" class="btn-primary">Place order →</button></div>
-    </div>
+    <button type="submit" class="btn-primary">Ask for a quotation →</button>
   </form>
 </div>
 {% include "materials/_portal_footer.html" %}
