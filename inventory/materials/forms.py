@@ -300,6 +300,10 @@ class CompanyDetailsForm(forms.Form):
     gst_number = forms.CharField(max_length=15, label='GST number')
     gst_address = forms.CharField(label='GST address', widget=forms.Textarea(attrs={'rows': 3}))
 
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault('label_suffix', '')   # the portal's labels carry no colon
+        super().__init__(*args, **kwargs)
+
     def clean_gst_number(self):
         number = re.sub(r'\s', '', self.cleaned_data['gst_number']).upper()
         if number and not re.fullmatch(GSTIN_PATTERN, number):

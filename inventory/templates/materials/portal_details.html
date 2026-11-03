@@ -17,7 +17,7 @@
     {% if sent %}<div class="alert alert-success">Thank you. We have your request and will update your details after checking them.</div>
     {% elif nothing_changed %}<div class="alert alert-warning">Nothing was changed.</div>
     {% elif pending %}<div class="alert alert-warning">Your earlier request is with us and not yet approved. Sending a new one replaces it.</div>{% endif %}
-    <p class="muted">These are the details we hold for your company. To correct something, change it below and send the request. We update it once we have checked it.</p>
+    <p class="muted" style="margin-bottom:1.1rem;">These are the details we hold for your company. To correct something, change it below and send the request. We update it once we have checked it.</p>
     <form method="post" novalidate>{% csrf_token %}
       {% for field in form %}
       <div class="field">{{ field.label_tag }}{{ field }}{% for error in field.errors %}<div class="error-msg">{{ error }}</div>{% endfor %}</div>
