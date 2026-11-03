@@ -7,7 +7,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
 
-from ..models import CompanyChangeRequest, Customer, Order, ProductCode, ProductType
+from ..models import CompanyChangeRequest, Customer, Order, ProductCode, ProductType, Quotation, QuotationLineItem
 
 
 def make_order(customer, **extra):
@@ -299,3 +299,39 @@ class PortalDetailsTests(TestCase):
         self.assertEqual(change.status, 'pending')
         stranger = Customer.objects.create(name='NEW CO')
         self.assertEqual(self.client.get(reverse('portal_details', args=[stranger.portal_token])).status_code, 404)
+
+
+class CompanyDetailPageTests(TestCase):
+    def setUp(self):
+        self.client.force_login(User.objects.create_user('boss3', password='pw', is_staff=True))
+        self.acme = Customer.objects.create(name='ACME', email='a@acme.co', phone='111', gst_number='27ABCDE1234F1Z5', gst_address='12 Mill Road')
+        quote = Quotation.objects.create(customer=self.acme, status='sent')
+        QuotationLineItem.objects.create(quotation=quote, description='Flat bar', grade='EN8D', width=Decimal('50'),
+                                         thickness=Decimal('6'), quantity=Decimal('100'), rate_per_kg=Decimal('85'), discount_pct=Decimal('5'))
+        self.quote = quote
+        self.priced = make_order(self.acme, status='in_production')                      # matches the quoted line
+        self.unpriced = make_order(self.acme, status='completed', grade='EN9')           # nothing quoted for it
+        self.url = reverse('company_detail', args=[self.acme.pk])
+
+    def test_the_page_shows_details_current_and_earlier_orders_and_the_quote(self):
+        page = self.client.get(self.url)
+        for text in ('ACME', 'a@acme.co', '27ABCDE1234F1Z5', '12 Mill Road', 'Current orders', 'Earlier orders',
+                     'Quotations sent', self.quote.formatted_no(), '₹ 85'):
+            self.assertContains(page, text)
+        self.assertEqual([r['order'] for r in page.context['current']], [self.priced])
+        self.assertEqual([r['order'] for r in page.context['past']], [self.unpriced])
+
+    def test_each_order_shows_the_rate_quoted_for_its_size_and_a_dash_when_none_matches(self):
+        page = self.client.get(self.url)
+        priced, unpriced = page.context['current'][0], page.context['past'][0]
+        self.assertEqual(priced['line'].rate_per_kg, Decimal('85'))
+        self.assertIsNone(unpriced['line'])
+
+    def test_a_draft_quotation_is_not_shown_and_the_companies_list_links_here(self):
+        Quotation.objects.create(customer=self.acme, status='draft')
+        self.assertEqual(len(self.client.get(self.url).context['quotations']), 1)
+        self.assertContains(self.client.get(reverse('company_dashboard')), self.url)
+
+    def test_only_staff_can_open_it(self):
+        self.client.logout()
+        self.assertEqual(self.client.get(self.url).status_code, 302)

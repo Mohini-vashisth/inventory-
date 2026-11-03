@@ -78,7 +78,7 @@
       <tbody>
         {% for c in customers %}
         <tr>
-          <td style="font-weight:600;">{{ c.name }}</td>
+          <td style="font-weight:600;"><a href="{% url 'company_detail' c.pk %}" style="color:inherit;text-decoration:none;">{{ c.name }}</a></td>
           <td>{{ c.email|default:"—" }}</td>
           <td>{{ c.phone|default:"—" }}</td>
           <td class="muted">{{ c.orders.count }}</td>

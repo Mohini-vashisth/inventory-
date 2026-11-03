@@ -1,0 +1,73 @@
+{% extends "materials/base.html" %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}{{ customer.name }}{% endblock %}
+
+{% block css %}
+    .content { max-width: 1000px; margin: 2rem auto; padding: 0 1.5rem; }
+    .rows { display: grid; grid-template-columns: 12rem 1fr; gap: 0.7rem 1rem; font-size: 0.9rem; }
+    .rows dt { font-size: 0.72rem; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; padding-top: 0.15rem; }
+    .rows dd { word-break: break-word; white-space: pre-wrap; }
+    .blank, .muted { color: #999; }
+    .table-scroll { overflow-x: auto; }
+    .badge-pending       { background: #fef3c7; color: #92400e; }
+    .badge-confirmed     { background: #e5e7eb; color: #374151; }
+    .badge-in_production { background: #d1fae5; color: #065f46; }
+    .badge-completed     { background: #dcfce7; color: #166534; }
+    .badge-cancelled     { background: #fee2e2; color: #991b1b; }
+    .link { color: #2f7d5b; text-decoration: none; }
+    .quote { padding: 0.8rem 1.1rem; border-top: 1px solid #eee; }
+    .quote:first-child { border-top: 0; }
+    .num { text-align: right; white-space: nowrap; }
+    @media (max-width: 640px) { .content { padding: 0 0.85rem; margin: 1rem auto; } .rows { grid-template-columns: 1fr; gap: 0.2rem 0; } }
+{% endblock %}
+
+{% block content %}
+<div class="content">
+  <div class="ds-top"><a href="{% url 'company_dashboard' %}" class="back-link">← Companies</a></div>
+  <h1>{{ customer.name }}</h1>
+
+  <div class="card"><div class="card-header static">Details</div><div class="card-body">
+    <dl class="rows">
+      <dt>Email</dt><dd>{{ customer.email|default:"—" }}</dd>
+      <dt>Phone</dt><dd>{{ customer.phone|default:"—" }}</dd>
+      <dt>GST number</dt><dd>{{ customer.gst_number|default:"—" }}</dd>
+      <dt>GST address</dt><dd>{{ customer.gst_address|default:"—" }}</dd>
+      <dt>Company since</dt><dd>{{ customer.created_at|date:"d M Y" }}</dd>
+      <dt>Orders</dt><dd>{{ current|length }} current · {{ past|length }} earlier</dd>
+      {% if waiting_requests %}<dt>Change request</dt><dd>Waiting for approval on the <a class="link" href="{% url 'company_dashboard' %}">Companies page</a>.</dd>{% endif %}
+    </dl>
+  </div></div>
+
+  <div class="card" style="margin-top:1rem;"><div class="card-header static">Current orders</div>
+    {% include "materials/_company_orders_table.html" with rows=current empty="No current orders." %}
+  </div>
+
+  <div class="card" style="margin-top:1rem;"><div class="card-header static">Earlier orders</div>
+    {% include "materials/_company_orders_table.html" with rows=past empty="No earlier orders." %}
+  </div>
+
+  <div class="card" style="margin-top:1rem;"><div class="card-header static">Quotations sent</div>
+    {% for q in quotations %}
+    <div class="quote">
+      <strong>{{ q.formatted_no }}</strong>
+      <span class="muted">{{ q.sent_at|date:"d M Y" }}{% if q.rev_no %} · Rev {{ q.rev_no }}{% endif %}</span>
+      · <a class="link" href="{% url 'quotation_pdf' q.pk %}" target="_blank">PDF</a>
+      <div class="table-scroll"><table>
+        <thead><tr><th>Item</th><th class="num">Qty</th><th class="num">Rate / kg</th><th class="num">Disc %</th><th class="num">Amount (excl. GST)</th></tr></thead>
+        <tbody>
+          {% for line in q.line_items.all %}
+          <tr><td>{{ line.spec_text|default:line.description }}</td>
+              <td class="num">{{ line.quantity|default_if_none:"—" }} {{ line.unit }}</td>
+              <td class="num">{% if line.rate_per_kg is not None %}₹ {{ line.rate_per_kg }}{% else %}—{% endif %}</td>
+              <td class="num">{{ line.discount_pct }}</td>
+              <td class="num">₹ {{ line.amount|floatformat:2 }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      <div class="num muted" style="margin-top:0.3rem;">Total with GST: <strong>₹ {{ q.total_amount|floatformat:2 }}</strong></div>
+    </div>
+    {% empty %}<div class="card-body"><p class="muted">No quotation has been sent to this company.</p></div>{% endfor %}
+  </div>
+</div>
+{% endblock %}
