@@ -83,11 +83,17 @@ def portal_home(request, token):
         'customer': customer,
         'token': token,
         **_branding(customer),
-        'about': settings.COMPANY_ABOUT,
-        'facts': settings.COMPANY_FACTS,
-        'product_types': ProductType.objects.values_list('name', flat=True),
         'current': [_card(o) for o in orders if o.status in CURRENT],
         'past': [_card(o) for o in orders if o.status == 'completed'],
+    })
+
+
+def portal_about(request, token):
+    customer = _company(token)
+    return render(request, 'materials/portal_about.html', {
+        'customer': customer, 'token': token, **_branding(customer),
+        'about': settings.COMPANY_ABOUT, 'facts': settings.COMPANY_FACTS,
+        'product_types': ProductType.objects.values_list('name', flat=True),
     })
 
 

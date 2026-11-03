@@ -1,0 +1,27 @@
+{% extends "materials/base.html" %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}About {{ brand.name }}{% endblock %}
+
+{% block css %}
+{% include "materials/_portal_css.html" %}
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.6rem; margin: 0.9rem 0; }
+  .fact { background: var(--ds-accent-soft); border-radius: 10px; padding: 0.7rem 0.8rem; text-align: center; }
+  .fact b { display: block; font-size: 1.15rem; color: var(--ds-accent-dark); }
+  .fact span { font-size: 0.78rem; color: var(--ds-muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
+  .chip { background: #fff; border: 1px solid var(--ds-border); border-radius: 999px; padding: 0.2rem 0.75rem; font-size: 0.84rem; }
+{% endblock %}
+
+{% block content %}
+{% include "materials/_portal_hero.html" %}
+<div class="p-main">
+  <div class="card"><div class="card-header">About {{ brand.name }}</div><div class="card-body">
+    <p>{{ about }}</p>
+    <div class="facts">{% for value, label in facts %}<div class="fact"><b>{{ value }}</b><span>{{ label }}</span></div>{% endfor %}</div>
+    {% if product_types %}<strong>What we make</strong><div class="chips">{% for name in product_types %}<span class="chip">{{ name }}</span>{% endfor %}</div>{% endif %}
+  </div></div>
+  <p style="margin-top:1rem;text-align:center;"><a class="link" href="{% url 'portal_home' token %}">Back to my orders</a></p>
+</div>
+{% include "materials/_portal_footer.html" %}
+{% endblock %}
