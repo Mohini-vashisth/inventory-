@@ -22,6 +22,7 @@ from ..forms import CustomerOrderForm, OrderEditForm, OrderItemFormSet
 from ..order_pdf import generate_order_summary_pdf
 from ..decorators import redirect_to_admin_login, staff_required
 from ..product_codes import grade_key
+from . import whatsapp
 from .common import _first_form_error, _first_formset_error, _match_product_code
 from .quotations import _public_quote_base_url
 
@@ -83,6 +84,27 @@ def _send_order_confirmation_email(order, base_url=''):
         return 'sent'
     except Exception:
         logger.warning("Order confirmation email to %s failed", customer.email, exc_info=True)
+        return 'failed'
+
+
+def _send_order_confirmation_whatsapp(order, base_url):
+    """WhatsApp twin of the confirmation email: the approved template with the company name, what was ordered and
+    the portal link, to the number on file. Returns 'sent', 'no_phone' or 'failed' — never raises, so confirming
+    can't be blocked (a failure is logged)."""
+    customer = order.customer
+    phone = whatsapp._normalize_phone(customer.phone)
+    if not phone:
+        return 'no_phone'
+    if len(phone) == 10:   # a bare Indian mobile number; Meta needs the country code
+        phone = '91' + phone
+    link = f"{base_url}{reverse('portal_home', args=[customer.portal_token])}"
+    try:
+        whatsapp._send_whatsapp_template_message(
+            phone, whatsapp.WHATSAPP_ORDER_CONFIRMED_TEMPLATE, language='en',
+            body_params=[customer.name, order.spec_text() or 'your order', link])
+        return 'sent'
+    except whatsapp.WhatsAppSendError:
+        logger.warning("Order confirmation WhatsApp to %s failed", phone, exc_info=True)
         return 'failed'
 
 
@@ -342,6 +364,13 @@ def order_confirm(request, pk):
         messages.warning(request, f"No email on file for {order.customer.name}, so no confirmation email was sent.")
     else:
         messages.warning(request, "The confirmation email could not be sent" + (" (email is not configured)." if emailed == 'not_configured' else " — check the mail settings."))
+    texted = _send_order_confirmation_whatsapp(order, _public_quote_base_url(request))
+    if texted == 'sent':
+        messages.success(request, f"Confirmation sent on WhatsApp to {order.customer.phone}.")
+    elif texted == 'no_phone':
+        messages.warning(request, f"No phone number on file for {order.customer.name}, so no WhatsApp confirmation was sent.")
+    else:
+        messages.warning(request, "The WhatsApp confirmation could not be sent — check the WhatsApp settings and that the template is approved.")
     if order.has_sufficient_raw_material() is False:
         available = order.available_raw_material_output()
         messages.warning(

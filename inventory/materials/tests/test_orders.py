@@ -8,6 +8,7 @@ import tempfile
 from decimal import Decimal
 from unittest.mock import patch
 from django.contrib.auth.models import User
+from django.contrib.messages import get_messages
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -1661,3 +1662,51 @@ class OrderDetailPageTests(TestCase):
         self.assertEqual(self.client.get(reverse('order_detail', kwargs={'pk': 99999})).status_code, 404)
         self.client.logout()
         self.assertEqual(self.client.get(self.url).status_code, 302)
+
+
+class OrderConfirmationWhatsAppTests(TestCase):
+    """Confirming an order also texts the company's number the approved template with the portal link."""
+
+    def setUp(self):
+        self.client.force_login(User.objects.create_user('wa_confirm_staff', password='pw', is_staff=True))
+        flat = ProductType.objects.get(name='Flat Bright Bar')
+        code = ProductCode.objects.create(item_code='FBB009', product_type=flat, grade='EN8D')
+        self.customer = Customer.objects.create(name='Text Co', phone='+91 98765 43210')
+        self.order = Order.objects.create(customer=self.customer, product_code=code, grade='EN8D', width=Decimal('50'),
+                                          thickness=Decimal('6.5'), quantity=Decimal('500'), status='pending')
+
+    def _confirm(self):
+        return self.client.post(reverse('order_confirm', kwargs={'pk': self.order.pk}))
+
+    @patch('materials.views.whatsapp._send_whatsapp_template_message')
+    def test_sends_the_template_with_name_product_and_portal_link(self, send):
+        self._confirm()
+        (phone, template), kwargs = send.call_args.args, send.call_args.kwargs
+        self.assertEqual((phone, template), ('919876543210', 'matta_order_confirmed'))
+        name, product, link = kwargs['body_params']
+        self.assertEqual((name, product), ('Text Co', 'Flat Bright Bar / EN8D / 50 x 6.5 mm'))
+        self.assertTrue(link.endswith(f'/portal/{self.customer.portal_token}/'))
+
+    @patch('materials.views.whatsapp._send_whatsapp_template_message')
+    def test_a_bare_ten_digit_number_gets_the_country_code(self, send):
+        self.customer.phone = '98765-43210'
+        self.customer.save()
+        self._confirm()
+        self.assertEqual(send.call_args.args[0], '919876543210')
+
+    @patch('materials.views.whatsapp._send_whatsapp_template_message')
+    def test_no_phone_sends_nothing_but_the_order_is_still_confirmed(self, send):
+        self.customer.phone = ''
+        self.customer.save()
+        self._confirm()
+        send.assert_not_called()
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 'confirmed')
+
+    def test_a_failed_send_warns_staff_and_the_order_is_still_confirmed(self):
+        from ..views.whatsapp import WhatsAppSendError
+        with patch('materials.views.whatsapp._send_whatsapp_template_message', side_effect=WhatsAppSendError('nope')):
+            response = self._confirm()
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, 'confirmed')
+        self.assertIn('WhatsApp confirmation could not be sent', ' '.join(str(m) for m in get_messages(response.wsgi_request)))
