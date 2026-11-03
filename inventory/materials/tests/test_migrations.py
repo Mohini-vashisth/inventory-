@@ -1,6 +1,8 @@
 """The product code / product type rename migrations (0058, 0059) rename the records Django keeps for the admin
 (content types and permissions) without touching the data tables."""
 
+from decimal import Decimal
+
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
 from django.db import connection
@@ -188,3 +190,34 @@ class CompanyGstBackfillTests(TransactionTestCase):
         self.assertEqual(Current.objects.get(name='FILLED').gst_number, '27ABCDE1234F1Z5')
         self.assertEqual(Current.objects.get(name='FILLED').gst_address, 'new address')
         self.assertEqual(Current.objects.get(name='BARE').gst_number, '')
+
+
+class OrderPriceBackfillTests(TransactionTestCase):
+    """Migration 0073 links an existing quotation-route order to the matching line of its query's newest sent quotation."""
+
+    BEFORE = [('materials', '0072_company_details_and_change_requests')]
+
+    def tearDown(self):
+        _migrate(_latest())
+
+    def test_orders_get_their_quoted_line_and_unmatched_ones_stay_unpriced(self):
+        _migrate(self.BEFORE)
+        apps = MigrationExecutor(connection).loader.project_state(self.BEFORE).apps
+        Customer, Query, Quotation = (apps.get_model('materials', n) for n in ('Customer', 'Query', 'Quotation'))
+        Line, Order = apps.get_model('materials', 'QuotationLineItem'), apps.get_model('materials', 'Order')
+        customer = Customer.objects.create(name='ACME')
+        query = Query.objects.create(source='whatsapp', contact_phone='91900000001', customer=customer)
+        spec = dict(grade='EN8D', width=Decimal('50'), thickness=Decimal('6'))
+        first = Quotation.objects.create(customer=customer, source_query=query, status='sent', quotation_no=1)
+        Line.objects.create(quotation=first, description='old', rate_per_kg=Decimal('70'), **spec)
+        final = Quotation.objects.create(customer=customer, source_query=query, status='sent', quotation_no=2)
+        final_line = Line.objects.create(quotation=final, description='final', rate_per_kg=Decimal('85'), **spec)
+        matched = Order.objects.create(customer=customer, source_query=query, quantity=Decimal('10'), **spec)
+        other_size = Order.objects.create(customer=customer, source_query=query, quantity=Decimal('10'),
+                                          grade='EN8D', width=Decimal('99'), thickness=Decimal('6'))
+
+        _migrate(_latest())
+
+        from ..models import Order as Current
+        self.assertEqual(Current.objects.get(pk=matched.pk).quotation_line_id, final_line.pk)   # the newest quote wins
+        self.assertIsNone(Current.objects.get(pk=other_size.pk).quotation_line_id)

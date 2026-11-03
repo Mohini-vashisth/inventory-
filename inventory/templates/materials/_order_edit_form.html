@@ -22,6 +22,7 @@
         <div>{{ form.product_type.label_tag }}{{ form.product_type }}{{ form.product_type.errors }}</div>
         <div>{{ form.grade.label_tag }}{{ form.grade }}{{ form.grade.errors }}</div>
         <div>{{ form.quantity.label_tag }}{{ form.quantity }}{{ form.quantity.errors }}</div>
+        {% if form.rate_per_kg %}<div>{{ form.rate_per_kg.label_tag }}{{ form.rate_per_kg }}{{ form.rate_per_kg.errors }}</div>{% endif %}
         <div>{{ form.width.label_tag }}{{ form.width }}{{ form.width.errors }}</div>
         <div>{{ form.thickness.label_tag }}{{ form.thickness }}{{ form.thickness.errors }}</div>
         <div>{{ form.mill_make.label_tag }}{{ form.mill_make }}{{ form.mill_make.errors }}</div>

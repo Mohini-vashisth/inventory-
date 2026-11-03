@@ -18,7 +18,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from ..models import ProductType, ProductCode, Customer, CompanyChangeRequest, Query, Order, GradeOption
-from ..forms import CustomerOrderForm, OrderEditForm, OrderItemFormSet
+from ..forms import CustomerOrderForm, OrderEditForm, OrderItemFormSet, StaffOrderForm
 from ..order_pdf import generate_order_summary_pdf
 from ..decorators import redirect_to_admin_login, staff_required
 from ..product_codes import grade_key
@@ -181,7 +181,7 @@ def order_dashboard(request):
 
     if request.method == 'POST':
         customer_name = request.POST.get('name', '').strip().upper()
-        form = CustomerOrderForm(request.POST, request.FILES)
+        form = StaffOrderForm(request.POST, request.FILES)
 
         # The product type (one of the 7) and the product code: a code picked by hand wins; with only a
         # type and a grade the catalogue's code for that pair is used, as on the quote form.
@@ -268,29 +268,14 @@ def company_dashboard(request):
     })
 
 
-def _quoted_line(order, quotations):
-    """The (quotation, line) an order was priced from: the first line, newest quotation first, with the order's grade,
-    width and thickness. Orders carry no link to the line they came from, so this is a match, not a record."""
-    for quotation in quotations:
-        for line in quotation.line_items.all():
-            if (line.grade or '').lower() == (order.grade or '').lower() and line.width == order.width and line.thickness == order.thickness:
-                return quotation, line
-    return None, None
-
-
 @staff_required(on_denied=redirect_to_admin_login)
 def company_detail(request, pk):
     """One company on one page: its details, current and earlier orders with the price quoted for each, and every
     quotation sent to it."""
     customer = get_object_or_404(Customer, pk=pk)
     quotations = list(customer.quotations.filter(status='sent').prefetch_related('line_items').order_by('-quotation_no'))
-    by_query = {}
-    for quotation in quotations:
-        by_query.setdefault(quotation.source_query_id, []).append(quotation)
-    rows = []
-    for order in customer.orders.select_related('product_code__product_type', 'product_type').order_by('-created_at'):
-        quotation, line = _quoted_line(order, by_query.get(order.source_query_id) or quotations)
-        rows.append({'order': order, 'quotation': quotation, 'line': line})
+    rows = [{'order': order, 'price': order.price()}
+            for order in customer.orders.select_related('product_code__product_type', 'product_type', 'quotation_line__quotation').order_by('-created_at')]
     return render(request, 'materials/company_detail.html', {
         'customer': customer,
         'current': [r for r in rows if r['order'].status in ('pending', 'confirmed', 'in_production')],
@@ -410,6 +395,9 @@ def order_confirm(request, pk):
         return redirect('order_dashboard')
     if not order.product_code_id:
         messages.error(request, f"ORD-{order.order_no:04d} cannot be confirmed without a product type. Edit the order to assign one.")
+        return redirect('order_dashboard')
+    if order.price() is None:
+        messages.error(request, f"ORD-{order.order_no:04d} has no price yet. Add the rate agreed with {order.customer.name} (Edit) before confirming.")
         return redirect('order_dashboard')
     order.status = 'confirmed'
     order.save(update_fields=['status'])
@@ -539,6 +527,7 @@ def quote_form(request, token):
                         order.grade = item.grade
                         order.width = item.width
                         order.thickness = item.thickness
+                        order.quotation_line = item
                         order.status = 'pending'
                         if not order.drawing_file and query_drawing:
                             order.drawing_file.save(query_drawing[0], ContentFile(query_drawing[1]), save=False)

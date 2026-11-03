@@ -306,10 +306,10 @@ class CompanyDetailPageTests(TestCase):
         self.client.force_login(User.objects.create_user('boss3', password='pw', is_staff=True))
         self.acme = Customer.objects.create(name='ACME', email='a@acme.co', phone='111', gst_number='27ABCDE1234F1Z5', gst_address='12 Mill Road')
         quote = Quotation.objects.create(customer=self.acme, status='sent')
-        QuotationLineItem.objects.create(quotation=quote, description='Flat bar', grade='EN8D', width=Decimal('50'),
+        self.line = QuotationLineItem.objects.create(quotation=quote, description='Flat bar', grade='EN8D', width=Decimal('50'),
                                          thickness=Decimal('6'), quantity=Decimal('100'), rate_per_kg=Decimal('85'), discount_pct=Decimal('5'))
         self.quote = quote
-        self.priced = make_order(self.acme, status='in_production')                      # matches the quoted line
+        self.priced = make_order(self.acme, status='in_production', quotation_line=self.line)   # priced by the quoted line
         self.unpriced = make_order(self.acme, status='completed', grade='EN9')           # nothing quoted for it
         self.url = reverse('company_detail', args=[self.acme.pk])
 
@@ -321,11 +321,10 @@ class CompanyDetailPageTests(TestCase):
         self.assertEqual([r['order'] for r in page.context['current']], [self.priced])
         self.assertEqual([r['order'] for r in page.context['past']], [self.unpriced])
 
-    def test_each_order_shows_the_rate_quoted_for_its_size_and_a_dash_when_none_matches(self):
+    def test_each_order_shows_its_own_price_and_a_dash_when_it_has_none(self):
         page = self.client.get(self.url)
-        priced, unpriced = page.context['current'][0], page.context['past'][0]
-        self.assertEqual(priced['line'].rate_per_kg, Decimal('85'))
-        self.assertIsNone(unpriced['line'])
+        self.assertEqual(page.context['current'][0]['price'], (Decimal('85.00'), Decimal('5.00')))
+        self.assertIsNone(page.context['past'][0]['price'])
 
     def test_a_draft_quotation_is_not_shown_and_the_companies_list_links_here(self):
         Quotation.objects.create(customer=self.acme, status='draft')

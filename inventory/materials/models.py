@@ -1155,6 +1155,11 @@ class Order(models.Model):
     customer_can_track    = models.BooleanField(default=False, verbose_name="Customer can track this order")
     # The earlier order this one repeats, when the customer used 'Order again' in their portal.
     reordered_from        = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='reorders')
+    # The price of an order: the quotation line it was placed from (set by the customer's order form, so it is the
+    # final quote), or, for an order with no quotation (a link sent after a call, or typed by staff), the rate agreed
+    # with the company, in rupees per kg before GST.
+    quotation_line        = models.ForeignKey('QuotationLineItem', on_delete=models.SET_NULL, null=True, blank=True, related_name='orders')
+    rate_per_kg           = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, verbose_name="Rate (₹ per kg)")
     product_code          = models.ForeignKey(ProductCode, on_delete=models.SET_NULL, null=True, blank=True, related_name='orders', verbose_name="Product Code")
     # The type the customer or staff chose. Kept on the order itself because a type + grade may have no product code
     # in the catalogue yet; when there is a code, the code's type is the one shown (product_type_name).
@@ -1371,6 +1376,16 @@ class Order(models.Model):
 
     def quantity_text(self):
         return format(self.quantity.normalize(), 'f') if self.quantity is not None else ''
+
+    def price(self):
+        """(rate per kg, discount %) this order is priced at, or None when no price has been recorded: the quoted
+        line's own rate when the order came from a quotation, else the rate staff entered."""
+        line = self.quotation_line
+        if line is not None and line.rate_per_kg is not None:
+            return line.rate_per_kg, line.discount_pct
+        if self.rate_per_kg is not None:
+            return self.rate_per_kg, Decimal('0')
+        return None
 
     def delivery_detail_text(self):
         """"Bar, 3000 mm long" / "Coil, approx. 2000 kg" — the delivery form with what was asked for it."""

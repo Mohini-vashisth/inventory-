@@ -409,7 +409,7 @@ class OrderConfirmStockWarningTests(TestCase):
     def test_confirming_with_insufficient_stock_shows_warning(self):
         Material.objects.create(quantity=50, grade='EN8D', size='1.200')
         order = Order.objects.create(
-            customer=self.customer, product_code=self.product_code, quantity=400, status='pending', grade='EN8D')
+            customer=self.customer, product_code=self.product_code, quantity=400, status='pending', grade='EN8D', rate_per_kg=Decimal('80'))
         self.client.force_login(self.staff)
         response = self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}), follow=True)
         messages = [str(m) for m in response.context['messages']]
@@ -418,7 +418,7 @@ class OrderConfirmStockWarningTests(TestCase):
     def test_confirming_with_sufficient_stock_shows_no_warning(self):
         Material.objects.create(quantity=500, grade='EN8D', size='1.200')
         order = Order.objects.create(
-            customer=self.customer, product_code=self.product_code, quantity=400, status='pending', grade='EN8D')
+            customer=self.customer, product_code=self.product_code, quantity=400, status='pending', grade='EN8D', rate_per_kg=Decimal('80'))
         self.client.force_login(self.staff)
         response = self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}), follow=True)
         messages = [str(m) for m in response.context['messages']]
@@ -437,7 +437,7 @@ class OrderConfirmStockWarningTests(TestCase):
         committed to production — a pending order hasn't been accepted yet."""
         Material.objects.create(quantity=50, grade='EN8D', size='1.200')
         Order.objects.create(
-            customer=self.customer, product_code=self.product_code, quantity=400, status='pending', grade='EN8D')
+            customer=self.customer, product_code=self.product_code, quantity=400, status='pending', grade='EN8D', rate_per_kg=Decimal('80'))
         self.client.force_login(self.staff)
         response = self.client.get(reverse('order_dashboard'))
         self.assertNotContains(response, 'Low stock')
@@ -554,7 +554,7 @@ class OrderDashboardTests(TestCase):
         straight to 'confirmed' — no review step needed for their own entry."""
         self.client.force_login(self.staff)
         response = self.client.post(reverse('order_dashboard'), {
-            'name': 'New Dashboard Co', 'email': 'contact@newdash.co', 'quantity': '150',
+            'name': 'New Dashboard Co', 'email': 'contact@newdash.co', 'quantity': '150', 'rate_per_kg': '80',
         })
         self.assertRedirects(response, reverse('order_dashboard'))
         order = Order.objects.get(customer__name='NEW DASHBOARD CO')
@@ -563,7 +563,7 @@ class OrderDashboardTests(TestCase):
 
     def test_company_name_is_stored_in_capitals(self):
         self.client.force_login(self.staff)
-        self.client.post(reverse('order_dashboard'), {'name': 'sharma steel traders', 'quantity': '150'})
+        self.client.post(reverse('order_dashboard'), {'name': 'sharma steel traders', 'quantity': '150', 'rate_per_kg': '80'})
         self.assertEqual(Order.objects.get().customer.name, 'SHARMA STEEL TRADERS')
 
     def test_manual_order_takes_its_code_from_product_type_and_grade(self):
@@ -572,7 +572,7 @@ class OrderDashboardTests(TestCase):
         code = ProductCode.objects.create(product_type=t, grade='EN8D')
         self.client.force_login(self.staff)
         self.client.post(reverse('order_dashboard'), {
-            'name': 'Type Co', 'product_type': str(t.pk), 'grade': 'EN8D', 'quantity': '100',
+            'name': 'Type Co', 'product_type': str(t.pk), 'grade': 'EN8D', 'quantity': '100', 'rate_per_kg': '80',
         })
         self.assertEqual(Order.objects.get().product_code, code)
 
@@ -581,7 +581,7 @@ class OrderDashboardTests(TestCase):
         with tempfile.TemporaryDirectory() as media, override_settings(MEDIA_ROOT=media):
             self.client.force_login(self.staff)
             self.client.post(reverse('order_dashboard'), {
-                'name': 'Drawing Co', 'quantity': '100',
+                'name': 'Drawing Co', 'quantity': '100', 'rate_per_kg': '80',
                 'drawing_file': SimpleUploadedFile('part.pdf', b'%PDF-1.4 x', content_type='application/pdf'),
             })
             order = Order.objects.get()
@@ -596,11 +596,11 @@ class OrderDashboardTests(TestCase):
 
     def test_manual_order_with_bar_needs_a_length_and_saves_tolerances(self):
         self.client.force_login(self.staff)
-        bad = self.client.post(reverse('order_dashboard'), {'name': 'Bar Co', 'quantity': '100', 'delivery_form': 'bar'})
+        bad = self.client.post(reverse('order_dashboard'), {'name': 'Bar Co', 'quantity': '100', 'delivery_form': 'bar', 'rate_per_kg': '80'})
         self.assertEqual(bad.status_code, 200)
         self.assertFalse(Order.objects.exists())
         self.client.post(reverse('order_dashboard'), {
-            'name': 'Bar Co', 'quantity': '100', 'delivery_form': 'bar', 'bar_length': '3000',
+            'name': 'Bar Co', 'quantity': '100', 'delivery_form': 'bar', 'bar_length': '3000', 'rate_per_kg': '80',
             'width_tol_from': '49.95', 'width_tol_to': '50.05',
         })
         order = Order.objects.get()
@@ -771,14 +771,14 @@ class OrderDashboardTests(TestCase):
 
     def test_missing_company_name_shows_error_instead_of_crashing(self):
         self.client.force_login(self.staff)
-        response = self.client.post(reverse('order_dashboard'), {'quantity': '150'})
+        response = self.client.post(reverse('order_dashboard'), {'quantity': '150', 'rate_per_kg': '80'})
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Company name is required.")
         self.assertFalse(Order.objects.exists())
 
     def test_missing_quantity_shows_form_error(self):
         self.client.force_login(self.staff)
-        response = self.client.post(reverse('order_dashboard'), {'name': 'No Qty Co'})
+        response = self.client.post(reverse('order_dashboard'), {'name': 'No Qty Co', 'rate_per_kg': '80'})
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Order.objects.exists())
 
@@ -889,6 +889,7 @@ class CustomerOrderFormTests(TestCase):
         self.assertEqual((second.product_code, second.grade, second.width, second.thickness, second.quantity),
                          (self.code_b, 'SS304', Decimal('60.5'), Decimal('8'), Decimal('300')))
         self.assertTrue(all(o.status == 'pending' for o in orders))
+        self.assertEqual((first.quotation_line, second.quotation_line), (self.item_a, self.item_b))   # each is priced by its quoted line
 
     def test_posted_code_grade_width_and_thickness_are_ignored(self):
         data = self._post_data(**{
@@ -1186,7 +1187,7 @@ class OrderConfirmationEmailTests(TestCase):
 
     def _order(self, **fields):
         defaults = dict(customer=self.customer, product_code=self.code, grade='EN8D', width=Decimal('50'),
-                        thickness=Decimal('6.5'), quantity=Decimal('500'), status='pending')
+                        thickness=Decimal('6.5'), quantity=Decimal('500'), status='pending', rate_per_kg=Decimal('80'))
         defaults.update(fields)
         return Order.objects.create(**defaults)
 
@@ -1599,7 +1600,7 @@ class OrderDetailPageTests(TestCase):
         self.quotation = quotation
         self.order = Order.objects.create(
             customer=self.customer, source_query=self.query, product_code=self.code, grade='EN8D', width=Decimal('50'),
-            thickness=Decimal('6.5'), quantity=Decimal('500'), status='pending', delivery_form='bar', bar_length=Decimal('3000'),
+            thickness=Decimal('6.5'), quantity=Decimal('500'), status='pending', rate_per_kg=Decimal('80'), delivery_form='bar', bar_length=Decimal('3000'),
             length_tol_from=Decimal('-5'), length_tol_to=Decimal('5'), width_tol_from=Decimal('49.9'), width_tol_to=Decimal('50.1'),
             other_tolerances='Straightness 1 mm/m', delivery_date=datetime.date(2026, 11, 20), frequency='monthly',
             mechanical_properties='Tensile 700 MPa', processes='Drilling', end_usage='gear shafts', mill_make='Tata', notes='Call first')
@@ -1673,7 +1674,7 @@ class OrderConfirmationWhatsAppTests(TestCase):
         code = ProductCode.objects.create(item_code='FBB009', product_type=flat, grade='EN8D')
         self.customer = Customer.objects.create(name='Text Co', phone='+91 98765 43210')
         self.order = Order.objects.create(customer=self.customer, product_code=code, grade='EN8D', width=Decimal('50'),
-                                          thickness=Decimal('6.5'), quantity=Decimal('500'), status='pending')
+                                          thickness=Decimal('6.5'), quantity=Decimal('500'), status='pending', rate_per_kg=Decimal('80'))
 
     def _confirm(self):
         return self.client.post(reverse('order_confirm', kwargs={'pk': self.order.pk}))
@@ -1710,3 +1711,46 @@ class OrderConfirmationWhatsAppTests(TestCase):
         self.order.refresh_from_db()
         self.assertEqual(self.order.status, 'confirmed')
         self.assertIn('WhatsApp confirmation could not be sent', ' '.join(str(m) for m in get_messages(response.wsgi_request)))
+
+
+class OrderPriceTests(TestCase):
+    """An order needs a price before it can be confirmed; the quoted line's rate wins over a typed one."""
+
+    def setUp(self):
+        self.staff = User.objects.create_user('price_staff', password='pw', is_staff=True)
+        self.client.force_login(self.staff)
+        self.customer = Customer.objects.create(name='Price Co', email='price@example.com')
+        flat = ProductType.objects.get(name='Flat Bright Bar')
+        self.code = ProductCode.objects.create(item_code='FBB009', product_type=flat, grade='EN8D')
+
+    def _order(self, **fields):
+        data = dict(customer=self.customer, product_code=self.code, grade='EN8D', width=Decimal('50'),
+                    thickness=Decimal('6.5'), quantity=Decimal('500'), status='pending')
+        data.update(fields)
+        return Order.objects.create(**data)
+
+    def test_confirming_an_order_with_no_price_is_refused(self):
+        order = self._order()
+        response = self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}), follow=True)
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'pending')
+        self.assertTrue(any('no price' in str(m) for m in response.context['messages']))
+
+    def test_an_order_with_a_rate_confirms(self):
+        order = self._order(rate_per_kg=Decimal('80'))
+        self.client.post(reverse('order_confirm', kwargs={'pk': order.pk}))
+        order.refresh_from_db()
+        self.assertEqual(order.status, 'confirmed')
+
+    def test_the_quoted_line_rate_wins_over_a_typed_rate(self):
+        quote = Quotation.objects.create(customer=self.customer, status='sent')
+        line = QuotationLineItem.objects.create(quotation=quote, description='Flat bar', grade='EN8D', quantity=Decimal('500'),
+                                                rate_per_kg=Decimal('90'), discount_pct=Decimal('5'))
+        order = self._order(rate_per_kg=Decimal('70'), quotation_line=line)
+        self.assertEqual(order.price(), (Decimal('90'), Decimal('5')))
+
+    def test_a_manual_order_without_a_rate_creates_nothing(self):
+        response = self.client.post(reverse('order_dashboard'), {'name': 'No Rate Co', 'quantity': '150'})
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Order.objects.exists())
+        self.assertEqual(response.context['error'], 'This field is required.')
