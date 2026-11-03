@@ -6,7 +6,6 @@ There is no way to order a new product here: a new product starts with a query.
 Public like the quote form (reached through the Funnel path /portal), so the unguessable link is the only credential,
 the pages load nothing from /static, and a company can only ever see its own orders."""
 
-import datetime
 import json
 import os
 import re
@@ -20,7 +19,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET
 
-from ..models import GSTIN_PATTERN, CompanyChangeRequest, Customer, Order, ProductType
+from ..models import GSTIN_PATTERN, CompanyChangeRequest, Customer, ProductType, Query, QueryItem
 from ..order_pdf import generate_order_summary_pdf
 from .whatsapp import portal_chat_ref
 
@@ -35,15 +34,6 @@ TRACKED_STATUS = {
     'completed': 'Completed',
     'cancelled': 'Cancelled',
 }
-
-# Copied from the earlier order when it is repeated; the quantity and delivery date are asked, nothing else changes.
-REORDER_COPIED = [
-    'product_code', 'product_type', 'grade', 'width', 'thickness', 'mill_make', 'mechanical_properties', 'processes',
-    'end_usage', 'delivery_form', 'bar_length', 'length_tol_from', 'length_tol_to', 'coil_weight', 'frequency',
-    'notes', 'drawing_dimensions', 'width_tol_from', 'width_tol_to', 'thickness_tol_from', 'thickness_tol_to',
-    'other_tolerances',
-]
-
 
 def _branding(customer):
     """The header, footer and chat button every portal page shares: who we are, and a WhatsApp link that opens the
@@ -139,29 +129,30 @@ def portal_details(request, token):
     })
 
 
-class ReorderForm(forms.Form):
-    quantity = forms.DecimalField(max_digits=12, decimal_places=3, min_value=0.001)
-    delivery_date = forms.DateField(required=False, widget=forms.DateInput(attrs={'type': 'date'}))
-
-    def clean_delivery_date(self):
-        date = self.cleaned_data['delivery_date']
-        if date and date < datetime.date.today():
-            raise forms.ValidationError("The delivery date can't be in the past.")
-        return date
-
-
-def _repeat(source, quantity, delivery_date):
-    """A new pending order that repeats `source` with a new quantity and delivery date."""
-    order = Order(customer=source.customer, status='pending', quantity=quantity, delivery_date=delivery_date,
-                  reordered_from=source, **{name: getattr(source, name) for name in REORDER_COPIED})
-    order.save()
-    if source.drawing_file:   # the drawing travels with the repeat; a missing file just means none is attached
+def _request_reorder(customer, source):
+    """Order again does not place an order: it opens a Reorder query for staff, with the earlier product copied in and
+    no quantity. Staff send a quotation, the company says how much it needs, and the order then arrives through the
+    quotation's order form, priced. A request already waiting for the same order is reused."""
+    note = f"Reorder of ORD-{source.order_no:04d}"
+    query = Query.objects.filter(customer=customer, source='reorder', status='new', notes=note).first()
+    if query:
+        return query
+    query = Query.objects.create(
+        source='reorder', customer=customer, company_name=customer.name, contact_phone=customer.phone,
+        contact_email=customer.email, gst_number=customer.gst_number, gst_address=customer.gst_address, notes=note)
+    product_type = source.product_code.product_type if source.product_code_id else source.product_type
+    item = QueryItem.objects.create(
+        query=query, product_type=product_type, product_code=source.product_code, grade=source.grade,
+        width=source.width, thickness=source.thickness, delivery_form=source.delivery_form.capitalize(),
+        technical_requirements='; '.join(part for part in (source.mill_make, source.mechanical_properties, source.processes) if part),
+        end_use=source.end_usage, drawing_notes='As in the earlier order' if source.drawing_file else '')
+    if source.drawing_file:   # the drawing travels with the request; a missing file just means none is attached
         try:
             with source.drawing_file.open('rb') as handle:
-                order.drawing_file.save(os.path.basename(source.drawing_file.name), ContentFile(handle.read()), save=True)
+                item.drawing.save(os.path.basename(source.drawing_file.name), ContentFile(handle.read()), save=True)
         except OSError:
             pass
-    return order
+    return query
 
 
 def portal_reorder(request, token, order_pk):
@@ -169,12 +160,11 @@ def portal_reorder(request, token, order_pk):
     source = get_object_or_404(customer.orders.select_related('product_code__product_type', 'product_type'), pk=order_pk)
     if source.status == 'cancelled':
         raise Http404
-    form = ReorderForm(request.POST or None, initial={'quantity': source.quantity})
-    if request.method == 'POST' and form.is_valid():
-        _repeat(source, form.cleaned_data['quantity'], form.cleaned_data['delivery_date'])
+    if request.method == 'POST':
+        _request_reorder(customer, source)
         return render(request, 'materials/portal_reordered.html', {**_branding(customer), 'customer': customer, 'token': token})
     return render(request, 'materials/portal_reorder.html', {
-        **_branding(customer), 'customer': customer, 'token': token, 'source': source, 'title': source.spec_text() or 'Order', 'form': form,
+        **_branding(customer), 'customer': customer, 'token': token, 'title': source.spec_text() or 'Order',
         'details': [line for line in (source.delivery_detail_text(), *source.tolerance_lines()) if line],
     })
 

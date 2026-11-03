@@ -1,13 +1,12 @@
 """The company portal: one permanent link per company, its orders, Order again, per-order tracking."""
 
-import datetime
 from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
 
-from ..models import CompanyChangeRequest, Customer, Order, ProductCode, ProductType, Quotation, QuotationLineItem
+from ..models import CompanyChangeRequest, Customer, Order, ProductCode, ProductType, Query, Quotation, QuotationLineItem
 
 
 def make_order(customer, **extra):
@@ -47,34 +46,34 @@ class PortalTests(TestCase):
     def test_another_companys_order_cannot_be_repeated_through_this_link(self):
         url = reverse('portal_reorder', args=[self.acme.portal_token, self.theirs.pk])
         self.assertEqual(self.client.get(url).status_code, 404)
-        self.assertEqual(self.client.post(url, {'quantity': '5'}).status_code, 404)
-        self.assertEqual(Order.objects.filter(customer=self.acme).count(), 2)
+        self.assertEqual(self.client.post(url).status_code, 404)
+        self.assertFalse(Query.objects.exists())
 
-    def test_order_again_copies_everything_but_the_quantity_and_date(self):
+    def test_order_again_opens_a_reorder_query_with_the_product_and_places_no_order(self):
         t = ProductType.objects.get_or_create(name='Flat Bright Bar', defaults={'code': 'FBX'})[0]
         code = ProductCode.objects.create(product_type=t, grade='EN8D')
-        self.done.product_code, self.done.product_type = code, t
-        self.done.width_tol_from, self.done.mill_make, self.done.delivery_form = Decimal('49.95'), 'SAIL', 'bar'
-        self.done.bar_length = Decimal('3000')
+        self.done.product_code, self.done.product_type, self.done.mill_make, self.done.delivery_form = code, t, 'SAIL', 'bar'
         self.done.save()
+        self.acme.phone, self.acme.gst_number = '919876543210', '27ABCDE1234F1Z5'
+        self.acme.save()
         url = reverse('portal_reorder', args=[self.acme.portal_token, self.done.pk])
         self.assertContains(self.client.get(url), 'Flat Bright Bar')
-        tomorrow = datetime.date.today() + datetime.timedelta(days=1)
-        response = self.client.post(url, {'quantity': '250', 'delivery_date': tomorrow.isoformat()})
-        self.assertContains(response, 'Order received')
-        new = Order.objects.exclude(pk__in=[self.done.pk, self.live.pk, self.theirs.pk]).get()
-        self.assertEqual((new.status, new.quantity, new.delivery_date), ('pending', Decimal('250'), tomorrow))
-        self.assertEqual((new.customer, new.reordered_from, new.product_code, new.product_type), (self.acme, self.done, code, t))
-        self.assertEqual((new.grade, new.width, new.mill_make, new.delivery_form, new.bar_length, new.width_tol_from),
-                         ('EN8D', Decimal('50'), 'SAIL', 'bar', Decimal('3000'), Decimal('49.95')))
-        self.assertFalse(new.customer_can_track)
+        self.assertContains(self.client.post(url), 'Request received')
+        self.assertEqual(Order.objects.filter(customer=self.acme).count(), 2)   # no new order
+        query = Query.objects.get()
+        self.assertEqual((query.source, query.status, query.customer, query.company_name, query.gst_number, query.contact_phone),
+                         ('reorder', 'new', self.acme, 'ACME', '27ABCDE1234F1Z5', '919876543210'))
+        self.assertIn('Reorder of ORD-', query.notes)
+        item = query.items.get()
+        self.assertEqual((item.product_type, item.product_code, item.grade, item.width, item.thickness, item.delivery_form, item.quantity),
+                         (t, code, 'EN8D', Decimal('50'), Decimal('6'), 'Bar', None))
+        self.assertIn('SAIL', item.technical_requirements)
 
-    def test_a_bad_quantity_or_past_date_places_nothing(self):
+    def test_asking_again_for_the_same_order_reuses_the_waiting_request(self):
         url = reverse('portal_reorder', args=[self.acme.portal_token, self.done.pk])
-        yesterday = datetime.date.today() - datetime.timedelta(days=1)
-        for data in ({'quantity': '0'}, {'quantity': ''}, {'quantity': '5', 'delivery_date': yesterday.isoformat()}):
-            self.assertEqual(self.client.post(url, data).status_code, 200)
-        self.assertEqual(Order.objects.filter(customer=self.acme).count(), 2)
+        self.client.post(url)
+        self.client.post(url)
+        self.assertEqual(Query.objects.count(), 1)
 
     def test_a_cancelled_order_cannot_be_repeated(self):
         gone = make_order(self.acme, status='cancelled')
