@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from .. import access_codes
 from ..decorators import employee_required, redirect_to_admin_login, staff_required
 from ..forms import AccessCodeChangeForm
+from ..models import CompanyChangeRequest
 from .common import _safe_next
 
 
@@ -109,7 +110,9 @@ def staff_logout(request):
 def staff_home(request):
     """Where an owner lands after the admin login: Orders, Queries and the Django admin. The admin login is the
     one sign-in for all three, so none of them asks again."""
-    return render(request, 'materials/staff_home.html')
+    return render(request, 'materials/staff_home.html', {
+        'change_requests': CompanyChangeRequest.objects.filter(status='pending').count(),
+    })
 
 
 def admin_login(request):

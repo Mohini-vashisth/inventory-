@@ -18,6 +18,9 @@ from ..views.whatsapp import (
 from .helpers import create_query, item_row, query_edit_data, quotation_item_post_data
 
 
+COMPANY_DETAILS = {'company-gst_number': '27ABCDE1234F1Z5', 'company-gst_address': '12 Mill Road'}
+
+
 class QueryDashboardTests(TestCase):
     """Queries are logged before any Customer/Order exists — staff decide
     which ones to pursue by sending a quote (email, or a copy-link fallback
@@ -334,7 +337,7 @@ class QueryDashboardTests(TestCase):
         query = Query.objects.create(
             source='indiamart', company_name='Convert Co', customer=customer, status='quote_sent',
         )
-        self.client.post(reverse('quote_form', kwargs={'token': customer.quote_token}), {'quantity': '250'})
+        self.client.post(reverse('quote_form', kwargs={'token': customer.quote_token}), {'quantity': '250', **COMPANY_DETAILS})
 
         query.refresh_from_db()
         self.assertEqual(query.status, 'converted')

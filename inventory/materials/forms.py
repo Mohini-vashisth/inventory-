@@ -292,6 +292,24 @@ class CustomerOrderForm(DeliveryDetailsMixin, OrderForm):
                    'other_tolerances': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Any other tolerance, e.g. straightness, ovality, length'})}
 
 
+class CompanyDetailsForm(forms.Form):
+    """A company's contact and GST details. On the order form a new company must give its GST number and address;
+    the portal's My details page subclasses it to also carry the name and make everything optional."""
+    email = forms.EmailField(required=False)
+    phone = forms.CharField(max_length=20, required=False)
+    gst_number = forms.CharField(max_length=15, label='GST number')
+    gst_address = forms.CharField(label='GST address', widget=forms.Textarea(attrs={'rows': 3}))
+
+    def clean_gst_number(self):
+        number = re.sub(r'\s', '', self.cleaned_data['gst_number']).upper()
+        if number and not re.fullmatch(GSTIN_PATTERN, number):
+            raise forms.ValidationError('Enter a valid 15-character GST number.')
+        return number
+
+    def clean_gst_address(self):
+        return self.cleaned_data['gst_address'].strip()
+
+
 class StaffOrderForm(CustomerOrderForm):
     """An order typed in by staff (Fill Manually): the same form, plus the rate agreed with the company."""
 

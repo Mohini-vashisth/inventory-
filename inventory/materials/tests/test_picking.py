@@ -505,3 +505,22 @@ class CoilDashboardTests(TestCase):
         page = self.client.get(reverse('coil_lookup'), {'coil_no': self.coil.coil_no})
         self.assertContains(page, 'Partly used')
         self.assertContains(page, 'Dash Co')
+
+
+class EmployeePagesNeverShowPriceTests(TestCase):
+    """The agreed rate is for staff only: the employee picking pages must not show it."""
+
+    def test_employee_pages_never_show_a_price(self):
+        session = self.client.session
+        session['employee_auth'] = True
+        session.save()
+        customer = Customer.objects.create(name='Price Co')
+        code = ProductCode.objects.create(item_code='PRICE9', grade='EN8D')
+        order = Order.objects.create(customer=customer, product_code=code, grade='EN8D', width=Decimal('16'),
+                                     thickness=Decimal('8'), quantity=Decimal('500'), status='confirmed',
+                                     rate_per_kg=Decimal('12345.67'))
+        for url in (reverse('select_order'), reverse('select_coil_for_order', args=[order.pk])):
+            with self.subTest(url=url):
+                content = self.client.get(url).content.decode()
+                self.assertNotIn('12345.67', content)
+                self.assertNotIn('\u20b9', content)
