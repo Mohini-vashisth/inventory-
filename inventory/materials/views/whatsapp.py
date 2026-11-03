@@ -42,7 +42,7 @@ WHATSAPP_QUERY_INTAKE_TEMPLATE = "matta_drawing_query_intake"
 WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE = "en"
 
 # Sent when staff confirm an order. Body: "Hello {{1}}, your order for {{2}} has been confirmed. You can see your
-# orders and order again any time here: {{3}}" (Utility category; must be approved in WhatsApp Manager, language `en`).
+# orders and order again any time here: {{3}} Thank you for choosing Matta Drawing Works." (Meta refuses a variable at the very start or end, so text must follow {{3}}) (Utility category; must be approved in WhatsApp Manager, language `en`).
 WHATSAPP_ORDER_CONFIRMED_TEMPLATE = "matta_order_confirmed"
 
 
