@@ -258,6 +258,7 @@ class MaterialsRouteGuardTests(TestCase):
         'quote_form',         # customer-facing; the unguessable UUID token is the credential
         'portal_home',        # a company's portal; its permanent unguessable link is the credential
         'portal_reorder',     # same link; a company can only repeat its own orders
+        'portal_order_summary',  # same link; a company can only open its own confirmed orders' summary
         'portal_manifest',    # makes the portal installable; same link
         'portal_icon',        # the app icon, a static image
         'portal_service_worker',  # a do-nothing script that lets browsers offer the install

@@ -113,6 +113,45 @@ class PortalPageContentTests(TestCase):
             self.assertNotContains(self.client.get(self.home), 'wa.me')
 
 
+class PortalPitchAndDocumentsTests(TestCase):
+    def setUp(self):
+        self.acme = Customer.objects.create(name='ACME')
+        self.confirmed = make_order(self.acme, status='confirmed')
+        self.pending = make_order(self.acme, status='pending', grade='EN9')
+        self.home = reverse('portal_home', args=[self.acme.portal_token])
+
+    def test_page_shows_the_pitch_facts_and_the_product_types_from_the_app(self):
+        with self.settings(COMPANY_ABOUT='Family-owned since long ago.', COMPANY_FACTS=[('1976', 'Established')]):
+            page = self.client.get(self.home)
+        for text in ('Family-owned since long ago.', '1976', 'Established', 'Flat Bright Bar'):
+            self.assertContains(page, text)
+
+    def test_need_something_buttons_follow_the_company_details(self):
+        with self.settings(WHATSAPP_CHAT_NUMBER='919876543210', COMPANY_PHONE='+91 99999 00000', COMPANY_EMAIL='info@example.com'):
+            page = self.client.get(self.home)
+        for text in ('Ask for a quote on a new product', 'tel:+91 99999 00000', 'mailto:info@example.com'):
+            self.assertContains(page, text)
+        with self.settings(WHATSAPP_CHAT_NUMBER='', COMPANY_PHONE='', COMPANY_EMAIL=''):
+            page = self.client.get(self.home)
+        for text in ('Ask for a quote on a new product', 'Call us', 'Email us'):
+            self.assertNotContains(page, text)
+
+    def test_only_confirmed_orders_link_a_summary_pdf(self):
+        page = self.client.get(self.home)
+        self.assertContains(page, reverse('portal_order_summary', args=[self.acme.portal_token, self.confirmed.pk]))
+        self.assertNotContains(page, reverse('portal_order_summary', args=[self.acme.portal_token, self.pending.pk]))
+
+    def test_the_summary_is_a_pdf_for_the_companys_own_confirmed_order_only(self):
+        token = self.acme.portal_token
+        response = self.client.get(reverse('portal_order_summary', args=[token, self.confirmed.pk]))
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertTrue(response.content.startswith(b'%PDF'))
+        self.assertEqual(self.client.get(reverse('portal_order_summary', args=[token, self.pending.pk])).status_code, 404)
+        other = Customer.objects.create(name='OTHER CO')
+        theirs = make_order(other, status='confirmed')
+        self.assertEqual(self.client.get(reverse('portal_order_summary', args=[token, theirs.pk])).status_code, 404)
+
+
 class PortalStaffControlsTests(TestCase):
     def setUp(self):
         self.staff = User.objects.create_user('boss', password='pw', is_staff=True)
