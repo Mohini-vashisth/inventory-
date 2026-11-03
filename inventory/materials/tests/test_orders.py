@@ -21,6 +21,9 @@ from ..models import (
 )
 
 
+COMPANY_DETAILS = {'company-gst_number': '27ABCDE1234F1Z5', 'company-gst_address': '12 Mill Road'}
+
+
 class OrderNumberingTests(TestCase):
     """order_no is assigned sequentially and kept gap-free — deleting an
     order renumbers every order after it down by one, unlike coil_no/job_no
@@ -496,7 +499,7 @@ class OrderWorkflowTests(TestCase):
         old_token = self.customer.quote_token
         self.client.post(
             reverse('quote_form', kwargs={'token': old_token}),
-            {'quantity': '250'},
+            {'quantity': '250', **COMPANY_DETAILS},
         )
         self.customer.refresh_from_db()
         self.assertNotEqual(self.customer.quote_token, old_token)
@@ -520,7 +523,7 @@ class OrderWorkflowTests(TestCase):
                 po_file = SimpleUploadedFile('my_po.pdf', b'%PDF-1.4 fake po content', content_type='application/pdf')
                 self.client.post(
                     reverse('quote_form', kwargs={'token': self.customer.quote_token}),
-                    {'quantity': '250', 'purchase_order': po_file},
+                    {'quantity': '250', 'purchase_order': po_file, **COMPANY_DETAILS},
                 )
                 order = Order.objects.get(customer=self.customer)
                 self.assertTrue(order.purchase_order)
@@ -529,7 +532,7 @@ class OrderWorkflowTests(TestCase):
     def test_quote_form_purchase_order_is_optional(self):
         self.client.post(
             reverse('quote_form', kwargs={'token': self.customer.quote_token}),
-            {'quantity': '250'},
+            {'quantity': '250', **COMPANY_DETAILS},
         )
         order = Order.objects.get(customer=self.customer)
         self.assertFalse(order.purchase_order)
@@ -629,7 +632,7 @@ class OrderDashboardTests(TestCase):
         page = self.client.get(reverse('quote_form', kwargs={'token': customer.quote_token}))
         self.assertNotContains(page, 'Locked item')
         self.assertContains(page, 'name="grade"')
-        self.client.post(reverse('quote_form', kwargs={'token': customer.quote_token}), {'quantity': '10'})
+        self.client.post(reverse('quote_form', kwargs={'token': customer.quote_token}), {'quantity': '10', **COMPANY_DETAILS})
         customer.refresh_from_db()
         self.assertFalse(customer.open_order_link)
 
@@ -647,7 +650,7 @@ class OrderDashboardTests(TestCase):
         customer = Customer.objects.create(name='TYPE CO', open_order_link=True)
         url = reverse('quote_form', kwargs={'token': customer.quote_token})
         self.assertContains(self.client.get(url), '<option value="SAE1018">')
-        self.client.post(url, {'product_type': str(t.pk), 'grade': 'ZZ9', 'quantity': '10'})
+        self.client.post(url, {'product_type': str(t.pk), 'grade': 'ZZ9', 'quantity': '10', **COMPANY_DETAILS})
         order = Order.objects.get()
         self.assertIsNone(order.product_code)
         self.assertEqual(order.product_type_name(), 'Flat Bright Bar')
@@ -825,7 +828,7 @@ class CustomerOrderFormTests(TestCase):
 
     def _post_data(self, items=None, **overrides):
         items = items if items is not None else [self.item_a, self.item_b]
-        data = {'item-TOTAL_FORMS': str(len(items)), 'item-INITIAL_FORMS': str(len(items)),
+        data = {**COMPANY_DETAILS, 'item-TOTAL_FORMS': str(len(items)), 'item-INITIAL_FORMS': str(len(items)),
                 'item-MIN_NUM_FORMS': '0', 'item-MAX_NUM_FORMS': '1000'}
         for index, item in enumerate(items):
             data[f'item-{index}-line_item'] = str(item.pk)
@@ -1010,7 +1013,7 @@ class CustomerOrderFormWithoutAQuoteTests(TestCase):
         self.assertIn('name="thickness"', html)
 
     def test_the_code_is_matched_from_the_grade_typed(self):
-        self.client.post(self.url, {'quantity': '250', 'grade': 'en8d', 'width': '50', 'thickness': '6'})
+        self.client.post(self.url, {**COMPANY_DETAILS, 'quantity': '250', 'grade': 'en8d', 'width': '50', 'thickness': '6'})
         self.assertEqual(Order.objects.get(customer=self.customer).product_code, self.code)
 
     def test_the_form_has_a_product_type_choice_that_helps_match_the_code(self):
@@ -1021,16 +1024,16 @@ class CustomerOrderFormWithoutAQuoteTests(TestCase):
         html = self.client.get(self.url).content.decode()
         self.assertIn('name="product_type"', html)
         self.assertIn('Flat Bright Bar', html)
-        self.client.post(self.url, {'quantity': '10', 'grade': 'ss304', 'product_type': str(flat.pk)})
+        self.client.post(self.url, {**COMPANY_DETAILS, 'quantity': '10', 'grade': 'ss304', 'product_type': str(flat.pk)})
         self.assertEqual(Order.objects.get(customer=self.customer).product_code, flat_code)
 
     def test_no_match_leaves_the_code_to_be_assigned_at_confirmation(self):
-        self.client.post(self.url, {'quantity': '250', 'grade': 'EN9', 'width': '30', 'thickness': '3'})
+        self.client.post(self.url, {**COMPANY_DETAILS, 'quantity': '250', 'grade': 'EN9', 'width': '30', 'thickness': '3'})
         self.assertIsNone(Order.objects.get(customer=self.customer).product_code)
 
     def test_a_posted_product_type_is_ignored(self):
         other = ProductCode.objects.create(item_code='CODE-Y', grade='SS304')
-        self.client.post(self.url, {'quantity': '250', 'product_code': str(other.pk)})
+        self.client.post(self.url, {**COMPANY_DETAILS, 'quantity': '250', 'product_code': str(other.pk)})
         self.assertIsNone(Order.objects.get(customer=self.customer).product_code)
 
 
@@ -1051,7 +1054,7 @@ class OrderFormPrefillFromQueryTests(TestCase):
         self.url = reverse('quote_form', kwargs={'token': self.customer.quote_token})
 
     def _post(self, **overrides):
-        data = {'item-TOTAL_FORMS': '1', 'item-INITIAL_FORMS': '1', 'item-MIN_NUM_FORMS': '0',
+        data = {**COMPANY_DETAILS, 'item-TOTAL_FORMS': '1', 'item-INITIAL_FORMS': '1', 'item-MIN_NUM_FORMS': '0',
                 'item-MAX_NUM_FORMS': '1000', 'item-0-line_item': str(self.item.pk), 'item-0-quantity': '500',
                 'item-0-end_usage': 'automotive shafts', 'item-0-delivery_form': 'coil', 'item-0-coil_weight': '2000'}
         data.update(overrides)
@@ -1278,7 +1281,7 @@ class OrderConfirmationEmailTests(TestCase):
     def test_nothing_is_emailed_to_us_when_an_order_is_placed(self):
         customer = Customer.objects.create(name='Place Mail Co', email='place@example.com')
         self.client.logout()
-        self.client.post(reverse('quote_form', kwargs={'token': customer.quote_token}), {'quantity': '10', 'grade': 'EN8D'})
+        self.client.post(reverse('quote_form', kwargs={'token': customer.quote_token}), {'quantity': '10', 'grade': 'EN8D', **COMPANY_DETAILS})
         self.assertEqual(len(self.mail.outbox), 0)   # the summary goes out when staff confirm, to the customer
 
     def test_the_staff_see_that_it_was_sent(self):
@@ -1314,7 +1317,7 @@ class OrderConfirmationEmailTests(TestCase):
     def test_placing_an_order_on_the_quote_form_sends_no_email(self):
         customer = Customer.objects.create(name='Place Co', email='place@example.com')
         self.client.logout()
-        self.client.post(reverse('quote_form', kwargs={'token': customer.quote_token}), {'quantity': '250', 'grade': 'EN8D'})
+        self.client.post(reverse('quote_form', kwargs={'token': customer.quote_token}), {'quantity': '250', 'grade': 'EN8D', **COMPANY_DETAILS})
         self.assertEqual(Order.objects.filter(customer=customer).count(), 1)
         self.assertEqual(len(self.mail.outbox), 0)   # the email goes out when staff confirm
 
@@ -1338,7 +1341,7 @@ class OrderDrawingAndToleranceTests(TestCase):
         self.url = reverse('quote_form', kwargs={'token': self.customer.quote_token})
 
     def _data(self, **extra):
-        data = {'item-TOTAL_FORMS': '1', 'item-INITIAL_FORMS': '1', 'item-MIN_NUM_FORMS': '0', 'item-MAX_NUM_FORMS': '1000',
+        data = {**COMPANY_DETAILS, 'item-TOTAL_FORMS': '1', 'item-INITIAL_FORMS': '1', 'item-MIN_NUM_FORMS': '0', 'item-MAX_NUM_FORMS': '1000',
                 'item-0-line_item': str(self.item.pk), 'item-0-quantity': '500'}
         data.update(extra)
         return data
@@ -1420,7 +1423,7 @@ class OrderDrawingAndToleranceTests(TestCase):
         self.assertNotIn('drawing_dimensions', html)
         self.assertIn('name="width_tol_from"', html)
         self.assertIn('name="other_tolerances"', html)
-        self.client.post(url, {'quantity': '10', 'grade': 'EN8D', 'width': '40', 'thickness': '4', 'drawing_file': self._pdf(),
+        self.client.post(url, {**COMPANY_DETAILS, 'quantity': '10', 'grade': 'EN8D', 'width': '40', 'thickness': '4', 'drawing_file': self._pdf(),
                                'thickness_tol_from': '3.9', 'thickness_tol_to': '4.1'})
         order = Order.objects.get(customer=plain)
         self.assertTrue(order.drawing_file)
@@ -1461,7 +1464,7 @@ class BarLengthAndCoilWeightTests(TestCase):
         self.url = reverse('quote_form', kwargs={'token': self.customer.quote_token})
 
     def _data(self, **extra):
-        data = {'item-TOTAL_FORMS': '2', 'item-INITIAL_FORMS': '2', 'item-MIN_NUM_FORMS': '0', 'item-MAX_NUM_FORMS': '1000'}
+        data = {**COMPANY_DETAILS, 'item-TOTAL_FORMS': '2', 'item-INITIAL_FORMS': '2', 'item-MIN_NUM_FORMS': '0', 'item-MAX_NUM_FORMS': '1000'}
         for n, item in enumerate(self.items):
             data[f'item-{n}-line_item'] = str(item.pk)
             data[f'item-{n}-quantity'] = '500'
@@ -1536,9 +1539,9 @@ class BarLengthAndCoilWeightTests(TestCase):
         html = self.client.get(url).content.decode()
         for name in ('bar_length', 'length_tol_from', 'length_tol_to', 'coil_weight'):
             self.assertIn(f'name="{name}"', html)
-        response = self.client.post(url, {'quantity': '10', 'grade': 'EN8D', 'delivery_form': 'bar'})
+        response = self.client.post(url, {**COMPANY_DETAILS, 'quantity': '10', 'grade': 'EN8D', 'delivery_form': 'bar'})
         self.assertContains(response, 'Please enter the bar length in mm.')
-        self.client.post(url, {'quantity': '10', 'grade': 'EN8D', 'delivery_form': 'coil', 'coil_weight': '700'})
+        self.client.post(url, {**COMPANY_DETAILS, 'quantity': '10', 'grade': 'EN8D', 'delivery_form': 'coil', 'coil_weight': '700'})
         self.assertEqual(Order.objects.get(customer=plain).coil_weight, Decimal('700'))
 
     def test_staff_see_it_in_the_order_details_and_the_confirmation_email(self):
@@ -1754,3 +1757,54 @@ class OrderPriceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(Order.objects.exists())
         self.assertEqual(response.context['error'], 'This field is required.')
+
+
+class CompanyDetailsOnOrderFormTests(TestCase):
+    """A company that has never ordered gives its GST number and address (and email, phone) on the order form;
+    one that has ordered before is not asked again."""
+
+    def setUp(self):
+        self.customer = Customer.objects.create(name='Details Co')
+        self.url = reverse('quote_form', kwargs={'token': self.customer.quote_token})
+
+    def _order_data(self, **extra):
+        return {'quantity': '250', 'grade': 'EN8D', **extra}
+
+    def test_new_company_is_asked_for_its_details_and_a_company_with_an_order_is_not(self):
+        self.assertContains(self.client.get(self.url), 'Your company details')
+        Order.objects.create(customer=self.customer, quantity=Decimal('10'), status='completed')
+        self.assertNotContains(self.client.get(self.url), 'Your company details')
+
+    def test_new_company_without_a_valid_gst_number_creates_no_order(self):
+        for gst in ('', 'NOTAGST'):
+            with self.subTest(gst=gst):
+                response = self.client.post(self.url, self._order_data(**{'company-gst_number': gst,
+                                                                          'company-gst_address': '12 Mill Road'}))
+                self.assertContains(response, 'error-msg')
+                self.assertFalse(Order.objects.filter(customer=self.customer).exists())
+
+    def test_new_company_with_details_orders_and_saves_them_on_the_customer(self):
+        self.client.post(self.url, self._order_data(**{
+            'company-gst_number': '27abcde1234f1z5', 'company-gst_address': ' 12 Mill Road ',
+            'company-email': 'buyer@details.example', 'company-phone': '9876543210'}))
+        self.assertEqual(Order.objects.filter(customer=self.customer).count(), 1)
+        self.customer.refresh_from_db()
+        self.assertEqual((self.customer.gst_number, self.customer.gst_address, self.customer.email, self.customer.phone),
+                         ('27ABCDE1234F1Z5', '12 Mill Road', 'buyer@details.example', '9876543210'))
+
+    def test_existing_company_is_not_asked_and_its_details_are_unchanged(self):
+        self.customer.gst_number = '29AAAAA0000A1Z5'
+        self.customer.gst_address = 'Old Address 1'
+        self.customer.save()
+        Order.objects.create(customer=self.customer, quantity=Decimal('10'), status='completed')
+        self.client.post(self.url, self._order_data())
+        self.assertEqual(Order.objects.filter(customer=self.customer).count(), 2)
+        self.customer.refresh_from_db()
+        self.assertEqual((self.customer.gst_number, self.customer.gst_address), ('29AAAAA0000A1Z5', 'Old Address 1'))
+
+    def test_new_company_form_is_prefilled_from_the_query_gst_details(self):
+        Query.objects.create(source='whatsapp', customer=self.customer, status='quote_sent',
+                             gst_number='27PREFL1234F1Z5', gst_address='Prefill Street 9')
+        response = self.client.get(self.url)
+        self.assertContains(response, '27PREFL1234F1Z5')
+        self.assertContains(response, 'Prefill Street 9')

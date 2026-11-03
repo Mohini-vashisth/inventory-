@@ -7,6 +7,7 @@ from django.urls import reverse
 
 from ..models import (
     Customer,
+    CompanyChangeRequest,
     GateEntry,
     GateEntryLot,
     Material,
@@ -435,3 +436,28 @@ class AdminLogoutTests(TestCase):
         self.assertRedirects(response, reverse('staff_home'), fetch_redirect_response=False)
         # signed out now, so the dashboard asks for the admin login (and returns here after it)
         self.assertEqual(self.client.get(reverse('staff_home')).status_code, 302)
+
+
+class StaffDashboardBannerTests(TestCase):
+    """The owners' dashboard says when a company has asked to change its details, and links to Companies."""
+
+    BANNER = 'asked to change their details'
+
+    def setUp(self):
+        self.staff = User.objects.create_user('banner_staff', password='pw', is_staff=True)
+        self.customer = Customer.objects.create(name='Banner Co')
+        Order.objects.create(customer=self.customer, quantity=10, status='completed')
+        self.client.force_login(self.staff)
+
+    def test_banner_shows_while_a_change_is_pending(self):
+        CompanyChangeRequest.objects.create(customer=self.customer, changes={'phone': '1'})
+        response = self.client.get(reverse('staff_home'))
+        self.assertContains(response, self.BANNER)
+        self.assertContains(response, reverse('company_dashboard'))
+
+    def test_no_banner_without_a_pending_change(self):
+        self.assertNotContains(self.client.get(reverse('staff_home')), self.BANNER)
+
+    def test_no_banner_once_the_change_is_approved(self):
+        CompanyChangeRequest.objects.create(customer=self.customer, changes={'phone': '1'}, status='approved')
+        self.assertNotContains(self.client.get(reverse('staff_home')), self.BANNER)

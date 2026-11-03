@@ -8,7 +8,6 @@ the pages load nothing from /static, and a company can only ever see its own ord
 
 import json
 import os
-import re
 from urllib.parse import quote
 
 from django import forms
@@ -19,7 +18,8 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET
 
-from ..models import GSTIN_PATTERN, CompanyChangeRequest, Customer, ProductType, Query, QueryItem
+from ..forms import CompanyDetailsForm
+from ..models import CompanyChangeRequest, Customer, ProductType, Query, QueryItem
 from ..order_pdf import generate_order_summary_pdf
 from .whatsapp import portal_chat_ref
 
@@ -88,24 +88,16 @@ def portal_about(request, token):
     })
 
 
-class DetailsForm(forms.Form):
+class DetailsForm(CompanyDetailsForm):
     name = forms.CharField(max_length=100, label='Company name')
-    email = forms.EmailField(required=False)
-    phone = forms.CharField(max_length=20, required=False)
-    gst_number = forms.CharField(max_length=15, required=False, label='GST number')
-    gst_address = forms.CharField(required=False, label='GST address', widget=forms.Textarea(attrs={'rows': 3}))
+    field_order = ['name', 'email', 'phone', 'gst_number', 'gst_address']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['gst_number'].required = self.fields['gst_address'].required = False
 
     def clean_name(self):
         return self.cleaned_data['name'].strip().upper()   # one company is never stored under two spellings
-
-    def clean_gst_number(self):
-        number = re.sub(r'\s', '', self.cleaned_data['gst_number']).upper()
-        if number and not re.fullmatch(GSTIN_PATTERN, number):
-            raise forms.ValidationError('Enter a valid 15-character GST number.')
-        return number
-
-    def clean_gst_address(self):
-        return self.cleaned_data['gst_address'].strip()
 
 
 def portal_details(request, token):

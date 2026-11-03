@@ -18,7 +18,7 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from ..models import ProductType, ProductCode, Customer, CompanyChangeRequest, Query, Order, GradeOption
-from ..forms import CustomerOrderForm, OrderEditForm, OrderItemFormSet, StaffOrderForm
+from ..forms import CompanyDetailsForm, CustomerOrderForm, OrderEditForm, OrderItemFormSet, StaffOrderForm
 from ..order_pdf import generate_order_summary_pdf
 from ..decorators import redirect_to_admin_login, staff_required
 from ..product_codes import grade_key
@@ -475,6 +475,22 @@ def quote_form(request, token):
         item.shown_type = item.product_type or (item.shown_code.product_type if item.shown_code else None)
     error = None
 
+    # A company that has never ordered is asked for its details (GST number and address, plus email and phone);
+    # one that has ordered before is not asked again (it can ask for a change from its portal).
+    company_form = None
+    if not customer.orders.exists():
+        known = query or Query()   # what the WhatsApp intake already collected, so it isn't asked twice
+        company_form = CompanyDetailsForm(request.POST or None, prefix='company', initial={
+            'email': customer.email or known.contact_email, 'phone': customer.phone or known.contact_phone,
+            'gst_number': customer.gst_number or known.gst_number, 'gst_address': customer.gst_address or known.gst_address})
+
+    def _save_company_details():
+        if company_form:
+            for field, value in company_form.cleaned_data.items():
+                if value:
+                    setattr(customer, field, value)
+            customer.save(update_fields=list(company_form.cleaned_data))
+
     def _finish(created_orders_query):
         if created_orders_query:
             query.status = 'converted'
@@ -503,6 +519,8 @@ def quote_form(request, token):
                 error = _first_formset_error(formset, 'Item')
             elif [f.cleaned_data.get('line_item') for f in formset.forms] != [item.pk for item in items]:
                 error = "This order form is out of date — please reload the page and try again."
+            elif company_form and not company_form.is_valid():
+                error = _first_form_error(company_form)
             else:
                 po = request.FILES.get('purchase_order')
                 po_bytes = po.read() if po else None
@@ -534,11 +552,13 @@ def quote_form(request, token):
                         order.save()
                         if po_bytes is not None:
                             order.purchase_order.save(po.name, ContentFile(po_bytes), save=True)
+                    _save_company_details()
                     return _finish(query)
         return render(request, 'materials/quote_form.html', {
             'customer': customer,
             'item_forms': list(zip(formset.forms, items)),
             'formset': formset,
+            'company_form': company_form,
             'error': error,
         })
 
@@ -546,6 +566,8 @@ def quote_form(request, token):
         form = CustomerOrderForm(request.POST, request.FILES)
         if not form.is_valid():
             error = _first_form_error(form)
+        elif company_form and not company_form.is_valid():
+            error = _first_form_error(company_form)
         else:
             order = form.save(commit=False)
             order.customer = customer
@@ -554,6 +576,7 @@ def quote_form(request, token):
             order.product_code = _match_product_code(order.grade, order.product_type)
             order.status = 'pending'
             order.save()
+            _save_company_details()
             return _finish(query)
 
     initial = {}
@@ -575,6 +598,7 @@ def quote_form(request, token):
         'customer': customer,
         'product_types': ProductType.objects.all(),
         'grade_options': list(GradeOption.objects.values_list('name', flat=True)),
+        'company_form': company_form,
         'error': error,
         'post': request.POST if error else initial,
     })
