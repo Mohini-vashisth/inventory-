@@ -120,21 +120,20 @@ class PortalPitchAndDocumentsTests(TestCase):
         self.pending = make_order(self.acme, status='pending', grade='EN9')
         self.home = reverse('portal_home', args=[self.acme.portal_token])
 
-    def test_page_shows_the_pitch_facts_and_the_product_types_from_the_app(self):
+    def test_the_dashboard_stays_clean_and_links_to_a_separate_about_page(self):
+        page = self.client.get(self.home)
+        about = reverse('portal_about', args=[self.acme.portal_token])
+        self.assertContains(page, about)
+        for text in ('What we make', 'Need something else?', 'Call us', 'Email us'):
+            self.assertNotContains(page, text)
+
+    def test_the_about_page_shows_the_pitch_facts_and_the_product_types_from_the_app(self):
         with self.settings(COMPANY_ABOUT='Family-owned since long ago.', COMPANY_FACTS=[('1976', 'Established')]):
-            page = self.client.get(self.home)
+            page = self.client.get(reverse('portal_about', args=[self.acme.portal_token]))
         for text in ('Family-owned since long ago.', '1976', 'Established', 'Flat Bright Bar'):
             self.assertContains(page, text)
-
-    def test_need_something_buttons_follow_the_company_details(self):
-        with self.settings(WHATSAPP_CHAT_NUMBER='919876543210', COMPANY_PHONE='+91 99999 00000', COMPANY_EMAIL='info@example.com'):
-            page = self.client.get(self.home)
-        for text in ('Ask for a quote on a new product', 'tel:+91 99999 00000', 'mailto:info@example.com'):
-            self.assertContains(page, text)
-        with self.settings(WHATSAPP_CHAT_NUMBER='', COMPANY_PHONE='', COMPANY_EMAIL=''):
-            page = self.client.get(self.home)
-        for text in ('Ask for a quote on a new product', 'Call us', 'Email us'):
-            self.assertNotContains(page, text)
+        stranger = Customer.objects.create(name='NEW CO')
+        self.assertEqual(self.client.get(reverse('portal_about', args=[stranger.portal_token])).status_code, 404)
 
     def test_only_confirmed_orders_link_a_summary_pdf(self):
         page = self.client.get(self.home)

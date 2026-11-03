@@ -64,6 +64,7 @@ urlpatterns = [
     path('portal/sw.js', portal.portal_service_worker, name='portal_service_worker'),
     path('portal/icon-<int:size>.png', portal.portal_icon, name='portal_icon'),
     path('portal/<uuid:token>/', portal.portal_home, name='portal_home'),
+    path('portal/<uuid:token>/about/', portal.portal_about, name='portal_about'),
     path('portal/<uuid:token>/manifest.webmanifest', portal.portal_manifest, name='portal_manifest'),
     path('portal/<uuid:token>/reorder/<int:order_pk>/', portal.portal_reorder, name='portal_reorder'),
     path('portal/<uuid:token>/order/<int:order_pk>/summary.pdf', portal.portal_order_summary, name='portal_order_summary'),

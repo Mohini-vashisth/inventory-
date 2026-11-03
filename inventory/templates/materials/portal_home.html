@@ -15,14 +15,6 @@
   .again { white-space: nowrap; text-decoration: none; background: var(--ds-accent-soft); color: var(--ds-accent-dark); border: 1px solid var(--ds-accent); border-radius: 8px; padding: 0.5rem 1rem; font-weight: 600; font-size: 0.88rem; }
   #install { display: none; background: #fff; border: 1px solid var(--ds-accent); border-radius: 12px; padding: 0.8rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; box-shadow: 0 6px 22px rgba(31,42,37,0.10); }
   #install button { margin-left: 0.6rem; }
-  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.6rem; margin: 0.9rem 0; }
-  .fact { background: var(--ds-accent-soft); border-radius: 10px; padding: 0.7rem 0.8rem; text-align: center; }
-  .fact b { display: block; font-size: 1.15rem; color: var(--ds-accent-dark); }
-  .fact span { font-size: 0.78rem; color: var(--ds-muted); }
-  .chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
-  .chip { background: #fff; border: 1px solid var(--ds-border); border-radius: 999px; padding: 0.2rem 0.75rem; font-size: 0.84rem; }
-  .needs { display: flex; flex-wrap: wrap; gap: 0.6rem; }
-  .needs a { text-decoration: none; }
   .doc { font-size: 0.85rem; margin-left: 0.6rem; color: var(--ds-accent-dark); }
 {% endblock %}
 
@@ -60,17 +52,7 @@
     {% empty %}<p class="muted">Nothing here yet.</p>{% endfor %}
   </div></div>
 
-  <div class="card" style="margin-top:1rem;"><div class="card-header">Need something else?</div><div class="card-body needs">
-    {% if chat_url %}<a class="again" href="{{ chat_url }}">Ask for a quote on a new product</a>{% endif %}
-    {% if brand.phone %}<a class="again" href="tel:{{ brand.phone }}">Call us</a>{% endif %}
-    {% if brand.email %}<a class="again" href="mailto:{{ brand.email }}">Email us</a>{% endif %}
-  </div></div>
-
-  <div class="card" style="margin-top:1rem;"><div class="card-header">About {{ brand.name }}</div><div class="card-body">
-    <p>{{ about }}</p>
-    <div class="facts">{% for value, label in facts %}<div class="fact"><b>{{ value }}</b><span>{{ label }}</span></div>{% endfor %}</div>
-    {% if product_types %}<strong>What we make</strong><div class="chips">{% for name in product_types %}<span class="chip">{{ name }}</span>{% endfor %}</div>{% endif %}
-  </div></div>
+  <p style="margin-top:1rem;text-align:center;"><a class="link" href="{% url 'portal_about' token %}">About {{ brand.name }}</a></p>
 
 </div>
 {% include "materials/_portal_footer.html" %}
