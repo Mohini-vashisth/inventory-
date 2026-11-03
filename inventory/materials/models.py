@@ -636,6 +636,11 @@ class StepLog(models.Model):
         return f"{self.job.job_no} | {self.step.name} | {self.status}"
 
 
+# Shape of a GSTIN: state code, PAN, entity number, 'Z', checksum character.
+# Format only — the checksum would need the GST portal to verify.
+GSTIN_PATTERN = r'\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]'
+
+
 class Customer(models.Model):
     name        = models.CharField(max_length=100, unique=True)
     email       = models.EmailField(blank=True)
@@ -647,15 +652,34 @@ class Customer(models.Model):
     # The company's permanent portal link (past and current orders, Order again). Unlike quote_token, which is used
     # up when an order is placed, this one stays until staff reset it.
     portal_token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    # The company's GST details, shown on its portal's My details page (a company asks for changes there, staff approve).
+    gst_number  = models.CharField(
+        max_length=15, blank=True,
+        validators=[RegexValidator(rf'^{GSTIN_PATTERN}$', 'Enter a valid 15-character GST number.')],
+    )
+    gst_address = models.TextField(blank=True)
     created_at  = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.name
 
 
-# Shape of a GSTIN: state code, PAN, entity number, 'Z', checksum character.
-# Format only — the checksum would need the GST portal to verify.
-GSTIN_PATTERN = r'\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]'
+class CompanyChangeRequest(models.Model):
+    """A company's request, from its portal, to change its own details. Nothing changes until staff approve it
+    on the Companies page; `changes` holds only the fields that differ, as {field: new value}."""
+    CHANGEABLE = [('name', 'Company name'), ('email', 'Email'), ('phone', 'Phone'),
+                  ('gst_number', 'GST number'), ('gst_address', 'GST address')]
+    STATUS_CHOICES = [('pending', 'Pending'), ('approved', 'Approved'), ('rejected', 'Rejected')]
+
+    customer    = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='change_requests')
+    changes     = models.JSONField(default=dict)
+    status      = models.CharField(max_length=10, choices=STATUS_CHOICES, default='pending')
+    created_at  = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    def rows(self):
+        """[(label, current value, requested value)] for each field asked to change."""
+        return [(label, getattr(self.customer, field), self.changes[field]) for field, label in self.CHANGEABLE if field in self.changes]
 
 
 class Query(models.Model):

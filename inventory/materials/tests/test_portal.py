@@ -7,7 +7,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
 
-from ..models import Customer, Order, ProductCode, ProductType
+from ..models import CompanyChangeRequest, Customer, Order, ProductCode, ProductType
 
 
 def make_order(customer, **extra):
@@ -122,8 +122,7 @@ class PortalPitchAndDocumentsTests(TestCase):
 
     def test_the_dashboard_stays_clean_and_links_to_a_separate_about_page(self):
         page = self.client.get(self.home)
-        about = reverse('portal_about', args=[self.acme.portal_token])
-        self.assertContains(page, about)
+        self.assertContains(page, reverse('portal_about', args=[self.acme.portal_token]))   # the hero's About button
         for text in ('What we make', 'Need something else?', 'Call us', 'Email us'):
             self.assertNotContains(page, text)
 
@@ -210,3 +209,93 @@ class CompaniesPageTests(TestCase):
     def test_only_staff_can_open_it(self):
         self.client.logout()
         self.assertEqual(self.client.get(reverse('company_dashboard')).status_code, 302)
+
+
+class PortalDetailsTests(TestCase):
+    GST = '27ABCDE1234F1Z5'
+
+    def setUp(self):
+        self.acme = Customer.objects.create(name='ACME', email='old@acme.co', phone='111')
+        make_order(self.acme)
+        self.url = reverse('portal_details', args=[self.acme.portal_token])
+        self.staff = User.objects.create_user('boss2', password='pw', is_staff=True)
+
+    def _post(self, **fields):
+        data = dict(name='ACME', email='old@acme.co', phone='111', gst_number='', gst_address='')
+        data.update(fields)
+        return self.client.post(self.url, data)
+
+    def test_every_portal_page_has_my_details_and_about_buttons(self):
+        for name in ('portal_home', 'portal_about', 'portal_details'):
+            page = self.client.get(reverse(name, args=[self.acme.portal_token]))
+            self.assertContains(page, self.url)
+            self.assertContains(page, reverse('portal_about', args=[self.acme.portal_token]))
+
+    def test_the_page_shows_the_details_on_file_and_changes_nothing_by_itself(self):
+        page = self.client.get(self.url)
+        self.assertContains(page, 'old@acme.co')
+        self._post(email='new@acme.co', phone='999')
+        self.acme.refresh_from_db()
+        self.assertEqual((self.acme.email, self.acme.phone), ('old@acme.co', '111'))
+
+    def test_a_request_stores_only_the_fields_that_differ(self):
+        page = self._post(email='new@acme.co', gst_number=self.GST.lower(), name='acme')
+        self.assertContains(page, 'We have your request')
+        request = CompanyChangeRequest.objects.get()
+        self.assertEqual(request.changes, {'email': 'new@acme.co', 'gst_number': self.GST})
+        self.assertEqual(request.status, 'pending')
+
+    def test_nothing_changed_makes_no_request(self):
+        self.assertContains(self._post(), 'Nothing was changed')
+        self.assertFalse(CompanyChangeRequest.objects.exists())
+
+    def test_a_bad_gst_number_or_email_is_refused(self):
+        self.assertContains(self._post(gst_number='NOTAGST'), 'valid 15-character GST number')
+        self.assertContains(self._post(email='nope'), 'valid email')
+        self.assertFalse(CompanyChangeRequest.objects.exists())
+
+    def test_a_new_request_replaces_one_still_waiting(self):
+        self._post(phone='222')
+        self._post(phone='333')
+        self.assertEqual(CompanyChangeRequest.objects.get().changes, {'phone': '333'})
+
+    def test_staff_see_it_and_approving_applies_it(self):
+        self._post(name='acme steels', email='new@acme.co')
+        self.client.force_login(self.staff)
+        page = self.client.get(reverse('company_dashboard'))
+        self.assertContains(page, 'Change requests')
+        self.assertContains(page, 'new@acme.co')
+        change = CompanyChangeRequest.objects.get()
+        self.client.post(reverse('change_request_decide', args=[change.pk]), {'decision': 'approve'})
+        self.acme.refresh_from_db()
+        change.refresh_from_db()
+        self.assertEqual((self.acme.name, self.acme.email, change.status), ('ACME STEELS', 'new@acme.co', 'approved'))
+        self.assertNotContains(self.client.get(reverse('company_dashboard')), 'Change requests')
+
+    def test_rejecting_changes_nothing(self):
+        self._post(email='new@acme.co')
+        self.client.force_login(self.staff)
+        change = CompanyChangeRequest.objects.get()
+        self.client.post(reverse('change_request_decide', args=[change.pk]), {'decision': 'reject'})
+        self.acme.refresh_from_db()
+        change.refresh_from_db()
+        self.assertEqual((self.acme.email, change.status), ('old@acme.co', 'rejected'))
+
+    def test_a_name_already_used_by_another_company_cannot_be_approved(self):
+        Customer.objects.create(name='TAKEN CO')
+        self._post(name='taken co')
+        self.client.force_login(self.staff)
+        change = CompanyChangeRequest.objects.get()
+        self.client.post(reverse('change_request_decide', args=[change.pk]), {'decision': 'approve'})
+        self.acme.refresh_from_db()
+        change.refresh_from_db()
+        self.assertEqual((self.acme.name, change.status), ('ACME', 'pending'))
+
+    def test_only_staff_can_decide_and_a_stranger_link_is_404(self):
+        self._post(email='new@acme.co')
+        change = CompanyChangeRequest.objects.get()
+        self.client.post(reverse('change_request_decide', args=[change.pk]), {'decision': 'approve'})
+        change.refresh_from_db()
+        self.assertEqual(change.status, 'pending')
+        stranger = Customer.objects.create(name='NEW CO')
+        self.assertEqual(self.client.get(reverse('portal_details', args=[stranger.portal_token])).status_code, 404)

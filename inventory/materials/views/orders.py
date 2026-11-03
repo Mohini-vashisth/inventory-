@@ -17,7 +17,7 @@ from django.http import JsonResponse
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from ..models import ProductType, ProductCode, Customer, Query, Order, GradeOption
+from ..models import ProductType, ProductCode, Customer, CompanyChangeRequest, Query, Order, GradeOption
 from ..forms import CustomerOrderForm, OrderEditForm, OrderItemFormSet
 from ..order_pdf import generate_order_summary_pdf
 from ..decorators import redirect_to_admin_login, staff_required
@@ -263,6 +263,7 @@ def company_dashboard(request):
     (copy or reset) and a button to send the order form again."""
     return render(request, 'materials/company_dashboard.html', {
         'customers': Customer.objects.annotate(order_count=Count('orders')).order_by('name'),
+        'change_requests': CompanyChangeRequest.objects.filter(status='pending').select_related('customer').order_by('created_at'),
         'quote_base_url': _public_quote_base_url(request),
     })
 
@@ -276,6 +277,30 @@ def _back_to(request):
 def order_edit(request, pk):
     """The old edit page's address: editing now happens on the order's own page."""
     return redirect(f"{reverse('order_detail', args=[pk])}?edit=1")
+
+
+@staff_required
+@require_POST
+def change_request_decide(request, pk):
+    """Approve (apply the new details to the company) or reject a company's change request."""
+    change = get_object_or_404(CompanyChangeRequest, pk=pk, status='pending')
+    customer = change.customer
+    if request.POST.get('decision') == 'approve':
+        new_name = change.changes.get('name')
+        if new_name and Customer.objects.filter(name=new_name).exclude(pk=customer.pk).exists():
+            messages.error(request, f"Another company is already named {new_name}, so {customer.name}'s request can't be approved. Reject it or sort out the duplicate first.")
+            return redirect('company_dashboard')
+        for field, value in change.changes.items():
+            setattr(customer, field, value)
+        customer.save()
+        change.status = 'approved'
+        messages.success(request, f"{customer.name}'s details were updated.")
+    else:
+        change.status = 'rejected'
+        messages.success(request, f"{customer.name}'s request was rejected.")
+    change.resolved_at = timezone.now()
+    change.save(update_fields=['status', 'resolved_at'])
+    return redirect('company_dashboard')
 
 
 @staff_required

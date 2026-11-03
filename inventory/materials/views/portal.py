@@ -9,6 +9,7 @@ the pages load nothing from /static, and a company can only ever see its own ord
 import datetime
 import json
 import os
+import re
 from urllib.parse import quote
 
 from django import forms
@@ -19,7 +20,7 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET
 
-from ..models import Customer, Order, ProductType
+from ..models import GSTIN_PATTERN, CompanyChangeRequest, Customer, Order, ProductType
 from ..order_pdf import generate_order_summary_pdf
 from .whatsapp import portal_chat_ref
 
@@ -94,6 +95,47 @@ def portal_about(request, token):
         'customer': customer, 'token': token, **_branding(customer),
         'about': settings.COMPANY_ABOUT, 'facts': settings.COMPANY_FACTS,
         'product_types': ProductType.objects.values_list('name', flat=True),
+    })
+
+
+class DetailsForm(forms.Form):
+    name = forms.CharField(max_length=100, label='Company name')
+    email = forms.EmailField(required=False)
+    phone = forms.CharField(max_length=20, required=False)
+    gst_number = forms.CharField(max_length=15, required=False, label='GST number')
+    gst_address = forms.CharField(required=False, label='GST address', widget=forms.Textarea(attrs={'rows': 3}))
+
+    def clean_name(self):
+        return self.cleaned_data['name'].strip().upper()   # one company is never stored under two spellings
+
+    def clean_gst_number(self):
+        number = re.sub(r'\s', '', self.cleaned_data['gst_number']).upper()
+        if number and not re.fullmatch(GSTIN_PATTERN, number):
+            raise forms.ValidationError('Enter a valid 15-character GST number.')
+        return number
+
+    def clean_gst_address(self):
+        return self.cleaned_data['gst_address'].strip()
+
+
+def portal_details(request, token):
+    """The company's own details, and a way to ask for a change. Nothing is changed here: the request waits on the
+    Companies page until staff approve it. A new request replaces one still waiting."""
+    customer = _company(token)
+    current = {field: getattr(customer, field) for field, _ in CompanyChangeRequest.CHANGEABLE}
+    form = DetailsForm(request.POST or None, initial=current)
+    sent = nothing_changed = False
+    if request.method == 'POST' and form.is_valid():
+        changes = {field: value for field, value in form.cleaned_data.items() if value != current[field]}
+        if changes:
+            customer.change_requests.filter(status='pending').delete()
+            CompanyChangeRequest.objects.create(customer=customer, changes=changes)
+            sent = True
+        else:
+            nothing_changed = True
+    return render(request, 'materials/portal_details.html', {
+        'customer': customer, 'token': token, **_branding(customer), 'form': form, 'sent': sent,
+        'nothing_changed': nothing_changed, 'pending': customer.change_requests.filter(status='pending').first(),
     })
 
 
