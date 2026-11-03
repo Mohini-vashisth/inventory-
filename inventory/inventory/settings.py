@@ -83,6 +83,13 @@ COMPANY_PHONE = os.environ.get('COMPANY_PHONE', '')
 COMPANY_EMAIL = os.environ.get('COMPANY_EMAIL', '')
 COMPANY_GST = os.environ.get('COMPANY_GST', '')
 COMPANY_WEBSITE = os.environ.get('COMPANY_WEBSITE', '')
+
+# The pitch on every company's portal page (taken from mattadrawing.com). Change the wording here, then deploy.
+COMPANY_ABOUT = (
+    "Matta Drawing Works is a family-owned manufacturer based in Faridabad, Haryana, established in 1976. "
+    "We work in carbon, alloy and stainless steel, using cold rolling, cold drawing, wire flattening and wire shaping."
+)
+COMPANY_FACTS = [("1976", "Established"), ("25+", "Specialised staff"), ("4", "Production processes"), ("Faridabad", "Haryana, India")]
 # The WhatsApp number the portal's 'Chat with us' button opens (digits with country code, no +, e.g. 919876543210).
 # Blank hides the button.
 WHATSAPP_CHAT_NUMBER = ''.join(ch for ch in os.environ.get('WHATSAPP_CHAT_NUMBER', '') if ch.isdigit())

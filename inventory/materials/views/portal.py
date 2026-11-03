@@ -19,10 +19,12 @@ from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET
 
-from ..models import Customer, Order
+from ..models import Customer, Order, ProductType
+from ..order_pdf import generate_order_summary_pdf
 from .whatsapp import portal_chat_ref
 
 CURRENT = ('pending', 'confirmed', 'in_production')
+SUMMARY_STATUSES = ('confirmed', 'in_production', 'completed')   # a pending order has nothing confirmed to show yet
 
 # What a customer is told about an order whose tracking staff switched on.
 TRACKED_STATUS = {
@@ -70,6 +72,7 @@ def _card(order):
         'title': order.spec_text() or 'Order',
         'status': TRACKED_STATUS.get(order.status, '') if order.customer_can_track else '',
         'can_repeat': order.status != 'cancelled',
+        'has_summary': order.status in SUMMARY_STATUSES,
     }
 
 
@@ -80,6 +83,9 @@ def portal_home(request, token):
         'customer': customer,
         'token': token,
         **_branding(customer),
+        'about': settings.COMPANY_ABOUT,
+        'facts': settings.COMPANY_FACTS,
+        'product_types': ProductType.objects.values_list('name', flat=True),
         'current': [_card(o) for o in orders if o.status in CURRENT],
         'past': [_card(o) for o in orders if o.status == 'completed'],
     })
@@ -123,6 +129,18 @@ def portal_reorder(request, token, order_pk):
         **_branding(customer), 'customer': customer, 'token': token, 'source': source, 'title': source.spec_text() or 'Order', 'form': form,
         'details': [line for line in (source.delivery_detail_text(), *source.tolerance_lines()) if line],
     })
+
+
+@require_GET
+def portal_order_summary(request, token, order_pk):
+    """The same order summary PDF the confirmation email carries, for a company's own confirmed order."""
+    customer = _company(token)
+    order = get_object_or_404(customer.orders, pk=order_pk, status__in=SUMMARY_STATUSES)
+    quotation = order.source_query.latest_sent_quotation() if order.source_query else None
+    pdf = generate_order_summary_pdf([order], customer, quotation=quotation, placed_at=order.created_at)
+    response = HttpResponse(pdf, content_type='application/pdf')
+    response['Content-Disposition'] = 'inline; filename="Order summary.pdf"'
+    return response
 
 
 @require_GET
