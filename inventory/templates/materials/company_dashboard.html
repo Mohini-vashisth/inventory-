@@ -36,6 +36,26 @@
   <div class="alert {% if msg.tags == 'success' %}alert-success{% elif msg.tags == 'warning' %}alert-warning{% else %}alert-error{% endif %}">{{ msg }}</div>
   {% endfor %}
 
+  {% if change_requests %}
+  <div class="card" style="margin-bottom:1rem;">
+    <div class="card-header static">Change requests <span>{{ change_requests|length }} waiting · from the companies' own portals</span></div>
+    <div class="card-body">
+      {% for r in change_requests %}
+      <div style="padding:0.7rem 0;{% if not forloop.first %}border-top:1px solid #eee;{% endif %}">
+        <strong>{{ r.customer.name }}</strong> <span>{{ r.created_at|date:"d M Y, H:i" }}</span>
+        <ul style="margin:0.4rem 0 0.6rem 1.2rem;">
+          {% for label, old, new in r.rows %}<li>{{ label }}: <s>{{ old|default:"(blank)" }}</s> &rarr; <strong>{{ new|default:"(blank)" }}</strong></li>{% endfor %}
+        </ul>
+        <form method="post" action="{% url 'change_request_decide' r.pk %}" style="display:inline;">{% csrf_token %}
+          <button class="icon-btn green" name="decision" value="approve">Approve</button>
+          <button class="icon-btn" name="decision" value="reject">Reject</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <input type="text" class="search" id="company-search" placeholder="Search companies…" autocomplete="off">
 
   <!-- ── Companies & Quote Links ──────────────────────────── -->

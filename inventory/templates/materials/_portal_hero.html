@@ -1,4 +1,6 @@
 <div class="p-hero">
+  <a class="p-nav left" href="{% url 'portal_details' token %}">My details</a>
+  <a class="p-nav right" href="{% url 'portal_about' token %}">About</a>
   <div class="mark">MDW</div>
   <div class="eyebrow">{{ brand.name }}</div>
   <h1>Welcome to {{ brand.name }}</h1>

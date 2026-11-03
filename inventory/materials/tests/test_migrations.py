@@ -162,3 +162,29 @@ class WhatsAppSavedKeysTests(TransactionTestCase):
         self.assertEqual(back.edit_field, 'item:2:product_category')
         self.assertEqual(back.pending_value['_items'], {'product_category': [4], 'grade': ['EN8D']})
         self.assertEqual(Query.objects.get(pk=mid_question.pk).last_asked_field, 'product_category@1')
+
+
+class CompanyGstBackfillTests(TransactionTestCase):
+    """Migration 0072 starts each company's GST details from its newest query that has them."""
+
+    BEFORE = [('materials', '0071_query_skip_company_details')]
+
+    def tearDown(self):
+        _migrate(_latest())
+
+    def test_the_newest_query_with_gst_details_fills_the_company(self):
+        _migrate(self.BEFORE)
+        apps = MigrationExecutor(connection).loader.project_state(self.BEFORE).apps
+        Customer, Query = apps.get_model('materials', 'Customer'), apps.get_model('materials', 'Query')
+        filled, bare = Customer.objects.create(name='FILLED'), Customer.objects.create(name='BARE')
+        Query.objects.create(source='whatsapp', contact_phone='91900000001', customer=filled, gst_number='27AAAAA1111A1Z1', gst_address='old address')
+        Query.objects.create(source='whatsapp', contact_phone='91900000002', customer=filled, gst_number='27ABCDE1234F1Z5', gst_address='new address')
+        Query.objects.create(source='whatsapp', contact_phone='91900000003', customer=filled)   # no GST: must not blank it
+        Query.objects.create(source='whatsapp', contact_phone='91900000004', customer=bare)
+
+        _migrate(_latest())
+
+        from ..models import Customer as Current
+        self.assertEqual(Current.objects.get(name='FILLED').gst_number, '27ABCDE1234F1Z5')
+        self.assertEqual(Current.objects.get(name='FILLED').gst_address, 'new address')
+        self.assertEqual(Current.objects.get(name='BARE').gst_number, '')

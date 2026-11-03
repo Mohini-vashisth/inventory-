@@ -257,6 +257,7 @@ class MaterialsRouteGuardTests(TestCase):
         'finance_logout',     # only clears this browser's own finance flag
         'quote_form',         # customer-facing; the unguessable UUID token is the credential
         'portal_home',        # a company's portal; its permanent unguessable link is the credential
+        'portal_details',     # same link; a company asks for a change to its own details
         'portal_about',       # same link; the company pitch
         'portal_reorder',     # same link; a company can only repeat its own orders
         'portal_order_summary',  # same link; a company can only open its own confirmed orders' summary
