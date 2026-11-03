@@ -1,0 +1,15 @@
+<div class="table-scroll"><table>
+  <thead><tr><th>Order</th><th>Product</th><th class="num">Qty (kg)</th><th>Status</th><th>Delivery</th><th>Quoted</th></tr></thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td><a class="link" href="{% url 'order_detail' r.order.pk %}">ORD-{{ r.order.order_no|stringformat:"04d" }}</a><div class="muted">{{ r.order.created_at|date:"d M Y" }}</div></td>
+      <td>{{ r.order.spec_text|default:"—" }}</td>
+      <td class="num">{{ r.order.quantity_text|default:"—" }}</td>
+      <td><span class="badge badge-{{ r.order.status }}">{{ r.order.get_status_display }}</span></td>
+      <td>{{ r.order.delivery_date|date:"d M Y"|default:"—" }}</td>
+      <td>{% if r.line and r.line.rate_per_kg is not None %}₹ {{ r.line.rate_per_kg }}/kg{% if r.line.discount_pct %} · {{ r.line.discount_pct }}% off{% endif %}<div class="muted">{{ r.quotation.formatted_no }}</div>{% else %}<span class="muted">—</span>{% endif %}</td>
+    </tr>
+    {% empty %}<tr><td colspan="6" class="muted" style="text-align:center;padding:1.2rem;">{{ empty }}</td></tr>{% endfor %}
+  </tbody>
+</table></div>

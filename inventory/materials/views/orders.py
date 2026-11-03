@@ -268,6 +268,38 @@ def company_dashboard(request):
     })
 
 
+def _quoted_line(order, quotations):
+    """The (quotation, line) an order was priced from: the first line, newest quotation first, with the order's grade,
+    width and thickness. Orders carry no link to the line they came from, so this is a match, not a record."""
+    for quotation in quotations:
+        for line in quotation.line_items.all():
+            if (line.grade or '').lower() == (order.grade or '').lower() and line.width == order.width and line.thickness == order.thickness:
+                return quotation, line
+    return None, None
+
+
+@staff_required(on_denied=redirect_to_admin_login)
+def company_detail(request, pk):
+    """One company on one page: its details, current and earlier orders with the price quoted for each, and every
+    quotation sent to it."""
+    customer = get_object_or_404(Customer, pk=pk)
+    quotations = list(customer.quotations.filter(status='sent').prefetch_related('line_items').order_by('-quotation_no'))
+    by_query = {}
+    for quotation in quotations:
+        by_query.setdefault(quotation.source_query_id, []).append(quotation)
+    rows = []
+    for order in customer.orders.select_related('product_code__product_type', 'product_type').order_by('-created_at'):
+        quotation, line = _quoted_line(order, by_query.get(order.source_query_id) or quotations)
+        rows.append({'order': order, 'quotation': quotation, 'line': line})
+    return render(request, 'materials/company_detail.html', {
+        'customer': customer,
+        'current': [r for r in rows if r['order'].status in ('pending', 'confirmed', 'in_production')],
+        'past': [r for r in rows if r['order'].status in ('completed', 'cancelled')],
+        'quotations': quotations,
+        'waiting_requests': customer.change_requests.filter(status='pending').count(),
+    })
+
+
 def _back_to(request):
     """Where a company action returns to: the companies page when it came from there, else the Orders page."""
     return redirect('company_dashboard' if request.POST.get('next') == 'company_dashboard' else 'order_dashboard')
