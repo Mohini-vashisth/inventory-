@@ -292,6 +292,25 @@ class CustomerOrderForm(DeliveryDetailsMixin, OrderForm):
                    'other_tolerances': forms.Textarea(attrs={'rows': 2, 'placeholder': 'Any other tolerance, e.g. straightness, ovality, length'})}
 
 
+class StaffOrderForm(CustomerOrderForm):
+    """An order typed in by staff (Fill Manually): the same form, plus the rate agreed with the company."""
+
+    class Meta(CustomerOrderForm.Meta):
+        fields = CustomerOrderForm.Meta.fields + ['rate_per_kg']
+        widgets = {**CustomerOrderForm.Meta.widgets}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['rate_per_kg'].required = True
+        self.fields['rate_per_kg'].min_value = Decimal('0.01')
+
+    def clean_rate_per_kg(self):
+        rate = self.cleaned_data['rate_per_kg']
+        if rate is not None and rate <= 0:
+            raise forms.ValidationError("The rate must be more than zero.")
+        return rate
+
+
 class OrderEditForm(DeliveryDetailsMixin, forms.ModelForm):
     """Staff correcting an order after it was placed: everything about the product and the delivery, but not
     who ordered it, its status or where it came from."""
@@ -302,7 +321,7 @@ class OrderEditForm(DeliveryDetailsMixin, forms.ModelForm):
             'product_code', 'product_type', 'grade', 'width', 'thickness', 'mill_make', 'mechanical_properties',
             'drawing_dimensions', 'drawing_file', *_TOLERANCE_FIELDS, 'other_tolerances', 'processes', 'end_usage',
             'quantity', 'delivery_form', 'frequency', *_DELIVERY_FIELDS, 'delivery_date', 'notes', 'purchase_order',
-            'customer_can_track',
+            'customer_can_track', 'rate_per_kg',
         ]
         widgets = {
             **_TOLERANCE_WIDGETS, **_DELIVERY_WIDGETS,
@@ -321,6 +340,8 @@ class OrderEditForm(DeliveryDetailsMixin, forms.ModelForm):
             self.fields[name].empty_label = '— none —'
         for name in ('delivery_form', 'frequency'):
             self.fields[name].choices = [('', '— none —')] + [c for c in self.fields[name].choices if c[0]]
+        if self.instance.quotation_line_id:   # priced by its quotation; the rate is not edited here
+            del self.fields['rate_per_kg']
 
     def clean(self):
         cleaned = super().clean()

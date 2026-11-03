@@ -126,6 +126,7 @@
     <div class="card-body">
       <dl class="rows">
         <dt>Quantity</dt><dd>{{ order.quantity_text }} kg</dd>
+        <dt>Price</dt><dd>{% with price=order.price %}{% if price %}₹ {{ price.0 }} per kg{% if price.1 %} · {{ price.1 }}% discount{% endif %} <span class="muted">(excl. GST, {% if order.quotation_line %}quotation {{ order.quotation_line.quotation.formatted_no }}{% else %}agreed rate{% endif %})</span>{% else %}<span class="warn">No price yet. Edit the order and add the agreed rate before confirming.</span>{% endif %}{% endwith %}</dd>
         <dt>Delivery form</dt><dd>{% if order.delivery_form %}{{ order.delivery_detail_text }}{% else %}<span class="blank">—</span>{% endif %}</dd>
         <dt>Expected delivery</dt><dd>{{ order.delivery_date|date:"d M Y"|default:"—" }}</dd>
         <dt>Frequency</dt><dd>{{ order.get_frequency_display|default:"—" }}</dd>

@@ -8,7 +8,7 @@
       <td class="num">{{ r.order.quantity_text|default:"—" }}</td>
       <td><span class="badge badge-{{ r.order.status }}">{{ r.order.get_status_display }}</span></td>
       <td>{{ r.order.delivery_date|date:"d M Y"|default:"—" }}</td>
-      <td>{% if r.line and r.line.rate_per_kg is not None %}₹ {{ r.line.rate_per_kg }}/kg{% if r.line.discount_pct %} · {{ r.line.discount_pct }}% off{% endif %}<div class="muted">{{ r.quotation.formatted_no }}</div>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td>{% if r.price %}₹ {{ r.price.0 }}/kg{% if r.price.1 %} · {{ r.price.1 }}% off{% endif %}<div class="muted">{% if r.order.quotation_line %}{{ r.order.quotation_line.quotation.formatted_no }}{% else %}agreed rate{% endif %}</div>{% else %}<span class="muted">—</span>{% endif %}</td>
     </tr>
     {% empty %}<tr><td colspan="6" class="muted" style="text-align:center;padding:1.2rem;">{{ empty }}</td></tr>{% endfor %}
   </tbody>
