@@ -41,6 +41,10 @@ WHATSAPP_QUERY_INTAKE_TEMPLATE = "matta_drawing_query_intake"
 # itself exists and is approved.
 WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE = "en"
 
+# Sent when staff confirm an order. Body: "Hello {{1}}, your order for {{2}} has been confirmed. You can see your
+# orders and order again any time here: {{3}}" (Utility category; must be approved in WhatsApp Manager, language `en`).
+WHATSAPP_ORDER_CONFIRMED_TEMPLATE = "matta_order_confirmed"
+
 
 # Fixed intake order — the next question is whichever of these is still
 # blank on the Query, so there's no separate "stage" field to drift out of
@@ -177,15 +181,15 @@ def _whatsapp_graph_request(payload):
         raise WhatsAppSendError(f"WhatsApp API request failed: {e}") from e
 
 
-def _send_whatsapp_template_message(phone, template_name, language="en_US"):
+def _send_whatsapp_template_message(phone, template_name, language="en_US", body_params=()):
     """The first message to a number that hasn't messaged us (or has gone
     quiet 24h+) must be a pre-approved template — Meta rejects free-form
     text otherwise. `template_name` must already be approved in Meta
-    Business Manager."""
-    _whatsapp_graph_request({
-        "messaging_product": "whatsapp", "to": phone, "type": "template",
-        "template": {"name": template_name, "language": {"code": language}},
-    })
+    Business Manager; `body_params` fill its {{1}}, {{2}}... in order."""
+    template = {"name": template_name, "language": {"code": language}}
+    if body_params:
+        template["components"] = [{"type": "body", "parameters": [{"type": "text", "text": p} for p in body_params]}]
+    _whatsapp_graph_request({"messaging_product": "whatsapp", "to": phone, "type": "template", "template": template})
 
 
 def _send_whatsapp_text_message(phone, text):
