@@ -4,10 +4,11 @@ import mimetypes
 
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 
 from ..decorators import finance_required
 from decimal import Decimal, InvalidOperation
@@ -20,22 +21,71 @@ from ..models import GateEntry, GateEntryCharge, NonCoilBillLine, NonCoilEntry
 BILLED_ROWS_SHOWN = 50
 
 
-def _waiting_first(queryset, order_by):
-    """Entries still without a bill (all of them) followed by the latest billed ones."""
+def _waiting_first(queryset, order_by, limit_billed=True):
+    """Entries still without a bill (all of them) followed by the latest billed ones (all of them when filtered)."""
     waiting = list(queryset.filter(bill='').order_by(order_by))
-    billed = list(queryset.exclude(bill='').order_by(order_by)[:BILLED_ROWS_SHOWN])
-    return waiting, billed
+    billed = queryset.exclude(bill='').order_by(order_by)
+    return waiting, list(billed[:BILLED_ROWS_SHOWN] if limit_billed else billed)
+
+
+def _date(value):
+    try:
+        return parse_date(value)
+    except ValueError:  # well-formed but impossible, e.g. 2026-02-31
+        return None
+
+
+def _rate(value):
+    try:
+        return Decimal(value)
+    except InvalidOperation:
+        return None
+
+
+def _filtered(model, fields, date_field, company_field, params, extra=Q()):
+    """The search box matches every word (in any of `fields`); company, dates and `extra` narrow it further."""
+    cond = Q(extra)
+    if params['company']:
+        cond &= Q(**{company_field + '__icontains': params['company']})
+    for word in params['q'].split():
+        cond &= Q(*[Q(**{f + '__icontains': word}) for f in fields], _connector=Q.OR)
+    if params['start']:
+        cond &= Q(**{date_field + '__date__gte': params['start']})
+    if params['end']:
+        cond &= Q(**{date_field + '__date__lte': params['end']})
+    # pk__in keeps one row per entry however many lots or products matched
+    return model.objects.filter(pk__in=model.objects.filter(cond).values('pk'))
 
 
 @finance_required
 def finance_dashboard(request):
-    coil_waiting, coil_billed = _waiting_first(GateEntry.objects.all(), '-created_at')
-    other_waiting, other_billed = _waiting_first(NonCoilEntry.objects.annotate(product_count=Count('lines')), '-arrived_at')
+    g = request.GET
+    params = {'q': g.get('q', '').strip(), 'company': g.get('company', '').strip(),
+              'start': _date(g.get('from', '')), 'end': _date(g.get('to', '')),
+              'rate_min': _rate(g.get('rate_min', '')), 'rate_max': _rate(g.get('rate_max', ''))}
+    filtering = any(v is not None and v != '' for v in params.values())
+    # the rate is on a coil lot (one lot must satisfy both limits); other arrivals have none
+    rate = Q()
+    if params['rate_min'] is not None:
+        rate &= Q(lots__rate__gte=params['rate_min'])
+    if params['rate_max'] is not None:
+        rate &= Q(lots__rate__lte=params['rate_max'])
+    coil_qs = _filtered(GateEntry, ['vendor', 'invoice_no', 'vehicle_no', 'lots__company', 'lots__grade',
+                                    'charges__description'], 'created_at', 'lots__company', params, rate)
+    other_qs = _filtered(NonCoilEntry, ['category', 'company', 'lines__description'], 'arrived_at', 'company', params)
+    if rate:
+        other_qs = other_qs.none()
+    other_qs = other_qs.annotate(product_count=Count('lines'))
+    coil_waiting, coil_billed = _waiting_first(coil_qs, '-created_at', not filtering)
+    other_waiting, other_billed = _waiting_first(other_qs, '-arrived_at', not filtering)
     return render(request, 'materials/finance_dashboard.html', {
         'coil_entries': coil_waiting + coil_billed,
         'coil_waiting_count': len(coil_waiting),
         'other_entries': other_waiting + other_billed,
         'other_waiting_count': len(other_waiting),
+        'q': params['q'], 'company': params['company'], 'rate_min': g.get('rate_min', ''),
+        'rate_max': g.get('rate_max', ''), 'start': g.get('from', ''), 'end': g.get('to', ''),
+        'filtering': filtering,
     })
 
 

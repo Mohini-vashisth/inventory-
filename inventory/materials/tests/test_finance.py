@@ -189,6 +189,44 @@ class FinanceDashboardTests(FinanceTestCase):
         entries = self.client.get(reverse('finance')).context['other_entries']
         self.assertEqual([e.pk for e in entries], [waiting.pk, billed.pk])
 
+    def _pks(self, key, **params):
+        return [e.pk for e in self.client.get(reverse('finance'), params).context[key]]
+
+    def test_search_box_matches_every_word_across_entries_lots_and_products(self):
+        from ..models import GateEntryLot, NonCoilBillLine
+        tata = self._coil_entry('TATA')
+        GateEntryLot.objects.create(gate_entry=tata, company='JSW', grade='EN8', no_of_coils=1)
+        self._coil_entry('OTHERVENDOR')
+        dies = NonCoilEntry.objects.create(category='DIES', company='ABC TOOLS')
+        NonCoilBillLine.objects.create(entry=dies, description='CARBIDE DIE', quantity=2, unit='NOS')
+        NonCoilEntry.objects.create(category='PARTS', company='XYZ')
+        self.assertEqual(self._pks('coil_entries', q='tata jsw'), [tata.pk])
+        self.assertEqual(self._pks('coil_entries', q='tata nomatch'), [])
+        self.assertEqual(self._pks('other_entries', q='carbide'), [dies.pk])
+
+    def test_company_and_rate_filters(self):
+        from ..models import GateEntryLot
+        cheap = self._coil_entry('A')
+        GateEntryLot.objects.create(gate_entry=cheap, company='JSW', no_of_coils=1, rate=50)
+        dear = self._coil_entry('B')
+        GateEntryLot.objects.create(gate_entry=dear, company='TATA STEEL', no_of_coils=1, rate=90)
+        NonCoilEntry.objects.create(category='DIES', company='JSW TOOLS')
+        self.assertEqual(self._pks('coil_entries', company='jsw'), [cheap.pk])
+        self.assertEqual(self._pks('coil_entries', rate_min='60'), [dear.pk])
+        self.assertEqual(self._pks('coil_entries', rate_min='40', rate_max='60'), [cheap.pk])
+        self.assertEqual(len(self._pks('other_entries', company='jsw')), 1)
+        self.assertEqual(self._pks('other_entries', rate_min='1'), [])
+        self.assertEqual(len(self._pks('coil_entries', rate_min='abc')), 2)   # junk is ignored
+
+    def test_dates_narrow_the_list(self):
+        old = self._coil_entry('OLD')
+        GateEntry.objects.filter(pk=old.pk).update(created_at='2020-01-05T10:00:00Z')
+        billed = self._coil_entry('NEW', bill=True)
+        pks = lambda **p: self._pks('coil_entries', **p)  # noqa: E731
+        self.assertEqual(pks(to='2020-12-31'), [old.pk])
+        self.assertEqual(pks(**{'from': '2021-01-01'}), [billed.pk])
+        self.assertEqual(len(pks(to='2026-02-31')), 2)   # an impossible date is ignored, not a crash
+
     def test_counts_the_entries_still_waiting(self):
         self._coil_entry('A')
         self._coil_entry('B', bill=True)
