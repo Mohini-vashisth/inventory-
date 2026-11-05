@@ -19,6 +19,9 @@
     padding: 0.45rem 0.9rem; font-size: 0.85rem; font-weight: 600; cursor: pointer;
   }
   .upload-btn:hover { background: var(--ds-accent-dark); }
+  .filters { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; padding: 0.8rem; margin-bottom: 1.25rem; }
+  .filters input[type="search"] { flex: 1 1 240px; }
+  .group-row td { background: var(--ds-bg, #f3f4f2); font-weight: 600; font-size: 0.8rem; }
   .view-link { font-size: 0.85rem; font-weight: 600; color: var(--ds-accent); margin-right: 0.5rem; }
 {% endblock %}
 
@@ -34,6 +37,16 @@
   <div class="alert {% if msg.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ msg }}</div>
   {% endfor %}
 
+  <form method="get" class="card filters">
+    <input type="search" name="q" value="{{ q }}" placeholder="Search vendor, invoice, vehicle, company, grade, products...">
+    <input type="search" name="company" value="{{ company }}" placeholder="Company" style="flex: 0 1 150px;">
+    <label>Rate ₹/kg <input type="number" name="rate_min" value="{{ rate_min }}" step="0.01" min="0" placeholder="min" style="width: 5.5rem;"> – <input type="number" name="rate_max" value="{{ rate_max }}" step="0.01" min="0" placeholder="max" style="width: 5.5rem;"></label>
+    <label>From <input type="date" name="from" value="{{ start }}"></label>
+    <label>To <input type="date" name="to" value="{{ end }}"></label>
+    <button type="submit" class="upload-btn">Filter</button>
+    {% if filtering %}<a class="view-link" href="{% url 'finance' %}">Clear</a>{% endif %}
+  </form>
+
   <div class="section">
     <div class="section-head">
       <h2>Coil gate entries</h2>
@@ -44,6 +57,7 @@
         <thead><tr><th>Arrived</th><th>Vendor</th><th>Invoice no.</th><th>Vehicle</th><th>Coils</th><th>Bill</th></tr></thead>
         <tbody>
           {% for entry in coil_entries %}
+          {% ifchanged entry.has_bill %}<tr class="group-row"><td colspan="6">{% if entry.has_bill %}Billed{% else %}Waiting for a bill{% endif %}</td></tr>{% endifchanged %}
           <tr>
             <td>{{ entry.created_at|date:"d M Y, H:i" }}</td>
             <td>{{ entry.vendor|default:"—" }}</td>
@@ -66,7 +80,7 @@
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="6" class="muted">No coil gate entries yet.</td></tr>
+          <tr><td colspan="6" class="muted">{% if filtering %}No coil entries match.{% else %}No coil gate entries yet.{% endif %}</td></tr>
           {% endfor %}
         </tbody>
       </table>
@@ -83,6 +97,7 @@
         <thead><tr><th>Arrived</th><th>What</th><th>Company</th><th>Bill</th></tr></thead>
         <tbody>
           {% for entry in other_entries %}
+          {% ifchanged entry.has_bill %}<tr class="group-row"><td colspan="4">{% if entry.has_bill %}Billed{% else %}Waiting for a bill{% endif %}</td></tr>{% endifchanged %}
           <tr>
             <td>{{ entry.arrived_at|date:"d M Y, H:i" }}</td>
             <td>{{ entry.category }}</td>
@@ -104,7 +119,7 @@
             </td>
           </tr>
           {% empty %}
-          <tr><td colspan="4" class="muted">Nothing other than coils has arrived yet.</td></tr>
+          <tr><td colspan="4" class="muted">{% if filtering %}No other arrivals match.{% else %}Nothing other than coils has arrived yet.{% endif %}</td></tr>
           {% endfor %}
         </tbody>
       </table>
