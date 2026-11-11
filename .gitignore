@@ -16,3 +16,6 @@ inventory/media/
 # graphify knowledge graph output
 graphify-out/
 .venv.nosync/
+
+# Internal project notes (hostnames, account ids, client details): kept locally, never public
+CLAUDE.md
