@@ -9,6 +9,7 @@ from decimal import Decimal
 from unittest.mock import patch
 from django.contrib.auth.models import User
 from django.contrib.messages import get_messages
+from django.db.models import Max
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -22,6 +23,17 @@ from ..models import (
 
 
 COMPANY_DETAILS = {'company-gst_number': '27ABCDE1234F1Z5', 'company-gst_address': '12 Mill Road'}
+
+
+class OrderNumberRaceTests(TestCase):
+    def test_a_stale_maximum_is_retried_instead_of_failing(self):
+        customer = Customer.objects.create(name='Race Co')
+        Order.objects.create(customer=customer, quantity=1)
+        real = Order.objects.aggregate
+        stale = {'order_no__max': 0}   # what a second request sees when both read before either saves
+        with patch.object(Order.objects, 'aggregate', side_effect=[stale, real(Max('order_no'))]):
+            second = Order.objects.create(customer=customer, quantity=1)
+        self.assertEqual(second.order_no, 2)
 
 
 class OrderNumberingTests(TestCase):

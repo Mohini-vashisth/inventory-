@@ -202,8 +202,24 @@ class EmployeeLoginThrottleTests(TestCase):
 
     def test_spoofed_forwarded_for_header_does_not_dodge_the_lockout(self):
         for i in range(settings.EMPLOYEE_LOGIN_MAX_FAILURES):
-            self.client.post(self.url, {'pin': 'wrong'}, HTTP_X_FORWARDED_FOR=f'9.9.9.{i}')
-        response = self.client.post(self.url, {'pin': settings.EMPLOYEE_PIN}, HTTP_X_FORWARDED_FOR='1.2.3.4')
+            self.client.post(self.url, {'pin': 'wrong'}, REMOTE_ADDR='10.0.0.1', HTTP_X_FORWARDED_FOR=f'9.9.9.{i}')
+        response = self.client.post(self.url, {'pin': settings.EMPLOYEE_PIN}, REMOTE_ADDR='10.0.0.1',
+                                    HTTP_X_FORWARDED_FOR='1.2.3.4')
+        self.assertContains(response, "Too many incorrect attempts")
+
+    def test_behind_a_local_proxy_each_device_has_its_own_counter(self):
+        # tailscale serve forwards from localhost: the proxy's appended (last) entry names the real device.
+        self._fail(settings.EMPLOYEE_LOGIN_MAX_FAILURES, REMOTE_ADDR='127.0.0.1', HTTP_X_FORWARDED_FOR='100.1.1.1')
+        self.client.post(self.url, {'pin': settings.EMPLOYEE_PIN}, REMOTE_ADDR='127.0.0.1',
+                         HTTP_X_FORWARDED_FOR='100.1.1.2')
+        self.assertTrue(self.client.session.get('employee_auth'))
+
+    def test_behind_a_local_proxy_a_client_supplied_first_entry_is_ignored(self):
+        for i in range(settings.EMPLOYEE_LOGIN_MAX_FAILURES):
+            self.client.post(self.url, {'pin': 'wrong'}, REMOTE_ADDR='127.0.0.1',
+                             HTTP_X_FORWARDED_FOR=f'9.9.9.{i}, 100.1.1.1')
+        response = self.client.post(self.url, {'pin': settings.EMPLOYEE_PIN}, REMOTE_ADDR='127.0.0.1',
+                                    HTTP_X_FORWARDED_FOR='1.2.3.4, 100.1.1.1')
         self.assertContains(response, "Too many incorrect attempts")
 
 

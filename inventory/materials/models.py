@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, MaxValueValidator, MinValueValidator, RegexValidator
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.contrib.auth.models import User
 from django.db.models.functions import Coalesce
 from django.db.models.signals import post_delete
@@ -38,6 +38,21 @@ def normalize_grade(value):
     "EN8DCR"). Decided 2026-10-06; every grade in the app is stored this way."""
     return re.sub(r'[^A-Za-z0-9]', '', value).upper()
 
+
+
+def _save_with_next_number(instance, field, save):
+    """Gives `instance` the next number in `field` (max + 1) and saves it. Two saves at the same moment can read
+    the same maximum; the unique rule rejects the second, so recompute and try again (a savepoint keeps an
+    outer transaction usable). Raises after 3 tries."""
+    model = type(instance)
+    for attempt in range(3):
+        setattr(instance, field, (model.objects.aggregate(models.Max(field))[f'{field}__max'] or 0) + 1)
+        try:
+            with transaction.atomic():
+                return save()
+        except IntegrityError:
+            if attempt == 2:
+                raise
 
 class GradeField(models.CharField):
     """A CharField that always holds the normalized grade (see normalize_grade): it is
@@ -1006,11 +1021,10 @@ class Quotation(models.Model):
         # Only a *sent* quotation ever gets a permanent number — a draft
         # that's edited/saved repeatedly, or abandoned and discarded, must
         # never consume one.
-        if self.status == 'sent' and self.quotation_no is None:
-            max_no = Quotation.objects.aggregate(models.Max('quotation_no'))['quotation_no__max'] or 0
-            self.quotation_no = max_no + 1
         if self.status == 'sent' and self.sent_at is None:
             self.sent_at = timezone.now()
+        if self.status == 'sent' and self.quotation_no is None:
+            return _save_with_next_number(self, 'quotation_no', lambda: super(Quotation, self).save(*args, **kwargs))
         super().save(*args, **kwargs)
 
     def formatted_no(self):
@@ -1215,8 +1229,7 @@ class Order(models.Model):
 
     def save(self, *args, **kwargs):
         if self.order_no is None:
-            max_no = Order.objects.aggregate(models.Max('order_no'))['order_no__max'] or 0
-            self.order_no = max_no + 1
+            return _save_with_next_number(self, 'order_no', lambda: super(Order, self).save(*args, **kwargs))
         super().save(*args, **kwargs)
 
     def __str__(self):

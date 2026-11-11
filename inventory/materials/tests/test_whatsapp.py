@@ -855,6 +855,22 @@ class WhatsAppMediaDownloadTests(TestCase):
 
     @override_settings(WHATSAPP_ACCESS_TOKEN='test-token')
     @patch('materials.views.whatsapp.urllib.request.urlopen')
+    def test_oversized_file_is_refused(self, mock_urlopen):
+        meta = MagicMock()
+        meta.read.return_value = json.dumps({'url': 'https://x/y', 'mime_type': 'image/jpeg'}).encode('utf-8')
+        meta.__enter__ = lambda self: meta
+        meta.__exit__ = lambda self, *a: None
+        data = MagicMock()
+        data.read.return_value = b'x' * (whatsapp.DRAWING_MAX_BYTES + 1)
+        data.__enter__ = lambda self: data
+        data.__exit__ = lambda self, *a: None
+        mock_urlopen.side_effect = [meta, data]
+        with self.assertRaises(WhatsAppSendError):
+            whatsapp._download_whatsapp_media('media-id')
+        data.read.assert_called_with(whatsapp.DRAWING_MAX_BYTES + 1)  # never reads the whole body
+
+    @override_settings(WHATSAPP_ACCESS_TOKEN='test-token')
+    @patch('materials.views.whatsapp.urllib.request.urlopen')
     def test_missing_url_in_metadata_raises(self, mock_urlopen):
         meta_response = MagicMock()
         meta_response.read.return_value = json.dumps({'mime_type': 'image/jpeg'}).encode('utf-8')

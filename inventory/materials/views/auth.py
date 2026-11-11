@@ -34,14 +34,22 @@ def _landing_for(request, role, requested):
     return reverse(ROLE_HOME_URLS[role])
 
 
+def _client_ip(request):
+    """REMOTE_ADDR, except when it is this machine itself (tailscale serve/funnel forward from localhost, so every
+    device would share one lockout counter): then the LAST X-Forwarded-For entry, the one the proxy appended.
+    Earlier entries are client-supplied and would let an attacker dodge the lockout, so they are never used.
+    shortcut: assumes the proxy appends X-Forwarded-For; without it the old shared counter applies, until checked live."""
+    addr = request.META.get('REMOTE_ADDR', '')
+    forwarded = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[-1].strip()
+    return forwarded if addr in ('127.0.0.1', '::1') and forwarded else addr
+
+
 def _check_code(request):
     """The one login for the shared codes. The typed code is compared with both the employee PIN and the finance
     code, and whichever it matches sets that role's session flag. Throttled per client IP (a wrong code counts;
     too many locks that IP out, even for a right code). Returns (role, error): a role when it matched, otherwise
     an error message. A wrong code gets one message whichever role it was meant for."""
-    # REMOTE_ADDR only: X-Forwarded-For is client-supplied, so keying on it
-    # would let an attacker dodge the lockout by rotating the header.
-    key = f"login-failures:{request.META.get('REMOTE_ADDR', '')}"
+    key = f"login-failures:{_client_ip(request)}"
     if cache.get(key, 0) >= settings.EMPLOYEE_LOGIN_MAX_FAILURES:
         minutes = settings.EMPLOYEE_LOGIN_LOCKOUT_SECONDS // 60
         return None, f"Too many incorrect attempts. Try again in {minutes} minutes."

@@ -53,6 +53,10 @@ def trusted_csrf_origins(extra, public_quote_base_url):
 # this header — request.is_secure() there is unaffected.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
+# Off by default: staff and the plant LAN still use plain http:// addresses, where a Secure cookie is never sent
+# back and nobody could log in. Set DJANGO_SECURE_COOKIES=True once every way into the app is https.
+SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = os.environ.get('DJANGO_SECURE_COOKIES', 'False') == 'True'
+
 # The public origin customers' quote-form links should point to (e.g.
 # https://quote.mattadrawing.com). Admins only ever reach this app over
 # Tailscale, so building the link from the current request's own host (the
