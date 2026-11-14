@@ -35,13 +35,13 @@ def _landing_for(request, role, requested):
 
 
 def _client_ip(request):
-    """REMOTE_ADDR, except when it is this machine itself (tailscale serve/funnel forward from localhost, so every
-    device would share one lockout counter): then the LAST X-Forwarded-For entry, the one the proxy appended.
+    """REMOTE_ADDR, except when it is this machine itself or a trusted proxy (tailscale serve/funnel forward from localhost,
+    the homelab front door from its own address, so every device would share one lockout counter): then the LAST X-Forwarded-For entry, the one the proxy appended.
     Earlier entries are client-supplied and would let an attacker dodge the lockout, so they are never used.
     shortcut: assumes the proxy appends X-Forwarded-For; without it the old shared counter applies, until checked live."""
     addr = request.META.get('REMOTE_ADDR', '')
     forwarded = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[-1].strip()
-    return forwarded if addr in ('127.0.0.1', '::1') and forwarded else addr
+    return forwarded if addr in settings.TRUSTED_PROXY_IPS and forwarded else addr
 
 
 def _check_code(request):

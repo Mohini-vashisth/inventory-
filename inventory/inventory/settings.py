@@ -136,6 +136,9 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# Addresses whose X-Forwarded-For is believed (this machine, plus e.g. the homelab front door's tailnet address).
+TRUSTED_PROXY_IPS = ('127.0.0.1', '::1', *[h.strip() for h in os.environ.get('TRUSTED_PROXY_IPS', '').split(',') if h.strip()])
+
 # A read-only copy of the app for when the plant PC is down (runs on the homelab laptop from the
 # latest backup): sessions live in a signed cookie because the database may not be written to.
 STANDBY_READ_ONLY = os.environ.get('STANDBY_READ_ONLY', 'False') == 'True'

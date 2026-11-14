@@ -2,7 +2,7 @@
 
 from django.conf import settings
 from django.contrib.auth.models import User
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from ..models import (
@@ -221,6 +221,14 @@ class EmployeeLoginThrottleTests(TestCase):
         response = self.client.post(self.url, {'pin': settings.EMPLOYEE_PIN}, REMOTE_ADDR='127.0.0.1',
                                     HTTP_X_FORWARDED_FOR='1.2.3.4, 100.1.1.1')
         self.assertContains(response, "Too many incorrect attempts")
+
+
+    @override_settings(TRUSTED_PROXY_IPS=('127.0.0.1', '100.65.146.47'))
+    def test_a_configured_proxy_address_is_trusted_like_localhost(self):
+        self._fail(settings.EMPLOYEE_LOGIN_MAX_FAILURES, REMOTE_ADDR='100.65.146.47', HTTP_X_FORWARDED_FOR='100.1.1.1')
+        self.client.post(self.url, {'pin': settings.EMPLOYEE_PIN}, REMOTE_ADDR='100.65.146.47',
+                         HTTP_X_FORWARDED_FOR='100.1.1.2')
+        self.assertTrue(self.client.session.get('employee_auth'))
 
 
 class EmployeePinSettingTests(SimpleTestCase):
