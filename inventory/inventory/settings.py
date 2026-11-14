@@ -136,6 +136,15 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+# A read-only copy of the app for when the plant PC is down (runs on the homelab laptop from the
+# latest backup): sessions live in a signed cookie because the database may not be written to.
+STANDBY_READ_ONLY = os.environ.get('STANDBY_READ_ONLY', 'False') == 'True'
+if STANDBY_READ_ONLY:
+    SESSION_ENGINE = 'django.contrib.sessions.backends.signed_cookies'
+    INSTALLED_APPS.remove('materials')
+    INSTALLED_APPS.append('materials')   # last, so its ready() runs after auth connects update_last_login and can disconnect it
+    MIDDLEWARE.append('materials.middleware.StandbyReadOnlyMiddleware')
+
 ROOT_URLCONF = 'inventory.urls'
 
 TEMPLATES = [
@@ -163,7 +172,7 @@ WSGI_APPLICATION = 'inventory.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': os.environ.get('DJANGO_DB_PATH', BASE_DIR / 'db.sqlite3'),
         # WAL mode itself is enabled once, per-connection, in
         # materials/apps.py::_set_sqlite_pragmas (it's a property of the
         # database file, not something this OPTIONS dict can set) — this
