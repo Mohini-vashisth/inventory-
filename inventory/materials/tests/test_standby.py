@@ -29,6 +29,20 @@ class StandbyReadOnlyTests(TestCase):
         for path in ('/orders/1/confirm/', '/quote/00000000-0000-0000-0000-000000000000/', '/webhooks/whatsapp/'):
             self.assertEqual(self.client.post(path).status_code, 403, path)
 
+    def test_entry_pages_do_not_open(self):
+        for path in ('/gate-entry/', '/gate-entry/new/', '/non-coil-entry/', '/gate-entry/lot/1/coil/', '/queries/1/edit/',
+                     '/quotations/new/', '/orders/1/edit/', '/select-order/', '/scan-job/', '/admin/materials/order/add/'):
+            self.assertEqual(self.client.get(path).status_code, 403, path)
+        self.assertEqual(self.client.get('/orders/1/?edit=1').status_code, 403)
+
+    def test_data_pages_get_the_script_that_disables_change_buttons(self):
+        response = self.client.get('/welcome/')
+        self.assertContains(response, "button,input[type=submit]")
+        self.assertContains(response, "gate-entry/lot/")
+        body = response.content.split(b'</head>')[1]
+        self.assertTrue(body.lstrip().startswith(b'<body'))
+        self.assertIn(b'Read-only copy as of', body.split(b'<script>')[0])   # the banner is inside the body, not the stylesheet
+
     def test_signing_in_is_still_allowed(self):
         get_user_model().objects.create_user('boss', password='pw12345!', is_staff=True)
         response = self.client.post('/admin-login/', {'username': 'boss', 'password': 'pw12345!'})
