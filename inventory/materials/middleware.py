@@ -27,6 +27,9 @@ _BODY = re.compile(rb'<body[^>]*>', re.I)
 # Greys out links to entry pages and disables every button that would submit a change.
 _SCRIPT = '''<script>(function(){
 var entry=new RegExp(%s),ok=%s;
+var bar=document.getElementById('standby-banner');
+function pad(){if(bar)document.documentElement.style.paddingTop=bar.offsetHeight+'px';}
+pad();window.addEventListener('resize',pad);
 function off(el,why){el.style.opacity='.45';el.style.cursor='not-allowed';el.title=why;}
 document.querySelectorAll('form').forEach(function(f){
   if((f.method||'get').toLowerCase()!=='post'||ok.indexOf(new URL(f.action,location.href).pathname)>-1)return;
@@ -70,7 +73,8 @@ class StandbyReadOnlyMiddleware:
             except OSError:
                 as_of = 'an earlier backup'
             banner = (
-                '<div style="background:#b45309;color:#fff;padding:8px 12px;text-align:center;font:14px sans-serif">'
+                '<div id="standby-banner" style="position:fixed;top:0;left:0;right:0;z-index:2147483647;background:#b45309;color:#fff;'
+                'padding:8px 12px;text-align:center;font:14px/1.3 sans-serif">'
                 f'Read-only copy as of {as_of}. The main server is down; nothing you enter is saved.</div>'
             ).encode()
             script = (_SCRIPT % (json.dumps('|'.join(ENTRY_PAGES)), json.dumps(list(ALLOWED_POSTS)))).encode()
