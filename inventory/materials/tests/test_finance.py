@@ -498,6 +498,75 @@ class BillDetailsPageTests(FinanceTestCase):
         self.assertIn(reverse('login'), response['Location'])
 
 
+class NonCoilBillRatesAndChargesTests(FinanceTestCase):
+    """A non-coil bill's products can carry a rate per unit (amount = quantity x rate), and the bill can list other
+    amounts (freight...), like a coil bill. Both are optional and nothing here touches stock."""
+
+    def setUp(self):
+        finance_login(self.client)
+        self.entry = NonCoilEntry.objects.create(category='DIES', company='ABC TOOLS', bill=bill_file())
+        self.url = reverse('finance_bill_details', args=[self.entry.pk])
+
+    def _post(self, lines, charges=()):
+        data = {'line-TOTAL_FORMS': str(len(lines)), 'charge-TOTAL_FORMS': str(len(charges))}
+        for index, (description, quantity, unit, rate) in enumerate(lines):
+            data.update({f'line-{index}-description': description, f'line-{index}-quantity': quantity,
+                         f'line-{index}-unit': unit, f'line-{index}-rate': rate})
+        for index, (description, amount) in enumerate(charges):
+            data.update({f'charge-{index}-description': description, f'charge-{index}-amount': amount})
+        return self.client.post(self.url, data)
+
+    def test_rates_amounts_and_charges_are_saved_and_totalled(self):
+        from decimal import Decimal
+        response = self._post([('Die 12 mm', '4', 'NOS', '1250.50'), ('Grease', '2.5', 'KG', '')],
+                              [('Freight', '300'), ('', '')])
+        self.assertRedirects(response, reverse('finance'))
+        die, grease = self.entry.lines.all()
+        self.assertEqual(die.rate, Decimal('1250.50'))
+        self.assertEqual(die.amount(), Decimal('5002.00'))
+        self.assertIsNone(grease.rate)
+        self.assertIsNone(grease.amount())
+        charge = self.entry.charges.get()
+        self.assertEqual((charge.description, charge.amount, charge.position), ('Freight', Decimal('300.00'), 1))
+        self.assertEqual(self.entry.bill_total(), Decimal('5302.00'))
+
+    def test_the_amount_rounds_to_the_paisa(self):
+        from decimal import Decimal
+        self._post([('Shim', '0.333', 'KG', '10.05')])
+        self.assertEqual(self.entry.lines.get().amount(), Decimal('3.35'))   # 3.34665
+
+    def test_a_bill_with_no_prices_has_no_total(self):
+        self._post([('Die', '1', 'NOS', '')])
+        self.assertIsNone(self.entry.bill_total())
+
+    def test_a_bad_rate_or_half_filled_charge_saves_nothing(self):
+        self._post([('Die', '1', 'NOS', '10')], [('Freight', '50')])
+        for lines, charges in ([('Die', '2', 'NOS', '-5')], []), ([('Die', '2', 'NOS', '1.234')], []), \
+                              ([('Die', '2', 'NOS', '10')], [('Freight', '')]):
+            response = self._post(lines, charges)
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, 'Please complete or remove the rows marked below.')
+        self.assertEqual(str(self.entry.lines.get().quantity), '1.000')   # the earlier bill is untouched
+        self.assertEqual(self.entry.charges.get().description, 'Freight')
+
+    def test_saving_again_replaces_the_charges(self):
+        self._post([('Die', '1', 'NOS', '10')], [('Freight', '50')])
+        self._post([('Die', '1', 'NOS', '10')], [('Packing', '20')])
+        self.assertEqual(list(self.entry.charges.values_list('description', flat=True)), ['Packing'])
+
+    def test_the_page_shows_saved_rates_and_charges_to_edit(self):
+        self._post([('Die 12 mm', '4', 'NOS', '1250.50')], [('Freight', '300')])
+        page = self.client.get(self.url)
+        self.assertContains(page, 'value="1250.5"')
+        self.assertContains(page, 'value="Freight"')
+        self.assertContains(page, 'value="300.00"')
+        self.assertContains(page, 'Bill total')
+
+    def test_the_search_box_finds_a_bill_by_its_charges(self):
+        self._post([('Die', '1', 'NOS', '')], [('Courier', '80')])
+        self.assertContains(self.client.get(reverse('finance'), {'q': 'courier'}), 'ABC TOOLS')
+        self.assertNotContains(self.client.get(reverse('finance'), {'q': 'zzz'}), 'ABC TOOLS')
+
 class CoilBillDetailsTests(FinanceTestCase):
     def setUp(self):
         from decimal import Decimal

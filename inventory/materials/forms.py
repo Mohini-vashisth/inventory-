@@ -79,11 +79,11 @@ class BillUploadForm(forms.Form):
 
 
 class BillLineForm(forms.ModelForm):
-    """One product row on a non-coil bill: description, quantity, unit. Used one row at a time by the finance
+    """One product row on a non-coil bill: description, quantity, unit and (optional) rate per unit. Used one row at a time by the finance
     details page (rows are added and removed in the browser, so the page parses them itself)."""
     class Meta:
         model = NonCoilBillLine
-        fields = ['description', 'quantity', 'unit']
+        fields = ['description', 'quantity', 'unit', 'rate']
 
     def clean_description(self):
         return self.cleaned_data['description'].strip()
@@ -93,7 +93,8 @@ class BillLineForm(forms.ModelForm):
 
 
 class ChargeForm(forms.ModelForm):
-    """One 'other amount' row on a coil bill (freight, loading...)."""
+    """One 'other amount' row on a bill (freight, loading...). Built on the coil bill's model, and used for non-coil
+    bills too: only its description and amount are read, then stored on whichever entry the bill belongs to."""
     class Meta:
         model = GateEntryCharge
         fields = ['description', 'amount']
