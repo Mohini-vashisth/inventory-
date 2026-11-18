@@ -7,7 +7,7 @@
   .ds .page { max-width: 900px; }
   .entry-card dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1rem; font-size: 0.92rem; }
   .entry-card dt { color: var(--ds-muted); }
-  .rows-head, .line-row { display: grid; grid-template-columns: 3fr 1fr 1fr 2.4rem; gap: 0.6rem; align-items: start; }
+  .rows-head, .line-row { display: grid; grid-template-columns: 3fr 1fr 1fr 1.2fr 1.2fr 2.4rem; gap: 0.6rem; align-items: start; }
   .rows-head { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ds-muted); margin: 1.1rem 0 0.4rem; }
   .line-row { margin-bottom: 0.6rem; }
   .line-row.has-error input { border-color: #b91c1c; }
@@ -16,7 +16,15 @@
   .remove-row:hover { color: #b91c1c; border-color: #b91c1c; }
   .add-row { background: var(--ds-accent-soft); color: var(--ds-accent-dark); border: 1px dashed var(--ds-accent); border-radius: 8px; padding: 0.55rem 1rem; font-weight: 600; cursor: pointer; margin: 0.3rem 0 1.2rem; }
   .unit-input { text-transform: uppercase; }
-  @media (max-width: 640px) { .rows-head { display: none; } .line-row { grid-template-columns: 1fr 1fr 2.4rem; } .line-row .desc { grid-column: 1 / -1; } }
+  .line-amount { text-align: right; padding-top: 0.65rem; white-space: nowrap; }
+  .charge-head, .charge-row { display: grid; grid-template-columns: 3fr 1.4fr 2.4rem; gap: 0.6rem; align-items: start; }
+  .charge-head { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ds-muted); margin: 0.6rem 0 0.4rem; }
+  .charge-row { margin-bottom: 0.6rem; }
+  .charge-row.has-error input { border-color: #b91c1c; }
+  .charge-row .row-error { grid-column: 1 / -1; color: #b91c1c; font-size: 0.8rem; margin-top: -0.2rem; }
+  .total { display: flex; justify-content: space-between; font-weight: 700; font-size: 1.05rem; border-top: 2px solid var(--ds-border); padding-top: 0.8rem; margin: 0.4rem 0 1.2rem; }
+  h2.sub { font-size: 1rem; margin-bottom: 0.4rem; }
+  @media (max-width: 640px) { .rows-head { display: none; } .line-row { grid-template-columns: 1fr 1fr 2.4rem; } .line-row .desc { grid-column: 1 / -1; } .line-amount { text-align: left; padding-top: 0; } }
 {% endblock %}
 
 {% block content %}
@@ -25,7 +33,7 @@
     <a href="{% url 'finance' %}" class="back-link">← Back to finance</a>
   </div>
   <h1>Bill details</h1>
-  <p class="subtitle">Enter each product on the supplier's bill.</p>
+  <p class="subtitle">Enter each product on the supplier's bill with its rate, then any other amounts. The rate can be left blank if the bill gives none.</p>
 
   {% for msg in messages %}
   <div class="alert {% if msg.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ msg }}</div>
@@ -40,19 +48,22 @@
     </dl>
   </div>
 
-  <div class="card" style="margin-top:1rem;">
-    {% if error %}<div class="error-msg">{{ error }}</div>{% endif %}
-    <form method="POST" id="lines-form">
-      {% csrf_token %}
+  <form method="POST" id="lines-form">
+    {% csrf_token %}
+    {% if error %}<div class="error-msg" style="margin-top:1rem;">{{ error }}</div>{% endif %}
+    <div class="card" style="margin-top:1rem;">
+      <h2 class="sub">Products</h2>
       <input type="hidden" name="line-TOTAL_FORMS" id="line-total" value="{{ rows|length }}">
 
-      <div class="rows-head"><span>Product</span><span>Quantity</span><span>Unit</span><span></span></div>
+      <div class="rows-head"><span>Product</span><span>Quantity</span><span>Unit</span><span>Rate (₹ / unit)</span><span>Amount (₹)</span><span></span></div>
       <div id="lines">
         {% for row in rows %}
         <div class="line-row{% if row.errors %} has-error{% endif %}">
           <input type="text" class="desc" data-field="description" name="line-{{ forloop.counter0 }}-description" value="{{ row.description }}" placeholder="e.g. Die 12 mm" maxlength="200">
           <input type="number" data-field="quantity" name="line-{{ forloop.counter0 }}-quantity" value="{{ row.quantity }}" step="0.001" min="0.001" placeholder="0" inputmode="decimal">
           <input type="text" class="unit-input" data-field="unit" name="line-{{ forloop.counter0 }}-unit" value="{{ row.unit }}" list="unit-options" placeholder="NOS" maxlength="20" autocapitalize="characters">
+          <input type="number" class="rate" data-field="rate" name="line-{{ forloop.counter0 }}-rate" value="{{ row.rate }}" step="0.01" min="0.01" placeholder="0.00" inputmode="decimal">
+          <span class="line-amount">—</span>
           <button type="button" class="remove-row" title="Remove this product" aria-label="Remove this product">✕</button>
           {% for message in row.errors %}<div class="row-error">{{ message }}</div>{% endfor %}
         </div>
@@ -61,10 +72,31 @@
 
       <button type="button" class="add-row" id="add-row">+ Add product</button>
       <datalist id="unit-options"><option value="NOS"><option value="KG"><option value="PCS"><option value="SET"><option value="M"><option value="BOX"></datalist>
+      <p class="muted" style="font-size:0.8rem;">A product's amount is its quantity times its rate.</p>
+    </div>
 
-      <button type="submit" class="btn-submit">Save products</button>
-    </form>
-  </div>
+    <div class="card" style="margin-top:1rem;">
+      <h2 class="sub">Other amounts on the bill</h2>
+      <p class="muted" style="font-size:0.85rem;">Freight, packing, insurance, anything else charged besides the products.</p>
+      <input type="hidden" name="charge-TOTAL_FORMS" id="charge-total" value="{{ charge_rows|length }}">
+      <div class="charge-head"><span>What for</span><span>Amount (₹)</span><span></span></div>
+      <div id="charges">
+        {% for row in charge_rows %}
+        <div class="charge-row{% if row.errors %} has-error{% endif %}">
+          <input type="text" data-field="description" name="charge-{{ forloop.counter0 }}-description" value="{{ row.description }}" list="charge-options" placeholder="e.g. Freight" maxlength="200">
+          <input type="number" class="charge-amount" data-field="amount" name="charge-{{ forloop.counter0 }}-amount" value="{{ row.amount }}" step="0.01" min="0.01" placeholder="0.00" inputmode="decimal">
+          <button type="button" class="remove-row" title="Remove" aria-label="Remove">✕</button>
+          {% for message in row.errors %}<div class="row-error">{{ message }}</div>{% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+      <button type="button" class="add-row" id="add-charge">+ Add amount</button>
+      <datalist id="charge-options"><option value="Freight"><option value="Packing"><option value="Loading"><option value="Insurance"><option value="Other"></datalist>
+
+      <div class="total"><span>Bill total</span><span id="grand-total">—</span></div>
+      <button type="submit" class="btn-submit">Save bill details</button>
+    </div>
+  </form>
 </div>
 
 <template id="line-template">
@@ -72,38 +104,71 @@
     <input type="text" class="desc" data-field="description" placeholder="e.g. Die 12 mm" maxlength="200">
     <input type="number" data-field="quantity" step="0.001" min="0.001" placeholder="0" inputmode="decimal">
     <input type="text" class="unit-input" data-field="unit" list="unit-options" placeholder="NOS" maxlength="20" autocapitalize="characters">
+    <input type="number" class="rate" data-field="rate" step="0.01" min="0.01" placeholder="0.00" inputmode="decimal">
+    <span class="line-amount">—</span>
     <button type="button" class="remove-row" title="Remove this product" aria-label="Remove this product">✕</button>
   </div>
 </template>
 
+<template id="charge-template">
+  <div class="charge-row">
+    <input type="text" data-field="description" list="charge-options" placeholder="e.g. Freight" maxlength="200">
+    <input type="number" class="charge-amount" data-field="amount" step="0.01" min="0.01" placeholder="0.00" inputmode="decimal">
+    <button type="button" class="remove-row" title="Remove" aria-label="Remove">✕</button>
+  </div>
+</template>
+
 <script>
-  // Rows are added and removed in the browser; every change renumbers the field names (line-0-..., line-1-...) so
-  // the server receives them in order, with the row count in line-TOTAL_FORMS.
+  // Rows are added and removed in the browser; every change renumbers the field names (line-0-..., charge-0-...) so
+  // the server receives them in order, with each list's row count in its TOTAL_FORMS field. Amounts and the bill
+  // total are worked out here only as a guide while typing; the server works them out again from what is saved.
   (function () {
-    var list = document.getElementById('lines');
-    var total = document.getElementById('line-total');
-    function renumber() {
-      Array.prototype.forEach.call(list.children, function (row, index) {
-        row.querySelectorAll('[data-field]').forEach(function (input) {
-          input.name = 'line-' + index + '-' + input.dataset.field;
-        });
+    function money(n) { return n.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+    function recalc() {
+      var sum = 0, any = false;
+      document.querySelectorAll('#lines .line-row').forEach(function (row) {
+        var qty = parseFloat(row.querySelector('[data-field="quantity"]').value);
+        var rate = parseFloat(row.querySelector('[data-field="rate"]').value);
+        var cell = row.querySelector('.line-amount');
+        if (qty > 0 && rate > 0) { var a = Math.round(qty * rate * 100) / 100; cell.textContent = money(a); sum += a; any = true; }
+        else cell.textContent = '—';
       });
-      total.value = list.children.length;
+      document.querySelectorAll('#charges .charge-amount').forEach(function (input) {
+        var v = parseFloat(input.value); if (v > 0) { sum += v; any = true; }
+      });
+      document.getElementById('grand-total').textContent = any ? '₹ ' + money(sum) : '—';
     }
-    function addRow() {
-      var row = document.getElementById('line-template').content.firstElementChild.cloneNode(true);
-      list.appendChild(row);
-      renumber();
-      row.querySelector('input').focus();
+    function setup(listId, prefix, templateId, addId, rowClass) {
+      var list = document.getElementById(listId), total = document.getElementById(prefix + '-total');
+      function renumber() {
+        Array.prototype.forEach.call(list.children, function (row, index) {
+          row.querySelectorAll('[data-field]').forEach(function (input) {
+            input.name = prefix + '-' + index + '-' + input.dataset.field;
+          });
+        });
+        total.value = list.children.length;
+        recalc();
+      }
+      function addRow() {
+        var row = document.getElementById(templateId).content.firstElementChild.cloneNode(true);
+        list.appendChild(row);
+        renumber();
+        return row;
+      }
+      document.getElementById(addId).addEventListener('click', function () { addRow().querySelector('input').focus(); });
+      list.addEventListener('click', function (event) {
+        var button = event.target.closest('.remove-row');
+        if (!button) return;
+        button.closest('.' + rowClass).remove();
+        renumber();
+      });
+      return addRow;
     }
-    document.getElementById('add-row').addEventListener('click', addRow);
-    list.addEventListener('click', function (event) {
-      var button = event.target.closest('.remove-row');
-      if (!button) return;
-      button.closest('.line-row').remove();
-      renumber();
-    });
-    if (!list.children.length) addRow();   // start with one empty row to type into
+    var addLine = setup('lines', 'line', 'line-template', 'add-row', 'line-row');
+    setup('charges', 'charge', 'charge-template', 'add-charge', 'charge-row');
+    if (!document.getElementById('lines').children.length) addLine();   // start with one empty product row to type into
+    document.getElementById('lines-form').addEventListener('input', recalc);
+    recalc();
   })();
 </script>
 {% endblock %}

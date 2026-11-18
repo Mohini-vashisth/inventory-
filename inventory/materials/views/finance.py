@@ -14,7 +14,7 @@ from ..decorators import finance_required
 from decimal import Decimal, InvalidOperation
 
 from ..forms import BillLineForm, BillUploadForm, ChargeForm
-from ..models import GateEntry, GateEntryCharge, NonCoilBillLine, NonCoilEntry
+from ..models import GateEntry, GateEntryCharge, NonCoilBillLine, NonCoilEntry, NonCoilEntryCharge
 
 # Entries that already have a bill stay listed (newest first, after the ones still waiting), but only the
 # latest few so the page stays short; the admin shows everything.
@@ -72,7 +72,7 @@ def finance_dashboard(request):
         rate &= Q(lots__rate__lte=params['rate_max'])
     coil_qs = _filtered(GateEntry, ['vendor', 'invoice_no', 'vehicle_no', 'lots__company', 'lots__grade',
                                     'charges__description'], 'created_at', 'lots__company', params, rate)
-    other_qs = _filtered(NonCoilEntry, ['category', 'company', 'lines__description'], 'arrived_at', 'company', params)
+    other_qs = _filtered(NonCoilEntry, ['category', 'company', 'lines__description', 'charges__description'], 'arrived_at', 'company', params)
     if rate:
         other_qs = other_qs.none()
     other_qs = other_qs.annotate(product_count=Count('lines'))
@@ -144,13 +144,13 @@ MAX_BILL_LINES = 200
 
 def _row_values(line_form):
     return {'description': line_form['description'].value() or '', 'quantity': line_form['quantity'].value() or '',
-            'unit': line_form['unit'].value() or '', 'errors': [e for errs in line_form.errors.values() for e in errs]}
+            'unit': line_form['unit'].value() or '', 'rate': line_form['rate'].value() or '', 'errors': [e for errs in line_form.errors.values() for e in errs]}
 
 
 def _parse_bill_lines(post):
     """The product rows posted from the details page (rows are added and removed in the browser, so they arrive as
-    line-<i>-description/quantity/unit with a line-TOTAL_FORMS count). A row left entirely blank is ignored; a row
-    with something filled in must be complete. Returns (valid forms, rows to show again, whether anything is wrong)."""
+    line-<i>-description/quantity/unit/rate with a line-TOTAL_FORMS count). A row left entirely blank is ignored; a
+    row with something filled in must have its description, quantity and unit (the rate may stay blank). Returns (valid forms, rows to show again, whether anything is wrong)."""
     try:
         total = min(max(int(post.get('line-TOTAL_FORMS', 0)), 0), MAX_BILL_LINES)
     except ValueError:
@@ -168,35 +168,49 @@ def _parse_bill_lines(post):
     return valid, shown, wrong
 
 
+def _plain(value):
+    return format(value.normalize(), 'f') if value is not None else ''
+
+
 @finance_required
 def finance_bill_details(request, pk):
-    """The products on a non-coil entry's bill, entered by hand from the bill: description, quantity, unit. Reached
-    right after the bill is uploaded, and again from the list's Details button. Saving replaces the whole list."""
+    """The products on a non-coil entry's bill, entered by hand from the bill: description, quantity, unit and rate
+    per unit, then any other amounts on the bill (freight...). Reached right after the bill is uploaded, and again
+    from the list's Details button. Saving replaces both lists. Nothing here touches stock."""
     entry = get_object_or_404(NonCoilEntry, pk=pk)
     if not entry.has_bill():
         messages.error(request, "Upload the bill first; its products are entered from it.")
         return redirect('finance')
     if request.method == 'POST':
         valid, shown, wrong = _parse_bill_lines(request.POST)
-        if not wrong:
+        valid_charges, shown_charges, wrong_charges = _parse_charges(request.POST)
+        if not wrong and not wrong_charges:
             with transaction.atomic():
                 entry.lines.all().delete()
                 NonCoilBillLine.objects.bulk_create([
                     NonCoilBillLine(entry=entry, position=position, **line_form.cleaned_data)
                     for position, line_form in enumerate(valid, start=1)])
+                entry.charges.all().delete()
+                NonCoilEntryCharge.objects.bulk_create([
+                    NonCoilEntryCharge(entry=entry, position=position, **form.cleaned_data)
+                    for position, form in enumerate(valid_charges, start=1)])
             messages.success(request, f"Saved {len(valid)} product{'' if len(valid) == 1 else 's'} for {entry}.")
             return redirect('finance')
-        rows, error = shown, "Please complete or remove the rows marked below."
+        rows, charge_rows, error = shown, shown_charges, "Please complete or remove the rows marked below."
     else:
-        rows = [{'description': line.description, 'quantity': format(line.quantity.normalize(), 'f'),
-                 'unit': line.unit, 'errors': []} for line in entry.lines.all()]
+        rows = [{'description': line.description, 'quantity': _plain(line.quantity), 'unit': line.unit,
+                 'rate': _plain(line.rate), 'errors': []} for line in entry.lines.all()]
+        charge_rows = [{'description': c.description, 'amount': format(c.amount, 'f'), 'errors': []}
+                       for c in entry.charges.all()]
         error = None
-    return render(request, 'materials/finance_bill_details.html', {'entry': entry, 'rows': rows, 'error': error})
+    return render(request, 'materials/finance_bill_details.html', {
+        'entry': entry, 'rows': rows, 'charge_rows': charge_rows, 'error': error,
+    })
 
 
 def _parse_charges(post):
-    """The 'other amounts' rows (charge-<i>-description/amount with charge-TOTAL_FORMS), like the product rows on a
-    non-coil bill: blank rows are ignored, a half-filled one is an error. Returns (valid forms, rows to show, wrong)."""
+    """The 'other amounts' rows on a coil or non-coil bill (charge-<i>-description/amount with charge-TOTAL_FORMS),
+    like the product rows on a non-coil bill: blank rows are ignored, a half-filled one is an error. Returns (valid forms, rows to show, wrong)."""
     try:
         total = min(max(int(post.get('charge-TOTAL_FORMS', 0)), 0), MAX_BILL_LINES)
     except ValueError:

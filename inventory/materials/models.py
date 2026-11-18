@@ -222,25 +222,57 @@ class NonCoilEntry(models.Model):
     def has_bill(self):
         return bool(self.bill)
 
+    def bill_total(self):
+        """What the bill adds up to: every priced product's amount plus the other amounts; None when nothing on it
+        has a price yet. Products without a rate are left out."""
+        amounts = [line.amount() for line in self.lines.all() if line.rate is not None]
+        amounts += [charge.amount for charge in self.charges.all()]
+        return sum(amounts, Decimal('0')) if amounts else None
+
     def __str__(self):
         return f"{self.category} from {self.company}"
 
 
 class NonCoilBillLine(models.Model):
     """One product on the supplier's bill for a non-coil entry, entered by hand by the finance team from the bill
-    (bill-wise tracking: how many dies arrived, how often, when machine parts were needed). More fields will
-    follow once the client confirms what they want recorded; coil bills stay file-only."""
+    (bill-wise tracking: how many dies arrived, how often, when machine parts were needed, and what they cost).
+    The rate is optional, so a bill can be recorded before its prices are known. Nothing here changes coil stock:
+    non-coil items are not tracked as stock."""
     entry = models.ForeignKey(NonCoilEntry, on_delete=models.CASCADE, related_name='lines')
     position = models.PositiveIntegerField(default=0, help_text="The order the products appear on the bill.")
     description = models.CharField(max_length=200)
     quantity = models.DecimalField(max_digits=12, decimal_places=3, validators=[MinValueValidator(Decimal('0.001'))])
     unit = models.CharField(max_length=20, help_text="e.g. NOS, KG, PCS, SET, M, BOX.")
+    # What the bill charges per unit (₹), as printed on it; blank when the bill gives none.
+    rate = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
+                               validators=[MinValueValidator(Decimal('0.01'))], help_text="₹ per unit, from the bill.")
+
+    class Meta:
+        ordering = ['position', 'pk']
+
+    def amount(self):
+        """The product's cost on the bill: quantity times rate, to the paisa; None while the rate is blank."""
+        if self.rate is None:
+            return None
+        return (Decimal(str(self.quantity)) * Decimal(str(self.rate))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    def __str__(self):
+        return f"{self.description} — {self.quantity.normalize():f} {self.unit}"
+
+
+class NonCoilEntryCharge(models.Model):
+    """Any other amount on a non-coil entry's bill besides its products (freight, packing...), like GateEntryCharge
+    for coil bills."""
+    entry = models.ForeignKey(NonCoilEntry, on_delete=models.CASCADE, related_name='charges')
+    position = models.PositiveIntegerField(default=0)
+    description = models.CharField(max_length=200, help_text="e.g. Freight, Packing, Insurance.")
+    amount = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
 
     class Meta:
         ordering = ['position', 'pk']
 
     def __str__(self):
-        return f"{self.description} — {self.quantity.normalize():f} {self.unit}"
+        return f"{self.description} — {self.amount}"
 
 
 class Material(models.Model):
