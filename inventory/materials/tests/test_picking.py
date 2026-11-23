@@ -115,11 +115,15 @@ class SelectCoilForOrderSpecFilterTests(TestCase):
         self.assertEqual(coil_ids, [matching.pk])
         self.assertNotIn(non_matching.pk, coil_ids)
 
-    def test_browse_list_search_box_present_with_matching_data_attributes(self):
+    def test_browse_list_has_grade_and_size_pickers_with_matching_data_attributes(self):
         Material.objects.create(quantity=500, grade='EN8D', size='1.200', vendor='ABC Traders')
         response = self.client.get(reverse('select_coil_for_order', kwargs={'order_pk': self.order.pk}))
-        self.assertContains(response, 'id="coil-search"')
-        self.assertContains(response, 'abc traders')
+        self.assertContains(response, 'id="grade-filter"')
+        self.assertContains(response, 'id="size-filter"')
+        self.assertContains(response, 'data-grade="EN8D" data-size="1.200"')
+        self.assertContains(response, 'id="sort-pick"')
+        self.assertContains(response, 'date not recorded')
+        self.assertContains(response, 'data-date=')
 
 
 class SelectCoilForOrderBestFitSortTests(TestCase):

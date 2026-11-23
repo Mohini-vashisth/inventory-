@@ -295,6 +295,19 @@ class Material(models.Model):
         values = [getattr(self, name) for name in self.DIAMETER_FIELDS]
         return [f"{value:.3f}" for value in values if value is not None]
 
+    def age_text(self):
+        """How long ago the coil was received, from its receipt date ("" when no date was recorded)."""
+        if not self.date:
+            return ""
+        days = (timezone.localdate() - self.date).days
+        if days <= 0:
+            return "received today"
+        if days < 60:
+            return f"{days} day{'s' if days != 1 else ''} old"
+        if days < 730:
+            return f"{days // 30} months old"
+        return f"{days // 365} years old"
+
     def formatted_coil(self):
         return f"COIL{self.coil_no:04d}"
 

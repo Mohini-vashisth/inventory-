@@ -102,9 +102,11 @@
       background: rgba(255,255,255,0.2); color: white; font-weight: 700; cursor: pointer;
     }
     /* Browse-list filter */
-    #coil-search {
+    .coil-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; margin-bottom: 1rem; }
+    .coil-filters .sort-pick { grid-column: 1 / -1; }
+    .coil-filters select {
       width: 100%; padding: 0.65rem 0.9rem; border: none; border-radius: 8px;
-      font-size: 16px; margin-bottom: 1rem; box-sizing: border-box;
+      font-size: 16px; box-sizing: border-box; background: #ffffff;
     }
     .no-search-results {
       display: none; color: #6b7280; font-size: 0.88rem;
@@ -206,19 +208,29 @@
   </h2>
 
   {% if coils %}
-  <input type="text" id="coil-search" placeholder="Search by coil no., grade, size, or vendor..." autocomplete="off">
+  <div class="coil-filters">
+    <select id="grade-filter" aria-label="Grade"><option value="">All grades</option></select>
+    <select id="size-filter" aria-label="Size"><option value="">All sizes</option></select>
+    <select id="sort-pick" class="sort-pick" aria-label="Sort">
+      <option value="fit">Sort: closest to the weight needed</option>
+      <option value="oldest">Sort: oldest coil first</option>
+      <option value="newest">Sort: newest coil first</option>
+    </select>
+  </div>
   {% endif %}
 
   <div id="coil-list">
   {% for item in coils %}
   <a href="{% url 'pick_coil_for_order' order.pk item.coil.coil_no %}" class="coil-card"
-     data-search="{{ item.coil.formatted_coil|lower }} {{ item.coil.grade|lower }} {{ item.coil.size }} {{ item.coil.vendor|lower }}">
+     data-grade="{{ item.coil.grade }}" data-size="{{ item.coil.size }}"
+     data-rank="{{ forloop.counter }}" data-no="{{ item.coil.coil_no }}" data-date="{{ item.coil.date|date:'Y-m-d' }}">
     <div class="coil-left">
       <div class="coil-no">{{ item.coil.formatted_coil }}</div>
       <div class="coil-meta">
         {% if item.coil.grade %}<span>Grade: <strong>{{ item.coil.grade }}</strong></span>{% endif %}
         {% if item.coil.size %}<span>Size: <strong>{{ item.coil.size }} mm</strong></span>{% endif %}
         {% if item.coil.vendor %}<span>Vendor: {{ item.coil.vendor }}</span>{% endif %}
+        <span>Age: <strong>{{ item.coil.age_text|default:"date not recorded" }}</strong></span>
       </div>
       <div class="weight-bar-wrap">
         <div class="weight-bar-bg">
@@ -243,25 +255,59 @@
   </div>
   {% endfor %}
   </div>
-  <div class="no-search-results" id="no-search-results">No coils match your search.</div>
+  <div class="no-search-results" id="no-search-results">No coils match this grade and size.</div>
 
 </div>
 
 <script>
-  var coilSearch = document.getElementById('coil-search');
-  if (coilSearch) {
-    coilSearch.addEventListener('input', function () {
-      var query = coilSearch.value.trim().toLowerCase();
-      var cards = document.querySelectorAll('#coil-list .coil-card');
-      var visibleCount = 0;
-      cards.forEach(function (card) {
-        var matches = card.getAttribute('data-search').indexOf(query) !== -1;
-        card.hidden = !matches;
-        if (matches) visibleCount++;
+  // Grade and size pickers: filled from the coils on the page, and a coil shows only if it matches both.
+  (function () {
+    var gradeSel = document.getElementById('grade-filter');
+    var sizeSel = document.getElementById('size-filter');
+    if (!gradeSel || !sizeSel) return;
+    var cards = document.querySelectorAll('#coil-list .coil-card');
+    function fill(select, attr, numeric) {
+      var seen = {};
+      cards.forEach(function (c) { var v = c.getAttribute(attr); if (v) seen[v] = true; });
+      Object.keys(seen).sort(function (x, y) { return numeric ? x - y : x.localeCompare(y); })
+        .forEach(function (v) { select.add(new Option(numeric ? v + ' mm' : v, v)); });
+    }
+    function apply() {
+      var visible = 0;
+      cards.forEach(function (c) {
+        var ok = (!gradeSel.value || c.getAttribute('data-grade') === gradeSel.value) &&
+                 (!sizeSel.value || c.getAttribute('data-size') === sizeSel.value);
+        c.hidden = !ok;
+        if (ok) visible++;
       });
-      document.getElementById('no-search-results').style.display = visibleCount === 0 ? 'block' : 'none';
-    });
-  }
+      document.getElementById('no-search-results').style.display = visible === 0 ? 'block' : 'none';
+    }
+    // Sort by re-appending the cards. The server's order (closest to the weight still needed) is data-rank;
+    // age is the receipt date, coils with no date go last, and the coil number breaks ties.
+    var sortSel = document.getElementById('sort-pick');
+    function sortCards() {
+      var list = document.getElementById('coil-list');
+      var n = function (c, a) { return Number(c.getAttribute(a)); };
+      var dated = function (c) { return c.getAttribute('data-date') || ''; };
+      var by = {
+        fit: function (a, b) { return n(a, 'data-rank') - n(b, 'data-rank'); },
+        oldest: function (a, b) {
+          if (!dated(a) !== !dated(b)) return dated(a) ? -1 : 1;
+          return dated(a).localeCompare(dated(b)) || n(a, 'data-no') - n(b, 'data-no');
+        },
+        newest: function (a, b) {
+          if (!dated(a) !== !dated(b)) return dated(a) ? -1 : 1;
+          return dated(b).localeCompare(dated(a)) || n(b, 'data-no') - n(a, 'data-no');
+        }
+      }[sortSel.value];
+      Array.prototype.slice.call(cards).sort(by).forEach(function (c) { list.appendChild(c); });
+    }
+    sortSel.addEventListener('change', sortCards);
+    fill(gradeSel, 'data-grade', false);
+    fill(sizeSel, 'data-size', true);
+    gradeSel.addEventListener('change', apply);
+    sizeSel.addEventListener('change', apply);
+  })();
 </script>
 
 <!-- Camera QR scanning — shared with select_job_for_coil.html. jsQR is a

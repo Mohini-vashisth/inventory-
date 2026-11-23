@@ -306,3 +306,16 @@ class HeatNumberCapitalsTests(TestCase):
         coil = Material.objects.create(quantity=100, heat_no='X1')
         page = self.client.get(reverse('admin:materials_material_change', args=[coil.pk])).content.decode()
         self.assertIn('text-transform: uppercase', page)
+
+
+class CoilAgeTextTests(TestCase):
+    def test_age_text_by_receipt_date(self):
+        from datetime import timedelta
+        today = timezone.localdate()
+        coil = lambda d: Material(quantity=1, date=d)
+        self.assertEqual(coil(None).age_text(), "")
+        self.assertEqual(coil(today).age_text(), "received today")
+        self.assertEqual(coil(today - timedelta(days=1)).age_text(), "1 day old")
+        self.assertEqual(coil(today - timedelta(days=45)).age_text(), "45 days old")
+        self.assertEqual(coil(today - timedelta(days=300)).age_text(), "10 months old")
+        self.assertEqual(coil(today - timedelta(days=800)).age_text(), "2 years old")
