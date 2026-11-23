@@ -444,3 +444,77 @@ class PortalProductsTests(TestCase):
     def test_orders_themselves_no_longer_carry_order_again(self):
         page = self.client.get(self.home)
         self.assertContains(page, 'Order again', count=len(page.context['products']))
+
+
+class PortalNewQueryTests(TestCase):
+    """A company can ask about products straight from its portal, one product or several."""
+
+    def setUp(self):
+        self.acme = Customer.objects.create(name='ACME', email='a@acme.co', gst_number='27ABCDE1234F1Z5', gst_address='1 Road')
+        make_order(self.acme)
+        self.type = ProductType.objects.get(code='FBB')   # the seven types come with the migrations
+        self.url = reverse('portal_query_new', args=[self.acme.portal_token])
+
+    def row(self, i, **extra):
+        data = {f'item-{i}-product_type': self.type.pk, f'item-{i}-grade': 'en-8d', f'item-{i}-width': '50',
+                f'item-{i}-thickness': '6.5', f'item-{i}-quantity': '800', f'item-{i}-delivery_form': 'Coil'}
+        data.update({f'item-{i}-{k}': v for k, v in extra.items()})
+        return data
+
+    def post(self, rows, **extra):
+        data = {'item-TOTAL': str(len(rows))}
+        for row in rows:
+            data.update(row)
+        data.update(extra)
+        return self.client.post(self.url, data)
+
+    def test_the_home_page_has_a_new_query_button(self):
+        self.assertContains(self.client.get(reverse('portal_home', args=[self.acme.portal_token])), self.url)
+
+    def test_the_form_opens_with_one_product(self):
+        page = self.client.get(self.url)
+        self.assertContains(page, 'Product type')
+        self.assertContains(page, 'Add another product')
+        self.assertContains(page, 'name="item-TOTAL"')
+
+    def test_one_product_creates_a_new_query_for_staff(self):
+        response = self.post([self.row(0, end_use='Shafts')])
+        self.assertContains(response, 'Query received')
+        query = Query.objects.get(source='portal')
+        self.assertEqual((query.customer, query.company_name, query.status, query.gst_number), (self.acme, 'ACME', 'new', '27ABCDE1234F1Z5'))
+        item = query.items.get()
+        self.assertEqual((item.product_type, item.grade, item.width, item.thickness, item.quantity, item.delivery_form, item.end_use),
+                         (self.type, 'EN8D', Decimal('50'), Decimal('6.5'), Decimal('800'), 'Coil', 'Shafts'))
+
+    def test_several_products_become_several_items_and_a_blank_extra_row_is_dropped(self):
+        blank = {f'item-2-{name}': '' for name in ('product_type', 'grade', 'width', 'thickness', 'quantity', 'delivery_form')}
+        self.post([self.row(0), self.row(1, grade='en9'), blank])
+        self.assertEqual([item.grade for item in Query.objects.get(source='portal').items.order_by('position')], ['EN8D', 'EN9'])
+
+    def test_a_missing_field_saves_nothing_and_shows_the_error(self):
+        response = self.post([self.row(0), self.row(1, quantity='')])
+        self.assertContains(response, 'This field is required')
+        self.assertFalse(Query.objects.filter(source='portal').exists())
+
+    def test_the_first_product_is_required(self):
+        response = self.post([{f'item-0-{name}': '' for name in ('product_type', 'grade', 'width', 'thickness', 'quantity')}])
+        self.assertContains(response, 'This field is required')
+        self.assertFalse(Query.objects.filter(source='portal').exists())
+
+    def test_a_drawing_can_be_attached_but_only_of_an_allowed_type(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        self.post([self.row(0, drawing=SimpleUploadedFile('shaft.pdf', b'%PDF-1.4 x', content_type='application/pdf'))])
+        self.assertTrue(Query.objects.get(source='portal').items.get().drawing.name.endswith('.pdf'))
+        Query.objects.all().delete()
+        response = self.post([self.row(0, drawing=SimpleUploadedFile('virus.exe', b'x'))])
+        self.assertContains(response, 'not allowed')
+        self.assertFalse(Query.objects.filter(source='portal').exists())
+
+    def test_the_new_query_then_shows_under_your_queries_as_coming_soon(self):
+        self.post([self.row(0)])
+        page = self.client.get(reverse('portal_home', args=[self.acme.portal_token]))
+        self.assertContains(page, 'Quotation coming soon')
+
+    def test_a_link_whose_company_never_ordered_is_not_found(self):
+        stranger = Customer.objects.create(name='NEW CO')
+        self.assertEqual(self.client.get(reverse('portal_query_new', args=[stranger.portal_token])).status_code, 404)

@@ -68,6 +68,7 @@ urlpatterns = [
     path('portal/<uuid:token>/details/', portal.portal_details, name='portal_details'),
     path('portal/<uuid:token>/manifest.webmanifest', portal.portal_manifest, name='portal_manifest'),
     path('portal/<uuid:token>/reorder/<int:order_pk>/', portal.portal_reorder, name='portal_reorder'),
+    path('portal/<uuid:token>/query/new/', portal.portal_query_new, name='portal_query_new'),
     path('portal/<uuid:token>/order/<int:order_pk>/summary.pdf', portal.portal_order_summary, name='portal_order_summary'),
     path('portal/<uuid:token>/quotation/<int:quotation_pk>/quotation.pdf', portal.portal_quotation_pdf, name='portal_quotation_pdf'),
     path('companies/<int:pk>/', orders.company_detail, name='company_detail'),

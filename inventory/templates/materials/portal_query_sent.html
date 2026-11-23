@@ -1,0 +1,23 @@
+{% extends "materials/base.html" %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}Query received{% endblock %}
+
+{% block css %}
+{% include "materials/_portal_css.html" %}
+  .done { text-align: center; padding: 2rem 1.5rem; }
+  .icon { font-size: 3rem; margin-bottom: 0.8rem; }
+{% endblock %}
+
+{% block content %}
+{% include "materials/_portal_hero.html" %}
+<div class="p-main">
+  <div class="card done">
+    <div class="icon">✅</div>
+    <h1>Query received</h1>
+    <p>Thank you, {{ customer.name }}. We have your query and will prepare a quotation soon. You will find it under Your queries on your portal.</p>
+    <p style="margin-top:1.2rem;"><a class="link" href="{% url 'portal_home' token %}">Back to my orders</a></p>
+  </div>
+</div>
+{% include "materials/_portal_footer.html" %}
+{% endblock %}

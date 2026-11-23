@@ -746,6 +746,7 @@ class Query(models.Model):
         ('whatsapp', 'WhatsApp'),
         ('call', 'Phone Call'),
         ('reorder', 'Reorder'),   # a company's Order again click on its portal
+        ('portal', 'Customer portal'),   # a company's New query on its portal
     ]
     MANUAL_SOURCES = ('indiamart', 'google', 'referral', 'other')
     STATUS_CHOICES = [

@@ -46,7 +46,7 @@
     {% empty %}<p class="muted">No current orders.</p>{% endfor %}
   </div></div>
 
-  <div class="card" style="margin-top:1rem;"><div class="card-header">Your queries</div><div class="card-body">
+  <div class="card" style="margin-top:1rem;"><div class="card-header" style="display:flex; justify-content:space-between; align-items:center; gap:0.6rem;">Your queries <a class="again" style="padding:0.3rem 0.85rem; font-size:0.82rem;" href="{% url 'portal_query_new' token %}">＋ New query</a></div><div class="card-body">
     {% for q in queries %}
     <div class="order">
       <div>

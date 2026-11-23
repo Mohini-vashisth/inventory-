@@ -13,6 +13,8 @@ from urllib.parse import quote
 from django import forms
 from django.conf import settings
 from django.core.files.base import ContentFile
+from django.core.validators import FileExtensionValidator
+from django.db import transaction
 from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
@@ -20,13 +22,15 @@ from django.urls import reverse
 from django.views.decorators.http import require_GET
 
 from ..forms import CompanyDetailsForm
-from ..models import CompanyChangeRequest, Customer, ProductType, Query, QueryItem, Quotation
+from ..models import (DRAWING_EXTENSIONS, CompanyChangeRequest, Customer, GradeOption, ProductType, Query, QueryItem, Quotation,
+                      normalize_grade, validate_drawing_size)
 from ..order_pdf import generate_order_summary_pdf
 from ..pdf import generate_quotation_pdf
 from .whatsapp import portal_chat_ref
 
 CURRENT = ('pending', 'confirmed', 'in_production')
 SUMMARY_STATUSES = ('confirmed', 'in_production', 'completed')   # a pending order has nothing confirmed to show yet
+MAX_QUERY_PRODUCTS = 10   # products on one portal query
 QUERY_LIMIT = 5   # the portal lists the company's newest open queries, not its whole history
 
 # What a customer is told about an order whose tracking staff switched on.
@@ -161,6 +165,67 @@ def portal_details(request, token):
     return render(request, 'materials/portal_details.html', {
         'customer': customer, 'token': token, **_branding(customer), 'form': form, 'sent': sent,
         'nothing_changed': nothing_changed, 'pending': customer.change_requests.filter(status='pending').first(),
+    })
+
+
+class QueryProductForm(forms.Form):
+    """One product a company asks about. The same facts the WhatsApp intake asks for; the drawing, make/properties/
+    process and end use are optional."""
+    label_suffix = ''
+    product_type = forms.ModelChoiceField(ProductType.objects.all(), empty_label='Choose a type', label='Product type')
+    grade = forms.CharField(max_length=50, label='Grade')
+    width = forms.DecimalField(max_digits=10, decimal_places=3, min_value=0.001, label='Width (mm)')
+    thickness = forms.DecimalField(max_digits=10, decimal_places=3, min_value=0.001, label='Thickness (mm)')
+    quantity = forms.DecimalField(max_digits=10, decimal_places=3, min_value=0.001, label='Quantity (kg)')
+    delivery_form = forms.ChoiceField(choices=[('', 'Coil or bar?')] + Query.DELIVERY_FORM_CHOICES, required=False, label='Delivery form')
+    drawing = forms.FileField(required=False, label='Drawing (optional)',
+                              validators=[FileExtensionValidator(DRAWING_EXTENSIONS), validate_drawing_size])
+    technical_requirements = forms.CharField(required=False, label='Make / mechanical properties / process (optional)',
+                                             widget=forms.Textarea(attrs={'rows': 2}))
+    end_use = forms.CharField(required=False, label='End use (optional)', widget=forms.Textarea(attrs={'rows': 2}))
+
+    def clean_grade(self):
+        return normalize_grade(self.cleaned_data['grade'])
+
+
+def _int(value, default):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def portal_query_new(request, token):
+    """A company asks about products straight from its portal: it fills in the first product and can add more, like an
+    order. It arrives as a New query for staff (nothing is sent to the customer by the bot) and shows under Your
+    queries until a quotation is sent."""
+    customer = _company(token)
+    if request.method == 'POST':
+        total = max(1, min(_int(request.POST.get('item-TOTAL'), 1), MAX_QUERY_PRODUCTS))
+        rows = [QueryProductForm(request.POST, request.FILES, prefix=f'item-{i}') for i in range(total)]
+        rows = [form for i, form in enumerate(rows) if i == 0 or form.has_changed()]   # a blank extra row is just dropped
+        if all(form.is_valid() for form in rows):
+            with transaction.atomic():
+                query = Query.objects.create(
+                    source='portal', customer=customer, company_name=customer.name, contact_email=customer.email,
+                    gst_number=customer.gst_number, gst_address=customer.gst_address, skip_company_details=True,
+                    notes="Sent from the customer's own portal.")
+                for position, form in enumerate(rows, start=1):
+                    data = form.cleaned_data
+                    item = QueryItem(query=query, position=position, product_type=data['product_type'], grade=data['grade'],
+                                     width=data['width'], thickness=data['thickness'], quantity=data['quantity'],
+                                     delivery_form=data['delivery_form'], technical_requirements=data['technical_requirements'],
+                                     end_use=data['end_use'])
+                    if data['drawing']:
+                        item.drawing = data['drawing']
+                    item.save()
+            return render(request, 'materials/portal_query_sent.html', {**_branding(customer), 'customer': customer, 'token': token})
+    else:
+        rows = [QueryProductForm(prefix='item-0')]
+    return render(request, 'materials/portal_query_new.html', {
+        **_branding(customer), 'customer': customer, 'token': token, 'rows': rows,
+        'blank_row': QueryProductForm(prefix='item-__i__'), 'max_products': MAX_QUERY_PRODUCTS,
+        'grades': GradeOption.objects.order_by('name').values_list('name', flat=True),
     })
 
 

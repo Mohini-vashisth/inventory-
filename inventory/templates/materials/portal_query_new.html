@@ -1,0 +1,74 @@
+{% extends "materials/base.html" %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}New query{% endblock %}
+
+{% block css %}
+{% include "materials/_portal_css.html" %}
+  .product { border: 1px solid var(--ds-border); border-radius: 12px; padding: 1rem; margin-bottom: 1rem; background: #fff; }
+  .product-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.7rem; }
+  .product-head strong { font-size: 1rem; }
+  .remove-product { background: none; border: 1px solid #fca5a5; color: #b91c1c; border-radius: 8px; padding: 0.25rem 0.7rem; font-weight: 600; cursor: pointer; }
+  .field { margin-bottom: 0.8rem; }
+  .field label { display: block; font-weight: 600; font-size: 0.88rem; margin-bottom: 0.25rem; }
+  .field input, .field select, .field textarea { width: 100%; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 0.7rem; align-items: end; }
+  .add-product { display: block; width: 100%; background: var(--ds-accent-soft); color: var(--ds-accent-dark); border: 1px dashed var(--ds-accent);
+                 border-radius: 10px; padding: 0.8rem; font-weight: 700; font-size: 0.95rem; cursor: pointer; margin-bottom: 1.2rem; }
+{% endblock %}
+
+{% block content %}
+{% include "materials/_portal_hero.html" %}
+<div class="p-main">
+  <div class="card"><div class="card-header">New query</div><div class="card-body">
+    <p class="muted" style="margin-bottom:1rem;">Tell us the product you need. To ask about more than one product, add another below. We will prepare a quotation and share it on your portal.</p>
+    <form method="post" enctype="multipart/form-data" novalidate id="query-form">{% csrf_token %}
+      <input type="hidden" name="item-TOTAL" id="item-total" value="{{ rows|length }}">
+      <div id="products">
+        {% for form in rows %}{% include "materials/_portal_query_product.html" with form=form number=forloop.counter %}{% endfor %}
+      </div>
+      <button type="button" class="add-product" id="add-product">＋ Add another product</button>
+      <button type="submit" class="btn-submit">Send query</button>
+    </form>
+  </div></div>
+  <p style="margin-top:1rem;text-align:center;"><a class="link" href="{% url 'portal_home' token %}">Back to my orders</a></p>
+</div>
+
+<datalist id="grade-list">{% for g in grades %}<option value="{{ g }}">{% endfor %}</datalist>
+
+<template id="product-template">{% include "materials/_portal_query_product.html" with form=blank_row number="__n__" %}</template>
+
+{% include "materials/_portal_footer.html" %}
+
+<script>
+  (function () {
+    var products = document.getElementById('products'), total = document.getElementById('item-total'), max = {{ max_products }};
+    var addBtn = document.getElementById('add-product');
+    // Rows come and go in the browser, so after every change the rows are renumbered to be item-0, item-1, ... with no gaps.
+    function renumber() {
+      var rows = products.querySelectorAll('.product');
+      rows.forEach(function (row, index) {
+        row.querySelector('.product-number').textContent = index + 1;
+        row.querySelector('.remove-product').hidden = rows.length === 1;
+        row.querySelectorAll('[name], [id], [for]').forEach(function (el) {
+          ['name', 'id', 'for'].forEach(function (attr) {
+            var v = el.getAttribute(attr);
+            if (v) el.setAttribute(attr, v.replace(/^id_item-(\d+|__i__)-/, 'id_item-' + index + '-').replace(/^item-(\d+|__i__)-/, 'item-' + index + '-'));
+          });
+        });
+      });
+      total.value = rows.length;
+      addBtn.hidden = rows.length >= max;
+    }
+    addBtn.addEventListener('click', function () {
+      var row = document.getElementById('product-template').content.firstElementChild.cloneNode(true);
+      products.appendChild(row); renumber(); row.querySelector('select, input').focus();
+    });
+    products.addEventListener('click', function (event) {
+      var btn = event.target.closest('.remove-product');
+      if (btn) { btn.closest('.product').remove(); renumber(); }
+    });
+    renumber();
+  })();
+</script>
+{% endblock %}

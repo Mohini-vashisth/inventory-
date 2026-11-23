@@ -1,0 +1,17 @@
+<div class="product">
+  <div class="product-head"><strong>Product <span class="product-number">{{ number }}</span></strong>
+    <button type="button" class="remove-product" hidden>Remove</button></div>
+  <div class="field">{{ form.product_type.label_tag }}{{ form.product_type }}{% for e in form.product_type.errors %}<div class="error-msg">{{ e }}</div>{% endfor %}</div>
+  <div class="field">{{ form.grade.label_tag }}<input type="text" name="{{ form.grade.html_name }}" id="{{ form.grade.id_for_label }}" value="{{ form.grade.value|default:'' }}" list="grade-list" autocomplete="off" placeholder="e.g. EN8D">{% for e in form.grade.errors %}<div class="error-msg">{{ e }}</div>{% endfor %}</div>
+  <div class="pair">
+    <div class="field">{{ form.width.label_tag }}{{ form.width }}{% for e in form.width.errors %}<div class="error-msg">{{ e }}</div>{% endfor %}</div>
+    <div class="field">{{ form.thickness.label_tag }}{{ form.thickness }}{% for e in form.thickness.errors %}<div class="error-msg">{{ e }}</div>{% endfor %}</div>
+  </div>
+  <div class="pair">
+    <div class="field">{{ form.quantity.label_tag }}{{ form.quantity }}{% for e in form.quantity.errors %}<div class="error-msg">{{ e }}</div>{% endfor %}</div>
+    <div class="field">{{ form.delivery_form.label_tag }}{{ form.delivery_form }}{% for e in form.delivery_form.errors %}<div class="error-msg">{{ e }}</div>{% endfor %}</div>
+  </div>
+  <div class="field">{{ form.drawing.label_tag }}{{ form.drawing }}{% for e in form.drawing.errors %}<div class="error-msg">{{ e }}</div>{% endfor %}</div>
+  <div class="field">{{ form.technical_requirements.label_tag }}{{ form.technical_requirements }}</div>
+  <div class="field">{{ form.end_use.label_tag }}{{ form.end_use }}</div>
+</div>

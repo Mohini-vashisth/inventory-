@@ -287,6 +287,7 @@ class MaterialsRouteGuardTests(TestCase):
         'portal_reorder',     # same link; a company can only repeat its own orders
         'portal_order_summary',  # same link; a company can only open its own confirmed orders' summary
         'portal_quotation_pdf',  # same link; a company can only open a sent quotation of its own
+        'portal_query_new',   # same link; a company can only add a query for itself
         'portal_manifest',    # makes the portal installable; same link
         'portal_icon',        # the app icon, a static image
         'portal_service_worker',  # a do-nothing script that lets browsers offer the install
