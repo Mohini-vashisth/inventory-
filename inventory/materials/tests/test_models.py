@@ -312,7 +312,8 @@ class CoilAgeTextTests(TestCase):
     def test_age_text_by_receipt_date(self):
         from datetime import timedelta
         today = timezone.localdate()
-        coil = lambda d: Material(quantity=1, date=d)
+        def coil(d):
+            return Material(quantity=1, date=d)
         self.assertEqual(coil(None).age_text(), "")
         self.assertEqual(coil(today).age_text(), "received today")
         self.assertEqual(coil(today - timedelta(days=1)).age_text(), "1 day old")
