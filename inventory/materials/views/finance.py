@@ -14,7 +14,7 @@ from ..decorators import finance_required
 from decimal import Decimal, InvalidOperation
 
 from ..forms import BillLineForm, BillUploadForm, ChargeForm
-from ..models import GateEntry, GateEntryCharge, NonCoilBillLine, NonCoilEntry
+from ..models import COIL_GST_PERCENT, GateEntry, GateEntryCharge, NonCoilBillLine, NonCoilEntry
 
 # Entries that already have a bill stay listed (newest first, after the ones still waiting), but only the
 # latest few so the page stays short; the admin shows everything.
@@ -270,5 +270,5 @@ def finance_coil_bill_details(request, pk):
     for lot in lots:
         lot.error = rate_errors.get(lot.pk)
     return render(request, 'materials/finance_coil_bill_details.html', {
-        'entry': entry, 'lots': lots, 'charge_rows': charge_rows, 'error': error,
+        'entry': entry, 'lots': lots, 'charge_rows': charge_rows, 'error': error, 'gst_percent': COIL_GST_PERCENT,
     })

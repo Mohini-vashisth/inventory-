@@ -150,6 +150,14 @@ class GateEntryLot(models.Model):
             return (self.rate * self.weight).quantize(Decimal('0.01'))
         return None
 
+    def gst_per_kg(self):
+        """GST on the base rate, per kg (None until a rate is entered)."""
+        return (self.rate * COIL_GST_PERCENT / 100).quantize(Decimal('0.01')) if self.rate else None
+
+    def total_rate(self):
+        """Base rate plus its GST, per kg (None until a rate is entered)."""
+        return self.rate + self.gst_per_kg() if self.rate else None
+
     def weight_per_coil(self):
         """Paper reference weight per coil for this lot: the lot's own weight over its coils when it was entered,
         otherwise the delivery's total weight over all of its coils. Real weights are entered per coil."""
@@ -666,6 +674,7 @@ class StepLog(models.Model):
 
 # Shape of a GSTIN: state code, PAN, entity number, 'Z', checksum character.
 # Format only — the checksum would need the GST portal to verify.
+COIL_GST_PERCENT = Decimal('18')   # GST on raw-material coil bills, shown on the finance bill details (owner, 2026-11-23)
 GSTIN_PATTERN = r'\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]'
 
 

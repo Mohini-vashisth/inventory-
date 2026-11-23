@@ -23,8 +23,9 @@
   .add-row { background: var(--ds-accent-soft); color: var(--ds-accent-dark); border: 1px dashed var(--ds-accent); border-radius: 8px; padding: 0.55rem 1rem; font-weight: 600; cursor: pointer; margin: 0.3rem 0 1.2rem; }
   .total { display: flex; justify-content: space-between; font-weight: 700; font-size: 1.05rem; border-top: 2px solid var(--ds-border); padding-top: 0.8rem; margin: 0.4rem 0 1.2rem; }
   h2.sub { font-size: 1rem; margin-bottom: 0.4rem; }
-  @media (max-width: 640px) { .lots th:nth-child(n+4), .lots td:nth-child(n+4) { display: none; } .lots input { width: 6rem; } }
-{% endblock %}
+  /* narrow screens drop company, coils, weight and the GST column; the base rate, total rate and amount stay */
+  @media (max-width: 640px) { .lots th:nth-child(n+2):nth-child(-n+4), .lots td:nth-child(n+2):nth-child(-n+4), .lots th:nth-child(6), .lots td:nth-child(6) { display: none; } .lots input { width: 6rem; } }
+  {% endblock %}
 
 {% block content %}
 <div class="page">
@@ -56,7 +57,7 @@
     <div class="card" style="margin-top:1rem;">
       <h2 class="sub">Lots</h2>
       <table class="lots">
-        <thead><tr><th>Grade · size</th><th>Company</th><th>Coils</th><th class="num">Weight (kg)</th><th>Rate (₹ / kg)</th><th class="num">Amount (₹)</th></tr></thead>
+        <thead><tr><th>Grade · size</th><th>Company</th><th>Coils</th><th class="num">Weight (kg)</th><th>Base rate (₹ / kg)</th><th class="num">GST {{ gst_percent|floatformat:"-2" }}% (₹ / kg)</th><th class="num">Total rate (₹ / kg)</th><th class="num">Amount (₹)</th></tr></thead>
         <tbody>
           {% for lot in lots %}
           <tr data-weight="{{ lot.weight|default:'' }}">
@@ -68,14 +69,16 @@
               <input type="number" class="rate" name="rate-{{ lot.pk }}" value="{{ lot.rate_shown }}" step="0.01" min="0.01" inputmode="decimal" placeholder="0.00">
               {% if lot.error %}<div class="err">{{ lot.error }}</div>{% endif %}
             </td>
+            <td class="num gst-rate">—</td>
+            <td class="num total-rate"><strong>—</strong></td>
             <td class="num amount">—</td>
           </tr>
           {% empty %}
-          <tr><td colspan="6" class="muted">This gate entry has no lots.</td></tr>
+          <tr><td colspan="8" class="muted">This gate entry has no lots.</td></tr>
           {% endfor %}
         </tbody>
       </table>
-      <p class="muted" style="font-size:0.8rem; margin-top:0.6rem;">A lot's amount is its rate times its weight; a lot with no weight entered at the gate has no amount yet.</p>
+      <p class="muted" style="font-size:0.8rem; margin-top:0.6rem;">Enter the base rate (before GST). The GST and the total rate per kg are worked out from it. A lot's amount is its base rate times its weight (before GST); a lot with no weight entered at the gate has no amount yet. The bill total below is before GST.</p>
     </div>
 
     <div class="card" style="margin-top:1rem;">
@@ -113,12 +116,18 @@
 <script>
   (function () {
     var list = document.getElementById('charges'), total = document.getElementById('charge-total');
+    var GST_PERCENT = {{ gst_percent|floatformat:"-2" }};
     function money(n) { return n.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
     function recalc() {
       var sum = 0, any = false;
       document.querySelectorAll('.lots tbody tr[data-weight]').forEach(function (row) {
         var weight = parseFloat(row.dataset.weight), rate = parseFloat(row.querySelector('.rate').value);
         var cell = row.querySelector('.amount');
+        var gst = row.querySelector('.gst-rate'), totalRate = row.querySelector('.total-rate strong');
+        if (rate > 0) {
+          var g = Math.round(rate * GST_PERCENT) / 100;   // GST per kg, to the paisa like the server
+          gst.textContent = money(g); totalRate.textContent = money(Math.round(rate * 100) / 100 + g);
+        } else { gst.textContent = '—'; totalRate.textContent = '—'; }
         if (weight > 0 && rate > 0) { var a = weight * rate; cell.textContent = money(a); sum += a; any = true; }
         else cell.textContent = '—';
       });
