@@ -15,7 +15,16 @@
   .again { white-space: nowrap; text-decoration: none; background: var(--ds-accent-soft); color: var(--ds-accent-dark); border: 1px solid var(--ds-accent); border-radius: 8px; padding: 0.5rem 1rem; font-weight: 600; font-size: 0.88rem; }
   #install { display: none; background: #fff; border: 1px solid var(--ds-accent); border-radius: 12px; padding: 0.8rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; box-shadow: 0 6px 22px rgba(31,42,37,0.10); }
   #install button { margin-left: 0.6rem; }
-  .doc { font-size: 0.85rem; margin-left: 0.6rem; color: var(--ds-accent-dark); }
+  #install button[hidden] { display: none; }   /* .btn-submit would otherwise keep a hidden button on screen */
+  @media (max-width: 560px) { #install button { margin: 0.6rem 0 0; width: 100%; } }
+  .doc { font-size: 0.85rem; color: var(--ds-accent-dark); }
+  .order .actions { display: flex; align-items: center; gap: 0.7rem; flex-wrap: wrap; justify-content: flex-end; }
+  /* on a phone the details take the full width and the links sit on their own row underneath */
+  @media (max-width: 560px) {
+    .order { flex-direction: column; align-items: stretch; gap: 0.6rem; }
+    .order .actions { justify-content: flex-start; }
+    .again { padding: 0.6rem 1.1rem; }
+  }
 {% endblock %}
 
 {% block content %}
@@ -32,7 +41,7 @@
         <div class="meta">{{ c.order.quantity_text }} kg · placed {{ c.order.created_at|date:"d M Y" }}{% if c.order.delivery_date %} · delivery {{ c.order.delivery_date|date:"d M Y" }}{% endif %}</div>
         {% if c.status %}<span class="status s-{{ c.order.status }}">{{ c.status }}</span>{% endif %}
       </div>
-      <div>{% if c.has_summary %}<a class="doc" href="{% url 'portal_order_summary' token c.order.pk %}" target="_blank">Order summary (PDF)</a>{% endif %}
+      <div class="actions">{% if c.has_summary %}<a class="doc" href="{% url 'portal_order_summary' token c.order.pk %}" target="_blank">Order summary (PDF)</a>{% endif %}
       {% if c.can_repeat %}<a class="again" href="{% url 'portal_reorder' token c.order.pk %}">Order again</a>{% endif %}</div>
     </div>
     {% empty %}<p class="muted">No current orders.</p>{% endfor %}
@@ -46,7 +55,7 @@
         <div class="meta">{{ c.order.quantity_text }} kg · placed {{ c.order.created_at|date:"d M Y" }}</div>
         {% if c.status %}<span class="status s-{{ c.order.status }}">{{ c.status }}</span>{% endif %}
       </div>
-      <div>{% if c.has_summary %}<a class="doc" href="{% url 'portal_order_summary' token c.order.pk %}" target="_blank">Order summary (PDF)</a>{% endif %}
+      <div class="actions">{% if c.has_summary %}<a class="doc" href="{% url 'portal_order_summary' token c.order.pk %}" target="_blank">Order summary (PDF)</a>{% endif %}
       {% if c.can_repeat %}<a class="again" href="{% url 'portal_reorder' token c.order.pk %}">Order again</a>{% endif %}</div>
     </div>
     {% empty %}<p class="muted">Nothing here yet.</p>{% endfor %}
@@ -56,22 +65,34 @@
 {% include "materials/_portal_footer.html" %}
 
 <script>
-  // Offer to install the portal as an app. Chrome and Edge raise an install event; iPhone has no such event, so it gets a hint.
+  // Install as an app. Chrome and Edge raise an install event, which makes the button a true one-tap install;
+  // an iPhone never does (Safari only offers Share, then Add to Home Screen), and some browsers withhold the event,
+  // so the button is always shown and, with no event, tells the person the one step their browser needs.
   (function () {
     var box = document.getElementById('install'), btn = document.getElementById('install-btn'), text = document.getElementById('install-text');
     var standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || navigator.standalone;
     if (standalone) return;
+    var ua = navigator.userAgent;
     var deferred = null;
-    window.addEventListener('beforeinstallprompt', function (event) {
-      event.preventDefault(); deferred = event; box.style.display = 'block'; btn.hidden = false;
-    });
-    btn.addEventListener('click', function () {
-      if (!deferred) return;
-      deferred.prompt(); deferred.userChoice.then(function () { box.style.display = 'none'; deferred = null; });
-    });
-    if (/iphone|ipad/i.test(navigator.userAgent)) {
-      text.textContent = 'To install this as an app: tap Share, then Add to Home Screen.'; box.style.display = 'block';
+    box.style.display = 'block';
+    if (/iphone|ipad/i.test(ua)) {
+      // Safari has no install prompt for a web page to trigger, so there is nothing for a button to do: just the steps.
+      text.textContent = 'To install this as an app: tap the Share button in Safari, then Add to Home Screen.';
+      if ('serviceWorker' in navigator) navigator.serviceWorker.register('{% url "portal_service_worker" %}', {scope: '/portal/'});
+      return;
     }
+    btn.hidden = false;
+    window.addEventListener('beforeinstallprompt', function (event) { event.preventDefault(); deferred = event; });
+    window.addEventListener('appinstalled', function () { box.style.display = 'none'; });
+    btn.addEventListener('click', function () {
+      if (deferred) {
+        deferred.prompt(); deferred.userChoice.then(function () { deferred = null; });
+      } else if (/; wv\)|FBAN|FBAV|Instagram|WhatsApp|Line\//i.test(ua)) {
+        text.textContent = 'This browser cannot install apps. Open this page in Chrome, then tap Install app.';
+      } else {
+        text.textContent = 'Open your browser menu (three dots) and choose Install app or Add to Home screen.';
+      }
+    });
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('{% url "portal_service_worker" %}', {scope: '/portal/'});
   })();
 </script>

@@ -24,7 +24,7 @@
 
 {% block content %}
 <div class="content">
-  <div class="ds-top"><a href="{% url 'company_dashboard' %}" class="back-link">← Companies</a></div>
+  <div class="ds-top"><a href="{% url 'company_dashboard' %}" class="back-link">← Customers</a></div>
   <h1>{{ customer.name }}</h1>
 
   <div class="card"><div class="card-header static">Details</div><div class="card-body">
@@ -33,9 +33,9 @@
       <dt>Phone</dt><dd>{{ customer.phone|default:"—" }}</dd>
       <dt>GST number</dt><dd>{{ customer.gst_number|default:"—" }}</dd>
       <dt>GST address</dt><dd>{{ customer.gst_address|default:"—" }}</dd>
-      <dt>Company since</dt><dd>{{ customer.created_at|date:"d M Y" }}</dd>
+      <dt>Customer since</dt><dd>{{ customer.created_at|date:"d M Y" }}</dd>
       <dt>Orders</dt><dd>{{ current|length }} current · {{ past|length }} earlier</dd>
-      {% if waiting_requests %}<dt>Change request</dt><dd>Waiting for approval on the <a class="link" href="{% url 'company_dashboard' %}">Companies page</a>.</dd>{% endif %}
+      {% if waiting_requests %}<dt>Change request</dt><dd>Waiting for approval on the <a class="link" href="{% url 'company_dashboard' %}">Customers page</a>.</dd>{% endif %}
     </dl>
   </div></div>
 
@@ -67,7 +67,7 @@
       </table></div>
       <div class="num muted" style="margin-top:0.3rem;">Total with GST: <strong>₹ {{ q.total_amount|floatformat:2 }}</strong></div>
     </div>
-    {% empty %}<div class="card-body"><p class="muted">No quotation has been sent to this company.</p></div>{% endfor %}
+    {% empty %}<div class="card-body"><p class="muted">No quotation has been sent to this customer.</p></div>{% endfor %}
   </div>
 </div>
 {% endblock %}

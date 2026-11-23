@@ -1,7 +1,7 @@
 {% extends "materials/base.html" %}
 
 {% block body_attrs %} class="ds"{% endblock %}
-{% block title %}Companies{% endblock %}
+{% block title %}Customers{% endblock %}
 
 {% block css %}
     .content { max-width: 1150px; margin: 2rem auto; padding: 0 1.5rem; }
@@ -30,7 +30,7 @@
     <a href="{% url 'staff_home' %}" class="back-link">← Back to dashboard</a>
     <a href="{% url 'order_dashboard' %}" class="back-link">← Orders</a>
   </div>
-  <h1>Companies</h1>
+  <h1>Customers</h1>
 
   {% for msg in messages %}
   <div class="alert {% if msg.tags == 'success' %}alert-success{% elif msg.tags == 'warning' %}alert-warning{% else %}alert-error{% endif %}">{{ msg }}</div>
@@ -38,7 +38,7 @@
 
   {% if change_requests %}
   <div class="card" style="margin-bottom:1rem;">
-    <div class="card-header static">Change requests <span>{{ change_requests|length }} waiting · from the companies' own portals</span></div>
+    <div class="card-header static">Change requests <span>{{ change_requests|length }} waiting · from the customers' own portals</span></div>
     <div class="card-body">
       {% for r in change_requests %}
       <div style="padding:0.7rem 0;{% if not forloop.first %}border-top:1px solid #eee;{% endif %}">
@@ -56,19 +56,19 @@
   </div>
   {% endif %}
 
-  <input type="text" class="search" id="company-search" placeholder="Search companies…" autocomplete="off">
+  <input type="text" class="search" id="company-search" placeholder="Search customers…" autocomplete="off">
 
-  <!-- ── Companies & Quote Links ──────────────────────────── -->
+  <!-- ── Customers & Quote Links ──────────────────────────── -->
   <div class="card">
     <div class="card-header static">
-      Companies
+      Customers
       <span>{{ customers|length }} total · open an order form, a portal link or send the form again</span>
     </div>
     <div class="table-scroll">
     <table>
       <thead>
         <tr>
-          <th>Company</th>
+          <th>Customer</th>
           <th>Email</th>
           <th>Phone</th>
           <th>Orders</th>
@@ -88,7 +88,7 @@
               📋 Copy Link
             </button>
             {% if c.orders.count %}
-            <button class="icon-btn" title="The company's permanent link to its orders"
+            <button class="icon-btn" title="The customer's permanent link to its orders"
                     onclick="copyLink('{{ quote_base_url }}{% url 'portal_home' c.portal_token %}', this)">
               📱 Portal link
             </button>
@@ -109,7 +109,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr class="empty-row"><td colspan="5">No companies yet.</td></tr>
+        <tr class="empty-row"><td colspan="5">No customers yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

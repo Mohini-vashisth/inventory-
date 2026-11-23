@@ -87,6 +87,12 @@ class PortalTests(TestCase):
         self.assertContains(self.client.get(reverse('portal_service_worker')), 'fetch')
         self.assertContains(self.client.get(self.home), 'rel="manifest"')
 
+    def test_the_install_button_is_always_offered_with_instructions_for_browsers_that_cannot_prompt(self):
+        page = self.client.get(self.home)
+        self.assertContains(page, 'id="install-btn"')
+        self.assertContains(page, 'Add to Home Screen')   # the iPhone steps
+        self.assertContains(page, 'beforeinstallprompt')   # the one-tap install where the browser allows it
+
 
 class PortalPageContentTests(TestCase):
     def setUp(self):

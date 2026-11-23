@@ -19,4 +19,12 @@
   .p-chat { position: fixed; right: 0.9rem; bottom: 1.1rem; z-index: 50; display: flex; align-items: center; gap: 0.55rem; background: #25d366; color: #fff;
             text-decoration: none; font-weight: 700; border-radius: 999px; padding: 0.75rem 1.1rem; box-shadow: 0 6px 18px rgba(0,0,0,0.28); }
   .p-chat svg { width: 1.5rem; height: 1.5rem; fill: #fff; flex: none; }
-  @media (max-width: 560px) { .p-hero h1 { font-size: 1.5rem; } .p-foot .inner { grid-template-columns: 1fr; } .p-chat span { display: none; } .p-chat { padding: 0.85rem; } }
+  @media (max-width: 560px) {
+    .p-hero { padding: 2.2rem 1rem 3.4rem; }
+    .p-hero .mark { width: 2.8rem; height: 2.8rem; font-size: 1rem; margin-bottom: 0.5rem; }
+    .p-hero .eyebrow { display: none; }   /* the heading below already says the name */
+    .p-hero h1 { font-size: 1.35rem; margin: 0.2rem 0 0.7rem; }
+    .p-hero .who { font-size: 0.95rem; padding: 0.35rem 1rem; }
+    .p-main { margin-top: -2.2rem; }
+    .p-foot .inner { grid-template-columns: 1fr; } .p-chat span { display: none; } .p-chat { padding: 0.85rem; }
+  }
