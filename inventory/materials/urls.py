@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import portal, auth, finance, gate_entry, media, orders, picking, production, queries, quotations, whatsapp
+from .views import dispatch, portal, auth, finance, gate_entry, media, orders, picking, production, queries, quotations, whatsapp
 
 urlpatterns = [
     path("", auth.welcome, name="home"),
@@ -39,6 +39,9 @@ urlpatterns = [
     path('order/<int:order_pk>/picked/<int:pick_pk>/', picking.picked_coil_detail, name='picked_coil_detail'),
     path('order/<int:order_pk>/picked/<int:pick_pk>/unpick/', picking.unpick_coil, name='unpick_coil'),
     path('production-board/', production.production_board, name='production_board'),
+    path('dispatch-planning/', dispatch.dispatch_planning, name='dispatch_planning'),
+    path('dispatch/', dispatch.employee_dispatch, name='employee_dispatch'),
+    path('finance/dispatch/', dispatch.finance_dispatch, name='finance_dispatch'),
     path('scan-job/', production.select_job_for_coil, name='select_job_for_coil'),
     path('job/<int:pk>/', production.job_detail, name='job_detail'),
     path('job/<int:job_pk>/tags/', production.part_tags, name='part_tags'),

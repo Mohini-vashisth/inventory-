@@ -1,0 +1,15 @@
+{% extends "materials/base.html" %}
+{% block tablet_css %}{% include "materials/_portal_tablet.css" %}{% endblock %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}Dispatch{% endblock %}
+
+{% block content %}
+<div class="page">
+  <a href="{% url 'employee' %}" class="back-link">← Back to portal</a>
+  <h1>Dispatch</h1>
+  <p class="subtitle">Dispatch details will be added here.</p>
+  <div class="card"><div class="card-body"><p class="muted">Nothing here yet.</p></div></div>
+</div>
+{% include "materials/_screen_off_welcome.html" %}
+{% endblock %}
