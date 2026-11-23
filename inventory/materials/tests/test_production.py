@@ -263,4 +263,10 @@ class ProductionBoardScanLinkTests(TestCase):
         step = ProcessStep.objects.get(product_code=code)
         StepLog.objects.create(job=job, step=step, status='pending')
         page = self.client.get(reverse('production_board')).content.decode()
-        self.assertIn(f'<a href="{reverse("select_job_for_coil")}" class="btn-update">', page)
+        self.assertIn('<a href="#coil-wise" class="btn-update">', page)
+        page = self.client.get(reverse('select_job_for_coil')).content.decode()
+        self.assertIn('class="order-card"', page)
+        self.assertIn('id="coil-wise"', page)
+        self.assertLess(page.index('class="order-card"'), page.index('id="coil-wise"'))
+        self.assertLess(page.index('id="coil-wise"'), page.index('id="coil-scan-form"'))
+

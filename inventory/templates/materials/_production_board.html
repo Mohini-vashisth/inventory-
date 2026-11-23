@@ -1,0 +1,80 @@
+  {% for item in board %}
+  {% with order=item.order %}
+  <div class="order-card">
+    <div class="order-header">
+      <div class="order-meta">
+        <div class="order-no">ORD-{{ order.order_no|stringformat:"04d" }}</div>
+        <div class="order-company">{{ order.customer.name }}</div>
+        <div class="order-tags">
+          {% if order.product_code %}<span>🔧 {{ order.product_code.item_code }}</span>{% endif %}
+          {% if order.grade %}<span>📐 {{ order.grade }}</span>{% endif %}
+          {% if order.quantity %}<span>⚖️ {{ order.quantity }} kg</span>{% endif %}
+        </div>
+      </div>
+      <div style="text-align:right; flex-shrink:0;">
+        {% if order.delivery_date %}
+        <div class="delivery-label">Deliver by</div>
+        <div class="delivery-date">{{ order.delivery_date|date:"d M Y" }}</div>
+        {% endif %}
+        {% if order.quantity %}
+        <div style="margin-top:0.4rem; font-size:0.8rem;
+                    color:{% if item.weight_fulfilled %}#166534{% else %}#f59e0b{% endif %};
+                    font-weight:600;">
+          📦 {{ item.weight_cut|floatformat:1 }} / {{ order.quantity }} kg
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Coil</th>
+          <th>Weight</th>
+          <th>Progress</th>
+          <th>Current Step</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for jd in item.jobs %}{% for row in jd.rows %}
+        <tr>
+          <td><span class="part-no">{{ row.label }}</span>{% if jd.multiple %}<div class="muted" style="font-size:0.72rem;">{{ jd.job.pick.coil.formatted_coil }}</div>{% endif %}</td>
+          <td>{{ row.weight|default:"—" }}{% if row.weight %} kg{% endif %}</td>
+          <td>
+            <div class="prog-wrap">
+              <div class="prog-bg">
+                <div class="prog-fill {% if row.completed == row.total and row.total > 0 %}done{% endif %}"
+                     style="width:{{ row.pct }}%;"></div>
+              </div>
+              <span class="prog-label">{{ row.completed }}/{{ row.total }}</span>
+            </div>
+          </td>
+          <td>
+            {% if row.current_step %}
+              <span class="step-badge step-{{ row.current_status }}">
+                {{ row.current_step.name }}
+              </span>
+            {% else %}
+              <span class="step-badge step-completed">All done</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if row.current_step %}
+              <a href="#coil-wise" class="btn-update">📷 Scan to update</a>
+            {% else %}
+              <span class="btn-update done">Completed</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endwith %}
+  {% empty %}
+  <div class="empty-state">
+    No orders are currently in production.<br>
+    <a href="{% url 'select_order' %}">Pick a coil</a> to start one.
+  </div>
+  {% endfor %}

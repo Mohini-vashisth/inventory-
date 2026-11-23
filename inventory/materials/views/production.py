@@ -177,11 +177,11 @@ def select_job_for_coil(request):
     return render(request, 'materials/select_job_for_coil.html', {
         'scan_error': scan_error,
         'jobs': jobs,
+        'board': _production_board_data(),
     })
 
 
-@employee_required
-def production_board(request):
+def _production_board_data():
     orders = (Order.objects
               .filter(status='in_production')
               .select_related('customer', 'product_code')
@@ -225,4 +225,10 @@ def production_board(request):
             'weight_fulfilled': weight_needed > 0 and weight_cut >= weight_needed,
         })
 
-    return render(request, 'materials/production_board.html', {'board': board})
+    return board
+
+
+@employee_required
+def production_board(request):
+    """The same page as Update Progress (the board with the coil-wise update under it), kept for old links."""
+    return render(request, 'materials/select_job_for_coil.html', {'board': _production_board_data()})

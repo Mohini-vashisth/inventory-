@@ -6,6 +6,7 @@
 {% block title %}Update Progress{% endblock %}
 
 {% block css %}
+
     .scan-error {
       background: #fef3c7; border: 1px solid #fcd34d;
       border-radius: 10px; padding: 0.7rem 1rem; margin-bottom: 1rem;
@@ -52,10 +53,12 @@
 <div class="page">
   <a href="{% url 'employee' %}" class="back-link">← Back to portal</a>
   <h1>Update Progress</h1>
-  <p class="subtitle">
-    Scan or type the coil's number to open its job.
-    <a href="{% url 'production_board' %}" style="color:#256349; font-weight:700;">View all jobs →</a>
-  </p>
+  <p class="subtitle">All orders currently in production. To update a job, use the coil-wise update below.</p>
+
+  {% include "materials/_production_board.html" %}
+
+  <h2 id="coil-wise" style="margin-top:2rem;">Coil-wise update</h2>
+  <p class="subtitle">Scan or type the coil's number (or a part's tag) to open its job.</p>
 
   {% if scan_error %}<div class="scan-error">⚠️ {{ scan_error }}</div>{% endif %}
 
