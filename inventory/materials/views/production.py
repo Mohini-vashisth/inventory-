@@ -208,8 +208,10 @@ def _production_board_data():
                     if not log or log.status != 'completed':
                         current_step, current_status = step, log.status if log else 'pending'
                         break
+                split = len(job.parts.all()) > 1
                 rows.append({
-                    'label': part.label if len(job.parts.all()) > 1 else job.pick.coil.formatted_coil(),
+                    'update_url': reverse('part_detail', args=[part.pk]) if split else reverse('job_detail', args=[job.pk]),
+                    'label': part.label if split else job.pick.coil.formatted_coil(),
                     'weight': part.weight, 'total': total, 'completed': completed,
                     'pct': int(completed / total * 100) if total > 0 else 0,
                     'current_step': current_step, 'current_status': current_status,

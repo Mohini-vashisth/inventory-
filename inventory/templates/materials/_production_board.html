@@ -61,7 +61,7 @@
           </td>
           <td>
             {% if row.current_step %}
-              <a href="#coil-wise" class="btn-update">📷 Scan to update</a>
+              <a href="{{ row.update_url }}" class="btn-update">Update</a>
             {% else %}
               <span class="btn-update done">Completed</span>
             {% endif %}

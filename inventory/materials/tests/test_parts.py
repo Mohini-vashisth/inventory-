@@ -231,6 +231,8 @@ class PartViewTests(PartsTestBase):
         page = self.client.get(reverse('production_board')).content.decode()
         self.assertIn('JOB-0001-A', page)
         self.assertIn('JOB-0001-B', page)
+        a, b = self.job.parts.exclude(label='JOB-0001').order_by('label')
+        self.assertIn(f'<a href="{reverse("part_detail", args=[a.pk])}" class="btn-update">Update</a>', page)
 
     def test_picking_a_coil_creates_the_whole_coil_part_with_its_steps(self):
         order = Order.objects.create(customer=self.customer, product_code=self.code, grade='EN8D', quantity=Decimal('100'), status='confirmed')
