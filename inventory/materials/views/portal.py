@@ -13,18 +13,21 @@ from urllib.parse import quote
 from django import forms
 from django.conf import settings
 from django.core.files.base import ContentFile
+from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET
 
 from ..forms import CompanyDetailsForm
-from ..models import CompanyChangeRequest, Customer, ProductType, Query, QueryItem
+from ..models import CompanyChangeRequest, Customer, ProductType, Query, QueryItem, Quotation
 from ..order_pdf import generate_order_summary_pdf
+from ..pdf import generate_quotation_pdf
 from .whatsapp import portal_chat_ref
 
 CURRENT = ('pending', 'confirmed', 'in_production')
 SUMMARY_STATUSES = ('confirmed', 'in_production', 'completed')   # a pending order has nothing confirmed to show yet
+QUERY_LIMIT = 5   # the portal lists the company's newest open queries, not its whole history
 
 # What a customer is told about an order whose tracking staff switched on.
 TRACKED_STATUS = {
@@ -67,6 +70,44 @@ def _card(order):
     }
 
 
+def _company_queries(customer):
+    """Every query that belongs to this company: linked to it once a quote was sent, or (a query still waiting for its
+    quote) carrying its name, which is how the WhatsApp bot records a company that came in through the portal."""
+    return Query.objects.filter(Q(customer=customer) | Q(company_name__iexact=customer.name))
+
+
+def _query_card(query):
+    products = [text for text in (item.summary_text() for item in query.item_list()) if text]
+    quote = query.latest_sent_quotation()
+    return {
+        'query': query,
+        'title': ' + '.join(products) if products else ('Reorder request' if query.source == 'reorder' else 'Your enquiry'),
+        'quote': quote,
+        'revision': query.quote_revision() if quote else 0,
+    }
+
+
+def _open_queries(customer):
+    """The company's latest queries that have not become an order (staff-closed ones are left out)."""
+    queries = (_company_queries(customer).filter(status__in=('new', 'quote_sent'), orders__isnull=True)
+               .prefetch_related('items__product_type', 'quotations').order_by('-created_at', '-pk')[:QUERY_LIMIT])
+    return [_query_card(q) for q in queries]
+
+
+def _product_cards(orders):
+    """The products the company has ordered before, each once (newest order first, so the first of a product is its
+    latest order). Order again is per product: it opens a reorder request copied from that latest order."""
+    products = {}
+    for order in orders:
+        if order.status == 'cancelled':
+            continue
+        title = order.spec_text() or 'Order'
+        if title not in products:
+            products[title] = {'title': title, 'latest': order, 'times': 0}
+        products[title]['times'] += 1
+    return list(products.values())
+
+
 def portal_home(request, token):
     customer = _company(token)
     orders = list(customer.orders.select_related('product_code__product_type', 'product_type').order_by('-created_at'))
@@ -76,6 +117,8 @@ def portal_home(request, token):
         **_branding(customer),
         'current': [_card(o) for o in orders if o.status in CURRENT],
         'past': [_card(o) for o in orders if o.status == 'completed'],
+        'queries': _open_queries(customer),
+        'products': _product_cards(orders),
     })
 
 
@@ -159,6 +202,18 @@ def portal_reorder(request, token, order_pk):
         **_branding(customer), 'customer': customer, 'token': token, 'title': source.spec_text() or 'Order',
         'details': [line for line in (source.delivery_detail_text(), *source.tolerance_lines()) if line],
     })
+
+
+@require_GET
+def portal_quotation_pdf(request, token, quotation_pk):
+    """A sent quotation for one of this company's own queries (a draft, or another company's, is not found)."""
+    customer = _company(token)
+    quotation = get_object_or_404(
+        Quotation.objects.filter(Q(customer=customer) | Q(source_query__in=_company_queries(customer))),
+        pk=quotation_pk, status='sent')
+    response = HttpResponse(generate_quotation_pdf(quotation), content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename="{quotation.formatted_no()}.pdf"'
+    return response
 
 
 @require_GET

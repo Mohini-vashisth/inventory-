@@ -41,10 +41,37 @@
         <div class="meta">{{ c.order.quantity_text }} kg · placed {{ c.order.created_at|date:"d M Y" }}{% if c.order.delivery_date %} · delivery {{ c.order.delivery_date|date:"d M Y" }}{% endif %}</div>
         {% if c.status %}<span class="status s-{{ c.order.status }}">{{ c.status }}</span>{% endif %}
       </div>
-      <div class="actions">{% if c.has_summary %}<a class="doc" href="{% url 'portal_order_summary' token c.order.pk %}" target="_blank">Order summary (PDF)</a>{% endif %}
-      {% if c.can_repeat %}<a class="again" href="{% url 'portal_reorder' token c.order.pk %}">Order again</a>{% endif %}</div>
+      <div class="actions">{% if c.has_summary %}<a class="doc" href="{% url 'portal_order_summary' token c.order.pk %}" target="_blank">Order summary (PDF)</a>{% endif %}</div>
     </div>
     {% empty %}<p class="muted">No current orders.</p>{% endfor %}
+  </div></div>
+
+  <div class="card" style="margin-top:1rem;"><div class="card-header">Your queries</div><div class="card-body">
+    {% for q in queries %}
+    <div class="order">
+      <div>
+        <div class="what">{{ q.title }}</div>
+        <div class="meta">Asked on {{ q.query.created_at|date:"d M Y" }}{% if q.quote %} · quotation {{ q.quote.formatted_no }}{% if q.revision %} (updated, rev {{ q.revision }}){% endif %}{% endif %}</div>
+        {% if not q.quote %}<span class="status s-pending">Quotation coming soon</span>{% endif %}
+      </div>
+      <div class="actions">
+        {% if q.quote %}<a class="again" href="{% url 'portal_quotation_pdf' token q.quote.pk %}" target="_blank">Open quotation (PDF)</a>
+        {% else %}<span class="muted" style="font-size:0.85rem;">We are preparing it and will share it soon.</span>{% endif %}
+      </div>
+    </div>
+    {% empty %}<p class="muted">No open queries.</p>{% endfor %}
+  </div></div>
+
+  <div class="card" style="margin-top:1rem;"><div class="card-header">Your products</div><div class="card-body">
+    {% for p in products %}
+    <div class="order">
+      <div>
+        <div class="what">{{ p.title }}</div>
+        <div class="meta">Last ordered {{ p.latest.created_at|date:"d M Y" }} · {{ p.latest.quantity_text }} kg{% if p.times > 1 %} · ordered {{ p.times }} times{% endif %}</div>
+      </div>
+      <div class="actions"><a class="again" href="{% url 'portal_reorder' token p.latest.pk %}">Order again</a></div>
+    </div>
+    {% empty %}<p class="muted">The products you order will be listed here.</p>{% endfor %}
   </div></div>
 
   <div class="card" style="margin-top:1rem;"><div class="card-header">Past orders</div><div class="card-body">
@@ -55,8 +82,7 @@
         <div class="meta">{{ c.order.quantity_text }} kg · placed {{ c.order.created_at|date:"d M Y" }}</div>
         {% if c.status %}<span class="status s-{{ c.order.status }}">{{ c.status }}</span>{% endif %}
       </div>
-      <div class="actions">{% if c.has_summary %}<a class="doc" href="{% url 'portal_order_summary' token c.order.pk %}" target="_blank">Order summary (PDF)</a>{% endif %}
-      {% if c.can_repeat %}<a class="again" href="{% url 'portal_reorder' token c.order.pk %}">Order again</a>{% endif %}</div>
+      <div class="actions">{% if c.has_summary %}<a class="doc" href="{% url 'portal_order_summary' token c.order.pk %}" target="_blank">Order summary (PDF)</a>{% endif %}</div>
     </div>
     {% empty %}<p class="muted">Nothing here yet.</p>{% endfor %}
   </div></div>

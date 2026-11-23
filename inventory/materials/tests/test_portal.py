@@ -6,7 +6,7 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
 
-from ..models import CompanyChangeRequest, Customer, Order, ProductCode, ProductType, Query, Quotation, QuotationLineItem
+from ..models import CompanyChangeRequest, Customer, Order, ProductCode, ProductType, Query, QueryItem, Quotation, QuotationLineItem
 
 
 def make_order(customer, **extra):
@@ -339,3 +339,108 @@ class CompanyDetailPageTests(TestCase):
     def test_only_staff_can_open_it(self):
         self.client.logout()
         self.assertEqual(self.client.get(self.url).status_code, 302)
+
+
+class PortalQueriesTests(TestCase):
+    """The portal lists a company's latest queries that have not become an order: with the quotation to open when one
+    was sent, otherwise a note that it is coming."""
+
+    def setUp(self):
+        self.acme = Customer.objects.create(name='ACME')
+        make_order(self.acme)
+        self.other = Customer.objects.create(name='OTHER CO')
+        make_order(self.other)
+        self.home = reverse('portal_home', args=[self.acme.portal_token])
+
+    def query(self, company='ACME', **extra):
+        q = Query.objects.create(company_name=company, contact_phone='9999900000', **extra)
+        QueryItem.objects.create(query=q, grade='EN8D', width=Decimal('50'), thickness=Decimal('6'), quantity=Decimal('500'))
+        return q
+
+    def quote(self, query, customer=None):
+        quotation = Quotation.objects.create(customer=customer or self.acme, source_query=query, status='sent')
+        QuotationLineItem.objects.create(quotation=quotation, description='Flat bar', quantity=Decimal('500'), rate_per_kg=Decimal('60'), gst_pct=18)
+        return quotation
+
+    def test_a_query_with_no_quote_says_it_is_coming(self):
+        self.query()
+        page = self.client.get(self.home)
+        self.assertContains(page, 'Your queries')
+        self.assertContains(page, 'EN8D')
+        self.assertContains(page, 'Quotation coming soon')
+        self.assertNotContains(page, 'Open quotation (PDF)')
+
+    def test_a_query_with_a_sent_quote_links_the_pdf_and_it_opens(self):
+        quotation = self.quote(self.query(status='quote_sent'))
+        page = self.client.get(self.home)
+        url = reverse('portal_quotation_pdf', args=[self.acme.portal_token, quotation.pk])
+        self.assertContains(page, url)
+        self.assertNotContains(page, 'Quotation coming soon')
+        response = self.client.get(url)
+        self.assertEqual((response.status_code, response['Content-Type']), (200, 'application/pdf'))
+
+    def test_a_draft_quote_is_not_shown_or_downloadable(self):
+        query = self.query()
+        draft = Quotation.objects.create(customer=self.acme, source_query=query, status='draft')
+        self.assertContains(self.client.get(self.home), 'Quotation coming soon')
+        self.assertEqual(self.client.get(reverse('portal_quotation_pdf', args=[self.acme.portal_token, draft.pk])).status_code, 404)
+
+    def test_queries_that_became_orders_or_were_closed_are_left_out(self):
+        self.query(status='converted')
+        ordered = self.query(status='quote_sent')
+        make_order(self.acme, source_query=ordered)
+        self.query(status='not_interested')
+        page = self.client.get(self.home)
+        self.assertContains(page, 'No open queries.')
+        self.assertNotContains(page, 'Asked on')
+
+    def test_only_the_newest_few_are_listed(self):
+        from ..views.portal import QUERY_LIMIT
+        for _ in range(QUERY_LIMIT + 3):
+            self.query()
+        self.assertContains(self.client.get(self.home), 'Asked on', count=QUERY_LIMIT)
+
+    def test_another_companys_query_and_quote_stay_private(self):
+        theirs = self.query(company='OTHER CO')
+        quotation = self.quote(theirs, customer=self.other)
+        self.assertContains(self.client.get(self.home), 'No open queries.')
+        self.assertEqual(self.client.get(reverse('portal_quotation_pdf', args=[self.acme.portal_token, quotation.pk])).status_code, 404)
+
+    def test_a_query_linked_by_customer_after_the_quote_is_found_even_if_the_name_changed(self):
+        query = self.query(company='ACME LTD', status='quote_sent', customer=self.acme)
+        self.quote(query)
+        self.assertContains(self.client.get(self.home), 'Open quotation (PDF)')
+
+
+class PortalProductsTests(TestCase):
+    """Order again is per product, not per order: the portal lists each product the company has ordered once, and
+    the button opens a reorder request copied from that product's latest order."""
+
+    def setUp(self):
+        self.acme = Customer.objects.create(name='ACME')
+        self.token = self.acme.portal_token
+        self.home = reverse('portal_home', args=[self.token])
+        self.old = make_order(self.acme, grade='EN8D')
+        self.new = make_order(self.acme, grade='EN8D')
+        self.other = make_order(self.acme, grade='EN9')
+        make_order(self.acme, grade='SAE1008', status='cancelled')
+
+    def test_each_product_is_listed_once_with_how_often_it_was_ordered(self):
+        page = self.client.get(self.home)
+        self.assertContains(page, 'Your products')
+        self.assertContains(page, 'ordered 2 times')
+        self.assertEqual([p['title'] for p in page.context['products']].count(self.new.spec_text()), 1)
+
+    def test_a_cancelled_only_product_is_not_offered(self):
+        self.assertNotIn('SAE1008', ' '.join(p['title'] for p in self.client.get(self.home).context['products']))
+
+    def test_the_order_again_button_is_on_the_product_and_uses_its_latest_order(self):
+        page = self.client.get(self.home)
+        latest = next(p['latest'] for p in page.context['products'] if p['title'] == self.new.spec_text())
+        self.assertEqual(latest.pk, self.new.pk)
+        self.assertContains(page, reverse('portal_reorder', args=[self.token, self.new.pk]))
+        self.assertNotContains(page, reverse('portal_reorder', args=[self.token, self.old.pk]))
+
+    def test_orders_themselves_no_longer_carry_order_again(self):
+        page = self.client.get(self.home)
+        self.assertContains(page, 'Order again', count=len(page.context['products']))
