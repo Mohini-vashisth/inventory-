@@ -14,6 +14,12 @@
   .banner strong { font-weight: 700; }
   .form-group { margin-bottom: 1.1rem; }
   input[readonly] { background: #f7f7f5; color: #888; }
+  .hint { font-size: 0.82rem; color: #6b7280; margin-top: 0.35rem; }
+  .btn-entire {
+    display: block; width: 100%; margin-top: 0.75rem; padding: 0.7rem 1rem;
+    background: #ffffff; color: #256349; border: 2px solid #2f7d5b; border-radius: 8px;
+    font-size: 1rem; font-weight: 700; cursor: pointer;
+  }
   
 
   .blocked-banner {
@@ -65,9 +71,11 @@
                value="{{ suggested_weight|floatformat:3 }}"
                max="{{ coil_remaining|floatformat:3 }}"
                {% if not blocked %}required{% endif %}>
+        <div class="hint">Type the exact weight you are taking. Suggested: what the order still needs, up to {{ coil_remaining|floatformat:1 }} kg left on this coil.</div>
       </div>
 
       <button type="submit" class="btn-submit">Confirm Pick →</button>
+      <button type="submit" name="use_entire" value="1" class="btn-entire" formnovalidate>Use the entire coil ({{ coil_remaining|floatformat:1 }} kg) →</button>
     </form>
   </div>
 </div>

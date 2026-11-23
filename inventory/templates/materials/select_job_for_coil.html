@@ -6,7 +6,81 @@
 {% block title %}Update Progress{% endblock %}
 
 {% block css %}
-
+    /* Order card */
+    .order-card {
+      background: white; border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+      margin-bottom: 1.75rem; overflow: hidden;
+    }
+    .order-header {
+      padding: 1rem 1.5rem;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 1rem; flex-wrap: wrap;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .order-meta { flex: 1; }
+    .order-no { font-size: 0.72rem; color: #aaa; font-family: monospace; margin-bottom: 0.2rem; }
+    .order-company { font-size: 1rem; font-weight: 700; color: #333; margin-bottom: 0.2rem; }
+    .order-tags { display: flex; gap: 0.75rem; flex-wrap: wrap; font-size: 0.82rem; color: #666; }
+    .order-delivery { text-align: right; flex-shrink: 0; }
+    .delivery-label { font-size: 0.68rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.04em; }
+    .delivery-date  { font-size: 0.9rem; font-weight: 600; color: #333; }
+    /* Parts table */
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      background: #f7f7f5; padding: 0.55rem 1rem;
+      text-align: left; font-size: 0.7rem;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: #999; font-weight: 700; white-space: nowrap;
+    }
+    tbody td {
+      padding: 0.85rem 1rem; border-top: 1px solid #f3f4f6;
+      font-size: 0.88rem; color: #333; vertical-align: middle;
+    }
+    tbody tr:hover td { background: #f9fbf9; }
+    .part-no {
+      font-family: monospace; font-weight: 700; font-size: 0.9rem;
+      background: #eef3ef; color: #256349;
+      padding: 2px 8px; border-radius: 6px; display: inline-block;
+    }
+    /* Progress bar */
+    .prog-wrap { display: flex; align-items: center; gap: 0.6rem; }
+    .prog-bg {
+      flex: 1; max-width: 140px; height: 7px;
+      background: #e5e7eb; border-radius: 999px; overflow: hidden;
+    }
+    .prog-fill { height: 100%; border-radius: 999px; background: #2f7d5b; }
+    .prog-fill.done { background: #16a34a; }
+    .prog-label { font-size: 0.78rem; color: #888; white-space: nowrap; }
+    /* Step badge */
+    .step-badge {
+      display: inline-block; padding: 3px 10px; border-radius: 999px;
+      font-size: 0.75rem; font-weight: 600; white-space: nowrap;
+    }
+    .step-pending     { background: #f3f4f6; color: #6b7280; }
+    .step-in_progress { background: #e5e7eb; color: #374151; }
+    .step-completed   { background: #dcfce7; color: #166534; }
+    .step-failed      { background: #fee2e2; color: #991b1b; }
+    .btn-update {
+      background: #2f7d5b; color: white;
+      border: none; min-height: 40px; padding: 0.55rem 1.1rem;
+      border-radius: 7px; font-size: 0.88rem; font-weight: 600;
+      cursor: pointer; text-decoration: none; display: inline-flex; align-items: center;
+      transition: opacity 0.15s;
+    }
+    .btn-update:hover { opacity: 0.85; }
+    .btn-update.done {
+      background: #f3f4f6; color: #6b7280; cursor: default;
+    }
+    .empty-state {
+      background: #ffffff; border-radius: 16px;
+      padding: 3rem; text-align: center;
+      color: #6b7280; font-size: 1rem;
+    }
+    .empty-state a {
+      color: #1f2933; font-weight: 700; text-decoration: underline;
+    }
+  
     .scan-error {
       background: #fef3c7; border: 1px solid #fcd34d;
       border-radius: 10px; padding: 0.7rem 1rem; margin-bottom: 1rem;
@@ -53,11 +127,8 @@
 <div class="page">
   <a href="{% url 'employee' %}" class="back-link">← Back to portal</a>
   <h1>Update Progress</h1>
-  <p class="subtitle">All orders currently in production. Tap Update on a job to open it, or use the coil-wise update below.</p>
 
-  {% include "materials/_production_board.html" %}
-
-  <h2 id="coil-wise" style="margin-top:2rem;">Coil-wise update</h2>
+  <h2 id="coil-wise" style="margin-top:0;">Coil-wise update</h2>
   <p class="subtitle">Scan or type the coil's number (or a part's tag) to open its job.</p>
 
   {% if scan_error %}<div class="scan-error">⚠️ {{ scan_error }}</div>{% endif %}
@@ -87,6 +158,11 @@
     <div class="scan-modal-status" id="scan-modal-status">Point the camera at the coil's QR tag</div>
     <button type="button" class="scan-modal-cancel" id="scan-modal-cancel">✕ Cancel</button>
   </div>
+
+  <h2 style="margin-top:1.5rem;">All jobs in production</h2>
+  <p class="subtitle">Tap Update on a job to open it.</p>
+
+  {% include "materials/_production_board.html" %}
 </div>
 
 <script src="{% static 'materials/jsQR.min.js' %}"></script>

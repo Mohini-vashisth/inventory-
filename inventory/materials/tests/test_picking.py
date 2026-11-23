@@ -44,6 +44,16 @@ class OrderCoilPickCreationTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(OrderCoilPick.objects.filter(coil=self.coil).count(), 0)
 
+    def test_use_entire_coil_picks_everything_left_whatever_was_typed(self):
+        response = self.client.post(
+            reverse('pick_coil_for_order', kwargs={'order_pk': self.order.pk, 'coil_pk': self.coil.pk}),
+            {'weight_allocated': '', 'use_entire': '1'},
+        )
+        self.assertEqual(response.status_code, 302)
+        pick = OrderCoilPick.objects.get(coil=self.coil)
+        self.assertEqual(pick.weight_allocated, self.coil.quantity)
+        self.assertEqual(self.coil.weight_remaining(), 0)
+
     def test_valid_pick_creates_pick_and_job(self):
         response = self.client.post(
             reverse('pick_coil_for_order', kwargs={'order_pk': self.order.pk, 'coil_pk': self.coil.pk}),

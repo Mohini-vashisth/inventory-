@@ -267,6 +267,7 @@ class ProductionBoardScanLinkTests(TestCase):
         page = self.client.get(reverse('select_job_for_coil')).content.decode()
         self.assertIn('class="order-card"', page)
         self.assertIn('id="coil-wise"', page)
-        self.assertLess(page.index('class="order-card"'), page.index('id="coil-wise"'))
-        self.assertLess(page.index('id="coil-wise"'), page.index('id="coil-scan-form"'))
+        self.assertLess(page.index('id="coil-scan-form"'), page.index('class="order-card"'))   # scan on top, board below
+        self.assertIn('.order-card {', page)    # the board's own styles are on the page (they were once lost in a merge)
+        self.assertIn('.btn-update {', page)
 

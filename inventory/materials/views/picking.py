@@ -176,7 +176,8 @@ def pick_coil_for_order(request, order_pk, coil_pk):
         if blocked:
             return redirect('select_coil_for_order', order_pk=order.pk)
 
-        raw_weight = request.POST.get('weight_allocated')
+        # "Use entire coil" ignores the typed weight and takes everything left on the coil.
+        raw_weight = str(coil_remaining) if request.POST.get('use_entire') else request.POST.get('weight_allocated')
         weight_value, weight_invalid = None, False
         if raw_weight:
             try:
