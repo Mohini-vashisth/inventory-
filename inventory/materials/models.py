@@ -145,10 +145,15 @@ class GateEntryLot(models.Model):
     rate = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(Decimal('0.01'))])
 
     def amount(self):
-        """The lot's cost on the bill: rate per kg times the lot's weight; None until both are known."""
+        """The lot's base amount (before GST): base rate per kg times the lot's weight; None until both are known."""
         if self.rate and self.weight:
             return (self.rate * self.weight).quantize(Decimal('0.01'))
         return None
+
+    def final_amount(self):
+        """The lot's amount after GST: the base amount plus GST at COIL_GST_PERCENT (None until the amount is known)."""
+        base = self.amount()
+        return (base * (100 + COIL_GST_PERCENT) / 100).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP) if base is not None else None
 
     def gst_per_kg(self):
         """GST on the base rate, per kg (None until a rate is entered)."""

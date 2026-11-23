@@ -23,8 +23,8 @@
   .add-row { background: var(--ds-accent-soft); color: var(--ds-accent-dark); border: 1px dashed var(--ds-accent); border-radius: 8px; padding: 0.55rem 1rem; font-weight: 600; cursor: pointer; margin: 0.3rem 0 1.2rem; }
   .total { display: flex; justify-content: space-between; font-weight: 700; font-size: 1.05rem; border-top: 2px solid var(--ds-border); padding-top: 0.8rem; margin: 0.4rem 0 1.2rem; }
   h2.sub { font-size: 1rem; margin-bottom: 0.4rem; }
-  /* narrow screens drop company, coils, weight and the GST column; the base rate, total rate and amount stay */
-  @media (max-width: 640px) { .lots th:nth-child(n+2):nth-child(-n+4), .lots td:nth-child(n+2):nth-child(-n+4), .lots th:nth-child(6), .lots td:nth-child(6) { display: none; } .lots input { width: 6rem; } }
+  /* narrow screens drop company, coils, weight, the GST column and the total rate; the base rate, base amount and final amount stay */
+  @media (max-width: 640px) { .lots th:nth-child(n+2):nth-child(-n+4), .lots td:nth-child(n+2):nth-child(-n+4), .lots th:nth-child(6), .lots td:nth-child(6), .lots th:nth-child(7), .lots td:nth-child(7) { display: none; } .lots input { width: 6rem; } }
   {% endblock %}
 
 {% block content %}
@@ -57,7 +57,7 @@
     <div class="card" style="margin-top:1rem;">
       <h2 class="sub">Lots</h2>
       <table class="lots">
-        <thead><tr><th>Grade · size</th><th>Company</th><th>Coils</th><th class="num">Weight (kg)</th><th>Base rate (₹ / kg)</th><th class="num">GST {{ gst_percent|floatformat:"-2" }}% (₹ / kg)</th><th class="num">Total rate (₹ / kg)</th><th class="num">Amount (₹)</th></tr></thead>
+        <thead><tr><th>Grade · size</th><th>Company</th><th>Coils</th><th class="num">Weight (kg)</th><th>Base rate (₹ / kg)</th><th class="num">GST {{ gst_percent|floatformat:"-2" }}% (₹ / kg)</th><th class="num">Total rate (₹ / kg)</th><th class="num">Base amount (₹)</th><th class="num">Final amount with GST (₹)</th></tr></thead>
         <tbody>
           {% for lot in lots %}
           <tr data-weight="{{ lot.weight|default:'' }}">
@@ -72,13 +72,14 @@
             <td class="num gst-rate">—</td>
             <td class="num total-rate"><strong>—</strong></td>
             <td class="num amount">—</td>
+            <td class="num final-amount"><strong>—</strong></td>
           </tr>
           {% empty %}
-          <tr><td colspan="8" class="muted">This gate entry has no lots.</td></tr>
+          <tr><td colspan="9" class="muted">This gate entry has no lots.</td></tr>
           {% endfor %}
         </tbody>
       </table>
-      <p class="muted" style="font-size:0.8rem; margin-top:0.6rem;">Enter the base rate (before GST). The GST and the total rate per kg are worked out from it. A lot's amount is its base rate times its weight (before GST); a lot with no weight entered at the gate has no amount yet. The bill total below is before GST.</p>
+      <p class="muted" style="font-size:0.8rem; margin-top:0.6rem;">Enter the base rate (before GST). The GST and the total rate per kg are worked out from it. The base amount is the base rate times the weight; the final amount adds the GST to it. A lot with no weight entered at the gate has no amount yet. The bill total below is the base amounts plus the other amounts, before GST; the lots with GST are shown under it.</p>
     </div>
 
     <div class="card" style="margin-top:1rem;">
@@ -99,7 +100,8 @@
       <button type="button" class="add-row" id="add-charge">+ Add amount</button>
       <datalist id="charge-options"><option value="Freight"><option value="Loading"><option value="Unloading"><option value="Insurance"><option value="Other"></datalist>
 
-      <div class="total"><span>Bill total</span><span id="grand-total">—</span></div>
+      <div class="total"><span>Bill total (before GST)</span><span id="grand-total">—</span></div>
+      <div class="total" style="border-top:none; margin-top:-0.8rem;"><span>Lots with GST {{ gst_percent|floatformat:"-2" }}% (final amounts)</span><span id="lots-final-total">—</span></div>
       <button type="submit" class="btn-submit">Save bill details</button>
     </div>
   </form>
@@ -119,7 +121,7 @@
     var GST_PERCENT = {{ gst_percent|floatformat:"-2" }};
     function money(n) { return n.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
     function recalc() {
-      var sum = 0, any = false;
+      var sum = 0, finalSum = 0, any = false;
       document.querySelectorAll('.lots tbody tr[data-weight]').forEach(function (row) {
         var weight = parseFloat(row.dataset.weight), rate = parseFloat(row.querySelector('.rate').value);
         var cell = row.querySelector('.amount');
@@ -128,13 +130,18 @@
           var g = Math.round(rate * GST_PERCENT) / 100;   // GST per kg, to the paisa like the server
           gst.textContent = money(g); totalRate.textContent = money(Math.round(rate * 100) / 100 + g);
         } else { gst.textContent = '—'; totalRate.textContent = '—'; }
-        if (weight > 0 && rate > 0) { var a = weight * rate; cell.textContent = money(a); sum += a; any = true; }
-        else cell.textContent = '—';
+        var finalCell = row.querySelector('.final-amount strong');
+        if (weight > 0 && rate > 0) {
+          var a = Math.round(weight * rate * 100) / 100;   // base amount, to the paisa like the server
+          var f = Math.round(a * (100 + GST_PERCENT)) / 100;
+          cell.textContent = money(a); finalCell.textContent = money(f); sum += a; finalSum += f; any = true;
+        } else { cell.textContent = '—'; finalCell.textContent = '—'; }
       });
       document.querySelectorAll('.charge-amount').forEach(function (input) {
         var v = parseFloat(input.value); if (v > 0) { sum += v; any = true; }
       });
       document.getElementById('grand-total').textContent = any ? '₹ ' + money(sum) : '—';
+      document.getElementById('lots-final-total').textContent = finalSum > 0 ? '₹ ' + money(finalSum) : '—';
     }
     function renumber() {
       Array.prototype.forEach.call(list.children, function (row, index) {

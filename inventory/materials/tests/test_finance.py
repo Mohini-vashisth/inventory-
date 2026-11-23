@@ -528,8 +528,11 @@ class CoilBillDetailsTests(FinanceTestCase):
         self.a.rate = Decimal('52.50')
         self.assertEqual(self.a.gst_per_kg(), Decimal('9.45'))      # 18% of 52.50
         self.assertEqual(self.a.total_rate(), Decimal('61.95'))
+        self.assertEqual(self.a.amount(), Decimal('31500.00'))          # 52.50 x 600 kg
+        self.assertEqual(self.a.final_amount(), Decimal('37170.00'))    # 31500 + 18%
+        self.assertIsNone(self.b.final_amount())
         page = self.client.get(self.url)
-        for text in ('Base rate', 'GST 18% (', 'Total rate'):
+        for text in ('Base rate', 'GST 18% (', 'Total rate', 'Base amount', 'Final amount with GST'):
             self.assertContains(page, text)
 
     def test_saving_rates_and_other_amounts(self):
