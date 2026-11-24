@@ -809,7 +809,6 @@ class QuoteWhatsAppTests(TestCase):
         self.assertEqual(response.status_code, 200)
 
     def test_the_button_params_become_url_button_components(self):
-        from unittest.mock import MagicMock
         from ..views import whatsapp
         with patch.object(whatsapp, '_whatsapp_graph_request') as graph:
             whatsapp._send_whatsapp_template_message('91x', 'matta_quote_links', 'en', body_params=['A', 'B'], url_button_params=['t1', 't2'])
