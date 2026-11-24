@@ -1,5 +1,7 @@
 """Official quotations: the Send Quote / Save Draft form, drafts, PDF, and the email."""
 
+import logging
+
 from django.utils import timezone
 from django.utils.http import urlencode
 from django.shortcuts import render, redirect, get_object_or_404
@@ -16,7 +18,10 @@ from ..forms import QuotationForm, QuotationLineItemFormSet
 from ..pdf import generate_quotation_pdf
 from ..product_codes import canonical_grade, describe_product_code, find_product_code, grade_key
 from ..decorators import staff_required
+from . import whatsapp
 from .common import _first_form_error, _first_formset_error, _match_product_code, _safe_get
+
+logger = logging.getLogger(__name__)
 
 
 def _resolve_quotation_customer(customer_name, query, existing_customer, email, phone):
@@ -284,6 +289,7 @@ def quotation_form(request, pk=None):
                     f"No email on file for {customer.name} — use “Copy Link” to share the quote form, "
                     f"or download the quotation PDF below to send manually.",
                 )
+            _send_quote_whatsapp(request, customer, quotation)
             return redirect('query_dashboard' if query else 'order_dashboard')
     else:
         if draft:
@@ -428,6 +434,24 @@ def _dispatch_quote_email(request, customer, quotation):
         messages.success(request, f"Quotation {quotation.formatted_no()} sent to {customer.email}.")
     except Exception as e:
         messages.error(request, f"Failed to send email: {e}")
+
+
+def _send_quote_whatsapp(request, customer, quotation):
+    """WhatsApp twin of the quote email: the approved template with the quotation number and two buttons, View
+    quotation (its PDF) and Place order (the order form), to the number on file. Both buttons carry the order-form
+    token. Never raises, so sending the quote can't fail on it. A customer with no number just gets no WhatsApp."""
+    phone = whatsapp.customer_whatsapp_number(customer)
+    if not phone:
+        return
+    token = str(customer.quote_token)
+    try:
+        whatsapp._send_whatsapp_template_message(
+            phone, whatsapp.WHATSAPP_QUOTE_TEMPLATE, language='en',
+            body_params=[customer.name, quotation.formatted_no()], url_button_params=[token, token])
+        messages.success(request, f"Quotation {quotation.formatted_no()} also sent on WhatsApp to {phone}.")
+    except whatsapp.WhatsAppSendError:
+        logger.warning("Quote WhatsApp to %s failed", phone, exc_info=True)
+        messages.warning(request, "The WhatsApp message could not be sent (the template may not be approved yet). The email, if any, went out.")
 
 
 @staff_required

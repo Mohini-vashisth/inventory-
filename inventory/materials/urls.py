@@ -86,4 +86,8 @@ urlpatterns = [
     path('orders/<int:pk>/dispatch/', orders.order_dispatch, name='order_dispatch'),
     path('media/<path:path>', media.serve_media, name='serve_media'),
     path('quote/<uuid:token>/', orders.quote_form, name='quote_form'),
+    # Without the trailing slash too: a WhatsApp button link must end in the token, and the public Funnel forwards plain
+    # http, so a redirect to add the slash would send the customer to an http address that is not served.
+    path('quote/<uuid:token>', orders.quote_form),
+    path('quote/pdf/<uuid:token>', orders.quote_quotation_pdf, name='quote_quotation_pdf'),
 ]

@@ -13,13 +13,14 @@ from django.contrib import messages
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.db.models import Count, Sum
-from django.http import JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from ..models import ProductType, ProductCode, Customer, CompanyChangeRequest, Query, Order, GradeOption
 from ..forms import CompanyDetailsForm, CustomerOrderForm, OrderEditForm, OrderItemFormSet, StaffOrderForm
 from ..order_pdf import generate_order_summary_pdf
+from ..pdf import generate_quotation_pdf
 from ..decorators import redirect_to_admin_login, staff_required
 from ..product_codes import grade_key
 from . import whatsapp
@@ -92,11 +93,9 @@ def _send_order_confirmation_whatsapp(order, base_url):
     the portal link, to the number on file. Returns 'sent', 'no_phone' or 'failed' — never raises, so confirming
     can't be blocked (a failure is logged)."""
     customer = order.customer
-    phone = whatsapp._normalize_phone(customer.phone)
+    phone = whatsapp.customer_whatsapp_number(customer)
     if not phone:
         return 'no_phone'
-    if len(phone) == 10:   # a bare Indian mobile number; Meta needs the country code
-        phone = '91' + phone
     link = f"{base_url}{reverse('portal_home', args=[customer.portal_token])}"
     try:
         whatsapp._send_whatsapp_template_message(
@@ -106,6 +105,18 @@ def _send_order_confirmation_whatsapp(order, base_url):
     except whatsapp.WhatsAppSendError:
         logger.warning("Order confirmation WhatsApp to %s failed", phone, exc_info=True)
         return 'failed'
+
+
+def quote_quotation_pdf(request, token):
+    """The latest sent quotation as a PDF, for the link in the WhatsApp message. Public like the order form it sits
+    beside: the order-form token is the credential, so it stops working once the order is placed."""
+    customer = get_object_or_404(Customer, quote_token=token)
+    quotation = customer.quotations.filter(status='sent').order_by('-quotation_no').first()
+    if quotation is None:
+        raise Http404
+    response = HttpResponse(generate_quotation_pdf(quotation), content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename="{quotation.formatted_no()}.pdf"'
+    return response
 
 
 @staff_required(on_denied=redirect_to_admin_login)

@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 import os
+import sys
 from pathlib import Path
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
@@ -76,6 +77,8 @@ WHATSAPP_APP_SECRET = os.environ.get('WHATSAPP_APP_SECRET', '')
 # questions) via the Graph API — see materials/views/whatsapp.py's helpers.
 WHATSAPP_ACCESS_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN', '')
 WHATSAPP_PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '')
+if 'test' in sys.argv:   # a test run must never reach Meta with the real token from .env (an unmocked send would be a real message)
+    WHATSAPP_ACCESS_TOKEN = WHATSAPP_PHONE_NUMBER_ID = ''
 
 # Printed on the official PDF quotation (materials/pdf.py::generate_quotation_pdf).
 # Blank defaults are deliberate — an incomplete-looking PDF is a visible

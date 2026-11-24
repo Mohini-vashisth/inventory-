@@ -46,6 +46,7 @@ WHATSAPP_QUERY_INTAKE_TEMPLATE_LANGUAGE = "en"
 # Sent when staff confirm an order. Body: "Hello {{1}}, your order for {{2}} has been confirmed. You can see your
 # orders and order again any time here: {{3}} Thank you for choosing Matta Drawing Works." (Meta refuses a variable at the very start or end, so text must follow {{3}}) (Utility category; must be approved in WhatsApp Manager, language `en`).
 WHATSAPP_ORDER_CONFIRMED_TEMPLATE = "matta_order_confirmed"
+WHATSAPP_QUOTE_TEMPLATE = "matta_quote_links"   # body {{1}} company, {{2}} quotation no; URL buttons "View quotation" (/quote/pdf/{{1}}) and "Place order" (/quote/{{1}}), both filled with the order-form token
 
 
 # Fixed intake order — the next question is whichever of these is still
@@ -177,7 +178,7 @@ def _whatsapp_graph_request(payload):
         raise WhatsAppSendError(f"WhatsApp API request failed: {e}") from e
 
 
-def _send_whatsapp_template_message(phone, template_name, language="en_US", body_params=()):
+def _send_whatsapp_template_message(phone, template_name, language="en_US", body_params=(), url_button_params=()):
     """The first message to a number that hasn't messaged us (or has gone
     quiet 24h+) must be a pre-approved template — Meta rejects free-form
     text otherwise. `template_name` must already be approved in Meta
@@ -185,6 +186,10 @@ def _send_whatsapp_template_message(phone, template_name, language="en_US", body
     template = {"name": template_name, "language": {"code": language}}
     if body_params:
         template["components"] = [{"type": "body", "parameters": [{"type": "text", "text": p} for p in body_params]}]
+    # A URL button's link ends in {{1}} in the approved template; this is what fills it, one entry per button in order.
+    for index, value in enumerate(url_button_params):
+        template.setdefault("components", []).append(
+            {"type": "button", "sub_type": "url", "index": str(index), "parameters": [{"type": "text", "text": value}]})
     _whatsapp_graph_request({"messaging_product": "whatsapp", "to": phone, "type": "template", "template": template})
 
 
@@ -579,6 +584,13 @@ WHATSAPP_PORTAL_STAGES = ('portal_confirm', 'portal_name')
 WHATSAPP_PORTAL_CONFIRM_CHOICES = [('yes', "Yes, that's us"), ('no', 'No, someone else')]
 WHATSAPP_PORTAL_NAME_QUESTION = "Hi there! Please enter your company name."
 WHATSAPP_PORTAL_THANKS = "Thank you! Let us note down what you need.\n\n"
+
+
+def customer_whatsapp_number(customer):
+    """The number WhatsApp needs for a company's phone on file: digits only, and a bare 10-digit Indian mobile number
+    gets the country code. '' when there is no number."""
+    phone = _normalize_phone(customer.phone)
+    return '91' + phone if len(phone) == 10 else phone
 
 
 def portal_chat_ref(customer):

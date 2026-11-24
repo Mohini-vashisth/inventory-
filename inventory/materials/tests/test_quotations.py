@@ -746,3 +746,74 @@ class QuotationPdfCustomerDetailsTests(TestCase):
         text = self._text(customer_address='12 Industrial Area')
         self.assertNotIn('M/s', text)
         self.assertIn('Pdf Details Co', text)
+
+
+class QuoteWhatsAppTests(TestCase):
+    """Sending a quotation also texts the company's number: the quotation number, a link to its PDF and the order
+    link, like the email (the PDF link sits on the order form's token, so it is public like the form)."""
+
+    def setUp(self):
+        self.client.force_login(User.objects.create_user('quote_wa_staff', password='pw', is_staff=True))
+        self.customer = Customer.objects.create(name='Text Co', phone='+91 98765 43210')
+        self.url = f"{reverse('quotation_form')}?customer={self.customer.pk}"
+
+    def _send(self):
+        return self.client.post(self.url, quotation_item_post_data(), follow=True)
+
+    @patch('materials.views.whatsapp._send_whatsapp_template_message')
+    def test_sends_the_template_with_the_quote_number_and_the_two_button_tokens(self, send):
+        response = self._send()
+        quotation = Quotation.objects.get(customer=self.customer)
+        (phone, template), kwargs = send.call_args.args, send.call_args.kwargs
+        self.assertEqual((phone, template), ('919876543210', 'matta_quote_links'))
+        self.assertEqual(kwargs['body_params'], ['Text Co', quotation.formatted_no()])
+        token = str(self.customer.quote_token)
+        self.assertEqual(kwargs['url_button_params'], [token, token])   # View quotation, Place order
+        self.assertContains(response, 'also sent on WhatsApp')
+
+    @patch('materials.views.whatsapp._send_whatsapp_template_message')
+    def test_no_phone_means_no_whatsapp(self, send):
+        self.customer.phone = ''
+        self.customer.save()
+        self._send()
+        send.assert_not_called()
+
+    @patch('materials.views.whatsapp._send_whatsapp_template_message')
+    def test_a_failed_send_warns_but_the_quotation_is_still_sent(self, send):
+        from ..views.whatsapp import WhatsAppSendError
+        send.side_effect = WhatsAppSendError('template not approved')
+        response = self._send()
+        self.assertContains(response, 'WhatsApp message could not be sent')
+        self.assertEqual(Quotation.objects.get(customer=self.customer).status, 'sent')
+
+    @patch('materials.views.whatsapp._send_whatsapp_template_message')
+    def test_the_pdf_link_opens_without_a_login_and_dies_with_the_order_link(self, send):
+        self._send()
+        self.client.logout()
+        link = reverse('quote_quotation_pdf', args=[self.customer.quote_token])
+        self.assertEqual(link, f'/quote/pdf/{self.customer.quote_token}')   # ends in the token, as the button needs
+        response = self.client.get(link)
+        self.assertEqual((response.status_code, response['Content-Type']), (200, 'application/pdf'))
+        self.assertTrue(response.content.startswith(b'%PDF'))
+        self.customer.quote_token = __import__('uuid').uuid4()   # what placing the order does
+        self.customer.save()
+        self.assertEqual(self.client.get(link).status_code, 404)
+
+    def test_a_link_with_no_sent_quotation_is_not_found(self):
+        self.client.logout()
+        self.assertEqual(self.client.get(reverse('quote_quotation_pdf', args=[self.customer.quote_token])).status_code, 404)
+
+    def test_the_order_form_opens_at_the_slashless_button_address_without_a_redirect(self):
+        self.client.logout()
+        response = self.client.get(f'/quote/{self.customer.quote_token}')
+        self.assertEqual(response.status_code, 200)
+
+    def test_the_button_params_become_url_button_components(self):
+        from unittest.mock import MagicMock
+        from ..views import whatsapp
+        with patch.object(whatsapp, '_whatsapp_graph_request') as graph:
+            whatsapp._send_whatsapp_template_message('91x', 'matta_quote_links', 'en', body_params=['A', 'B'], url_button_params=['t1', 't2'])
+        components = graph.call_args.args[0]['template']['components']
+        self.assertEqual(components[0]['type'], 'body')
+        self.assertEqual([(c['type'], c['sub_type'], c['index'], c['parameters'][0]['text']) for c in components[1:]],
+                         [('button', 'url', '0', 't1'), ('button', 'url', '1', 't2')])

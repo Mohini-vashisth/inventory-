@@ -281,6 +281,7 @@ class MaterialsRouteGuardTests(TestCase):
         'staff_logout',       # only ends this browser's own staff sign-in
         'finance_logout',     # only clears this browser's own finance flag
         'quote_form',         # customer-facing; the unguessable UUID token is the credential
+        'quote_quotation_pdf',   # the PDF behind the WhatsApp message; the same order-form token is the credential
         'portal_home',        # a company's portal; its permanent unguessable link is the credential
         'portal_details',     # same link; a company asks for a change to its own details
         'portal_about',       # same link; the company pitch
