@@ -1,0 +1,61 @@
+{% extends "materials/base.html" %}
+
+{% block body_attrs %} class="ds"{% endblock %}
+{% block title %}Dispatch planning{% endblock %}
+
+{% block css %}
+  .ship { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.55rem 0; border-top: 1px solid var(--ds-border); font-size: 0.9rem; }
+  .ship .grow { flex: 1 1 14rem; }
+  .ship form { display: inline; margin: 0; }
+  .sum { font-size: 0.85rem; color: var(--ds-muted); margin: 0.2rem 0 0.6rem; }
+  .addform { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.6rem; align-items: end; margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px dashed var(--ds-border); }
+  .addform label { display: block; font-size: 0.75rem; font-weight: 600; margin-bottom: 0.2rem; }
+  .addform input { width: 100%; }
+  .tag { display: inline-block; padding: 0.1rem 0.6rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; }
+  .tag-planned { background: #fef3c7; color: #92400e; } .tag-sent { background: #dcfce7; color: #166534; }
+{% endblock %}
+
+{% block content %}
+<div class="page">
+  <div class="ds-top"><a href="{% url 'staff_home' %}" class="back-link">← Back to dashboard</a></div>
+  <h1>Dispatch planning</h1>
+  <p class="subtitle">Orders in production. Plan each shipment, then mark it dispatched when the vehicle leaves.</p>
+
+  {% for msg in messages %}
+  <div class="alert {% if msg.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ msg }}</div>
+  {% endfor %}
+
+  {% for r in rows %}
+  <div class="card" style="margin-bottom:1rem;">
+    <div class="card-header">ORD-{{ r.order.order_no|stringformat:"04d" }} · {{ r.order.customer.name }}</div>
+    <div class="card-body">
+      <div><strong>{{ r.order.spec_text|default:"No product set" }}</strong> · {{ r.order.quantity|floatformat:"-3" }} kg{% if r.order.delivery_date %} · deliver by {{ r.order.delivery_date|date:"d M Y" }}{% endif %}</div>
+      <div class="sum">Dispatched {{ r.sent|floatformat:"-3" }} kg · planned {{ r.planned|floatformat:"-3" }} kg{% if r.left is not None %} · not yet planned {{ r.left|floatformat:"-3" }} kg{% endif %}</div>
+
+      {% for d in r.shipments %}
+      <div class="ship">
+        <div class="grow">
+          {% if d.dispatched_at %}<span class="tag tag-sent">Dispatched {{ d.dispatched_at|date:"d M, H:i" }}</span>{% else %}<span class="tag tag-planned">Planned {{ d.planned_date|date:"d M Y" }}</span>{% endif %}
+          <strong>{{ d.weight|floatformat:"-3" }} kg</strong> · {{ d.vehicle_no|default:"no vehicle" }}{% if d.lr_no %} · LR/invoice {{ d.lr_no }}{% endif %}
+        </div>
+        {% if not d.dispatched_at %}
+        <form method="post" action="{% url 'dispatch_mark' d.pk %}">{% csrf_token %}<button type="submit" class="icon-btn">Mark dispatched</button></form>
+        <form method="post" action="{% url 'dispatch_delete' d.pk %}" onsubmit="return confirm('Remove this planned shipment?');">{% csrf_token %}<button type="submit" class="icon-btn">Remove</button></form>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+      <form method="post" action="{% url 'dispatch_add' r.order.pk %}" class="addform">{% csrf_token %}
+        <div><label>Planned date</label>{{ r.form.planned_date }}</div>
+        <div><label>Weight (kg)</label>{{ r.form.weight }}</div>
+        <div><label>Vehicle no.</label>{{ r.form.vehicle_no }}</div>
+        <div><label>LR / invoice no.</label>{{ r.form.lr_no }}</div>
+        <div><button type="submit" class="btn-submit">Plan shipment</button></div>
+      </form>
+    </div>
+  </div>
+  {% empty %}
+  <div class="card"><div class="card-body"><p class="muted">No orders are in production right now.</p></div></div>
+  {% endfor %}
+</div>
+{% endblock %}

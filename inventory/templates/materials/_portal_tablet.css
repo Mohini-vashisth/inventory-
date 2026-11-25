@@ -9,3 +9,10 @@
   button, .btn { min-height: 48px; }
   .form-group { margin-bottom: 0.8rem; }
 }
+
+/* The same tablet held sideways (touch screens only, so a PC window is unchanged): a wider column and big touch targets. */
+@media (min-width: 900px) and (orientation: landscape) and (pointer: coarse) {
+  .page { max-width: 820px !important; }
+  input, select, textarea { font-size: 17px !important; min-height: 48px; }
+  button, .btn { min-height: 48px; }
+}

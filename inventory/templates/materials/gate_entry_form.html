@@ -108,8 +108,8 @@
     padding: 2rem; text-align: center;
     color: rgba(255,255,255,0.8); font-size: 0.95rem;
   }
-  /* Tablet held upright: two fields per row so the whole truck entry fits one screen. */
-  @media (min-width: 700px) and (orientation: portrait) {
+  /* Tablet held upright, or sideways on a touch screen: two fields per row so the whole truck entry fits one screen. */
+  @media (min-width: 700px) and (orientation: portrait), (min-width: 900px) and (orientation: landscape) and (pointer: coarse) {
     #gate-entry-form { display: grid; grid-template-columns: 1fr 1fr; column-gap: 1rem; }
     #gate-entry-form > .lots-heading, #gate-entry-form > #lots-container,
     #gate-entry-form > .add-lot-row, #gate-entry-form > .btn-submit,

@@ -1,0 +1,30 @@
+{# Read-only shipments for the plant and finance. No prices anywhere. #}
+{% for title, items, when in lists %}
+<div class="card" style="margin-bottom:1rem;">
+  <div class="card-header">{{ title }}</div>
+  <div class="card-body" style="overflow-x:auto;">
+    {% if items %}
+    <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+      <thead><tr style="text-align:left; font-size:0.72rem; text-transform:uppercase; color:#888;">
+        <th style="padding:0.3rem 0.5rem;">{{ when }}</th><th style="padding:0.3rem 0.5rem;">Order</th><th style="padding:0.3rem 0.5rem;">Customer</th>
+        <th style="padding:0.3rem 0.5rem;">Product</th><th style="padding:0.3rem 0.5rem; text-align:right;">Weight (kg)</th>
+        <th style="padding:0.3rem 0.5rem;">Vehicle</th><th style="padding:0.3rem 0.5rem;">LR / invoice</th>
+      </tr></thead>
+      <tbody>
+      {% for d in items %}
+      <tr style="border-top:1px solid #f0f0f0;">
+        <td style="padding:0.5rem; white-space:nowrap;">{% if d.dispatched_at %}{{ d.dispatched_at|date:"d M Y, H:i" }}{% else %}{{ d.planned_date|date:"d M Y" }}{% endif %}</td>
+        <td style="padding:0.5rem; white-space:nowrap;">ORD-{{ d.order.order_no|stringformat:"04d" }}</td>
+        <td style="padding:0.5rem;">{{ d.order.customer.name }}</td>
+        <td style="padding:0.5rem;">{{ d.order.spec_text|default:"—" }}</td>
+        <td style="padding:0.5rem; text-align:right; white-space:nowrap;">{{ d.weight|floatformat:"-3" }}</td>
+        <td style="padding:0.5rem; white-space:nowrap;">{{ d.vehicle_no|default:"—" }}</td>
+        <td style="padding:0.5rem;">{{ d.lr_no|default:"—" }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}<p class="muted">Nothing here yet.</p>{% endif %}
+  </div>
+</div>
+{% endfor %}

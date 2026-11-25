@@ -102,8 +102,8 @@
         <div class="lot-meta">{{ lot.company|default:"—" }} · {{ lot.no_of_coils }} coil(s){% if lot.weight %} · {{ lot.weight|floatformat:"-3" }} kg{% endif %}</div>
       </div>
       <div class="lot-right">
-        <div class="remaining-label">Coils left</div>
-        <div class="remaining-count">{{ lot.registered }} of {{ lot.no_of_coils }} done</div>
+        <div class="remaining-label">Registered</div>
+        <div class="remaining-count">{{ lot.registered }} of {{ lot.no_of_coils }}</div>
       </div>
       <div class="arrow" style="margin-left:1rem;">›</div>
     </a>

@@ -1474,3 +1474,21 @@ def _close_order_number_gap(sender, instance, **kwargs):
     for i, order in enumerate(Order.objects.order_by('order_no'), start=1):
         if order.order_no != i:
             Order.objects.filter(pk=order.pk).update(order_no=i)
+
+
+class Dispatch(models.Model):
+    """One shipment of an order: planned for a date, then marked dispatched when the vehicle leaves. An order can ship in
+    several parts (each its own Dispatch). Deliberately carries no price: employees see these."""
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='dispatches')
+    planned_date = models.DateField()
+    weight = models.DecimalField("Weight (kg)", max_digits=10, decimal_places=3, validators=[MinValueValidator(Decimal('0.001'))])
+    vehicle_no = models.CharField(max_length=20, blank=True)
+    lr_no = models.CharField("LR / invoice no.", max_length=50, blank=True)
+    dispatched_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['planned_date', 'pk']
+
+    def is_dispatched(self):
+        return self.dispatched_at is not None
