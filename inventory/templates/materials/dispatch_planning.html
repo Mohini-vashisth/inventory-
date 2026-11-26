@@ -43,6 +43,17 @@
         <form method="post" action="{% url 'dispatch_delete' d.pk %}" onsubmit="return confirm('Remove this planned shipment?');">{% csrf_token %}<button type="submit" class="icon-btn">Remove</button></form>
         {% endif %}
       </div>
+      {% if not d.dispatched_at %}
+      <details class="editship"><summary>Edit</summary>
+        <form method="post" action="{% url 'dispatch_edit' d.pk %}" class="addform">{% csrf_token %}
+          <div><label>Planned date</label>{{ d.edit_form.planned_date }}</div>
+          <div><label>Weight (kg)</label>{{ d.edit_form.weight }}</div>
+          <div><label>Vehicle no.</label>{{ d.edit_form.vehicle_no }}</div>
+          <div><label>LR / invoice no.</label>{{ d.edit_form.lr_no }}</div>
+          <div><button type="submit" class="btn-submit">Save changes</button></div>
+        </form>
+      </details>
+      {% endif %}
       {% endfor %}
 
       <form method="post" action="{% url 'dispatch_add' r.order.pk %}" class="addform">{% csrf_token %}

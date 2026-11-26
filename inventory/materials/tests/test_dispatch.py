@@ -108,10 +108,27 @@ class DispatchPlanningTests(TestCase):
         self.assertEqual(self.client.post(reverse('dispatch_delete', args=[sent.pk])).status_code, 404)
         self.assertEqual(list(Dispatch.objects.values_list('pk', flat=True)), [sent.pk])
 
+    def test_a_planned_shipment_can_be_edited_but_one_that_left_cannot(self):
+        self.plan()
+        self.plan(weight='100')
+        planned, sent = Dispatch.objects.order_by('pk')
+        sent.dispatched_at = planned.created_at
+        sent.save()
+        data = {'planned_date': '2026-12-05', 'weight': '350', 'vehicle_no': 'hr 55 x 9', 'lr_no': 'LR-99'}
+        edit = lambda s, **bad: self.client.post(reverse('dispatch_edit', args=[s.pk]), {f'e{s.pk}-{k}': v for k, v in {**data, **bad}.items()}, follow=True)  # noqa: E731
+        self.assertContains(edit(planned), 'shipment updated')
+        planned.refresh_from_db()
+        self.assertEqual((planned.weight, planned.vehicle_no, planned.lr_no, str(planned.planned_date)),
+                         (Decimal('350'), 'HR55X9', 'LR-99', '2026-12-05'))
+        self.assertContains(edit(planned, weight='0'), 'Could not change the shipment')
+        planned.refresh_from_db()
+        self.assertEqual(planned.weight, Decimal('350'))
+        self.assertEqual(edit(sent).status_code, 404)
+
     def test_the_changes_need_post(self):
         self.plan()
         shipment = Dispatch.objects.get()
-        for name, args in (('dispatch_mark', [shipment.pk]), ('dispatch_delete', [shipment.pk]), ('dispatch_add', [self.live.pk])):
+        for name, args in (('dispatch_edit', [shipment.pk]), ('dispatch_mark', [shipment.pk]), ('dispatch_delete', [shipment.pk]), ('dispatch_add', [self.live.pk])):
             self.assertEqual(self.client.get(reverse(name, args=args)).status_code, 405, name)
 
 

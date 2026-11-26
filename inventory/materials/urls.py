@@ -41,6 +41,7 @@ urlpatterns = [
     path('production-board/', production.production_board, name='production_board'),
     path('dispatch-planning/', dispatch.dispatch_planning, name='dispatch_planning'),
     path('dispatch-planning/add/<int:order_pk>/', dispatch.dispatch_add, name='dispatch_add'),
+    path('dispatch-planning/<int:pk>/edit/', dispatch.dispatch_edit, name='dispatch_edit'),
     path('dispatch-planning/<int:pk>/dispatched/', dispatch.dispatch_mark, name='dispatch_mark'),
     path('dispatch-planning/<int:pk>/delete/', dispatch.dispatch_delete, name='dispatch_delete'),
     path('dispatch/', dispatch.employee_dispatch, name='employee_dispatch'),

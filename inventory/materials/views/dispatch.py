@@ -42,6 +42,9 @@ def dispatch_planning(request):
     rows = []
     for order in orders:
         shipments = list(order.dispatches.all())
+        for d in shipments:
+            if not d.dispatched_at:
+                d.edit_form = DispatchForm(instance=d, prefix=f'e{d.pk}')
         sent = sum(d.weight for d in shipments if d.dispatched_at)
         planned = sum(d.weight for d in shipments if not d.dispatched_at)
         rows.append({'order': order, 'shipments': shipments, 'sent': sent, 'planned': planned,
@@ -61,6 +64,19 @@ def dispatch_add(request, order_pk):
         messages.success(request, f"Shipment planned for ORD-{order.order_no:04d}.")
     else:
         messages.error(request, "Could not add the shipment: " + "; ".join(e for errors in form.errors.values() for e in errors))
+    return redirect('dispatch_planning')
+
+
+@staff_required(on_denied=redirect_to_admin_login)
+@require_POST
+def dispatch_edit(request, pk):
+    shipment = get_object_or_404(Dispatch, pk=pk, dispatched_at__isnull=True)   # one that already left is a record, not a plan
+    form = DispatchForm(request.POST, instance=shipment, prefix=f'e{pk}')
+    if form.is_valid():
+        form.save()
+        messages.success(request, f"ORD-{shipment.order.order_no:04d}: shipment updated.")
+    else:
+        messages.error(request, "Could not change the shipment: " + "; ".join(e for errors in form.errors.values() for e in errors))
     return redirect('dispatch_planning')
 
 
