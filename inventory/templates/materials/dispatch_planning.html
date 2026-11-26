@@ -45,7 +45,7 @@
         {% for p in r.parts %}
           <tr><td><strong>{{ p.label }}</strong></td><td>{{ p.coil }}</td><td>{{ p.weight|floatformat:"-3" }} kg</td>
               <td><span class="bar"><i style="width:{{ p.pct }}%"></i></span> {{ p.completed }}/{{ p.total }}</td>
-              <td>{% if p.current_step %}{{ p.current_step.name }}{% else %}All done{% endif %}</td></tr>
+              <td>{% if p.current_step %}{{ p.current_step.name }}{% else %}<strong>Ready to dispatch</strong>{% endif %}</td></tr>
         {% endfor %}
         </tbody>
       </table>

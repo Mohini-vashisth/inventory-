@@ -181,7 +181,10 @@ class DispatchPartsTests(PartsTestBase):
         pick = OrderCoilPick.objects.create(order=order_, coil=self.coil, weight_allocated=Decimal('300'))
         job = ProductionJob.objects.create(pick=pick, product_code=done, order=order_, job_no='JOB-0002')
         self.complete(job.root_part(), step)
-        self.assertContains(self.client.get(reverse('dispatch_planning')), 'Ready to ship (every step done): <strong>300 kg</strong>')
+        page = self.client.get(reverse('dispatch_planning'))
+        self.assertContains(page, 'Ready to ship (every step done): <strong>300 kg</strong>')
+        self.assertContains(page, '<strong>Ready to dispatch</strong>')
+        self.assertNotContains(page, 'All done')
 
     def test_an_order_with_no_coil_picked_says_so(self):
         ProductionJob.objects.all().delete()
