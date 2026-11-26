@@ -8,7 +8,8 @@ from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
 
-from ..models import Customer, Dispatch, Order
+from ..models import Customer, Dispatch, Order, OrderCoilPick, ProcessStep, ProductCode, ProductionJob
+from .test_parts import PartsTestBase
 
 
 def order(customer, **extra):
@@ -157,3 +158,31 @@ class DispatchReadOnlyTests(TestCase):
     def test_the_read_only_pages_have_no_change_buttons(self):
         self.client.post(reverse('login'), {'pin': settings.EMPLOYEE_PIN})
         self.assertNotContains(self.client.get(reverse('employee_dispatch')), 'Mark dispatched')
+
+
+class DispatchPartsTests(PartsTestBase):
+    """Under each order the owners see every part of every coil with its progress, and how much is ready."""
+
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(User.objects.create_user('boss', password='pw', is_staff=True))
+
+    def test_each_part_of_a_split_coil_is_listed_with_its_weight_and_step(self):
+        self.split_first()
+        page = self.client.get(reverse('dispatch_planning'))
+        for text in ('JOB-0001-A', 'JOB-0001-B', '1000 kg', 'Polishing', '2/5'):
+            self.assertContains(page, text)
+        self.assertContains(page, 'Ready to ship (every step done): <strong>0 kg</strong>')
+
+    def test_a_part_with_every_step_done_counts_as_ready(self):
+        done = ProductCode.objects.create(item_code='ONE1', grade='EN1A')
+        step = ProcessStep.objects.create(product_code=done, name='Drawing', order=1)
+        order_ = Order.objects.create(customer=self.customer, product_code=done, grade='EN1A', quantity=Decimal('500'), status='in_production')
+        pick = OrderCoilPick.objects.create(order=order_, coil=self.coil, weight_allocated=Decimal('300'))
+        job = ProductionJob.objects.create(pick=pick, product_code=done, order=order_, job_no='JOB-0002')
+        self.complete(job.root_part(), step)
+        self.assertContains(self.client.get(reverse('dispatch_planning')), 'Ready to ship (every step done): <strong>300 kg</strong>')
+
+    def test_an_order_with_no_coil_picked_says_so(self):
+        ProductionJob.objects.all().delete()
+        self.assertContains(self.client.get(reverse('dispatch_planning')), 'No coil picked for this order yet.')

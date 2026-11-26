@@ -13,6 +13,7 @@ from django.views.decorators.http import require_POST
 
 from ..decorators import employee_or_staff_required, finance_required, redirect_to_admin_login, staff_required
 from ..models import Dispatch, Order
+from .production import _production_board_data
 
 SHIPMENTS = Dispatch.objects.select_related('order__customer', 'order__product_code__product_type', 'order__product_type')
 
@@ -39,8 +40,10 @@ def dispatch_planning(request):
     orders = (Order.objects.filter(status='in_production')
               .select_related('customer', 'product_code__product_type', 'product_type')
               .prefetch_related('dispatches').order_by('delivery_date', 'order_no'))
+    progress = {item['order'].pk: item for item in _production_board_data()}   # every part of every coil, with its progress
     rows = []
     for order in orders:
+        parts = [(jd['job'], part) for jd in progress[order.pk]['jobs'] for part in jd['rows']]
         shipments = list(order.dispatches.all())
         for d in shipments:
             if not d.dispatched_at:
@@ -48,6 +51,8 @@ def dispatch_planning(request):
         sent = sum(d.weight for d in shipments if d.dispatched_at)
         planned = sum(d.weight for d in shipments if not d.dispatched_at)
         rows.append({'order': order, 'shipments': shipments, 'sent': sent, 'planned': planned,
+                     'parts': [{**part, 'coil': job.pick.coil.formatted_coil()} for job, part in parts],
+                     'ready': sum(part['weight'] for _, part in parts if part['total'] and part['completed'] == part['total']),
                      'left': max(order.quantity - sent - planned, 0) if order.quantity else None,
                      'form': DispatchForm(prefix=f'o{order.pk}', initial={'planned_date': timezone.localdate()})})
     return render(request, 'materials/dispatch_planning.html', {'rows': rows})
